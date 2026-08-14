@@ -159,13 +159,17 @@ certificate.
 ### The updater signing key
 
 Every release also carries `latest.json` and a signed archive per platform, and
-an installed app offers the update on its next launch. Two repository secrets
-under **Settings → Secrets and variables → Actions** make that happen:
+an installed app offers the update on its next launch. Repository secrets under
+**Settings → Secrets and variables → Actions** make that happen:
 
 | Secret | Value |
 | --- | --- |
 | `TAURI_SIGNING_PRIVATE_KEY` | The whole contents of the private key file |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The key's password, or an empty secret if it has none |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The key's password. Leave the secret uncreated when the key has none |
+
+GitHub refuses to store a secret with no value, so a key without a password
+means simply not adding the second secret. The workflow reads it either way, and
+an absent secret arrives as the empty string the signer expects.
 
 The keypair is made once with `npm run tauri signer generate -w <path>`. Its
 public half is `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`; its
