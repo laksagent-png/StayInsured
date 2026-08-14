@@ -65,14 +65,14 @@ export default defineConfig({
         },
         {
           text: "Daily work",
-          items: [{ text: "Work the renewals", link: "/guide/renewals" }],
+          items: [{ text: "Renewals", link: "/guide/renewals" }],
         },
         {
           text: "The book",
           items: [
-            { text: "Manage clients", link: "/guide/clients" },
-            { text: "Record insured members", link: "/guide/insured-members" },
-            { text: "Manage policies", link: "/guide/policies" },
+            { text: "Clients", link: "/guide/clients" },
+            { text: "Insured members", link: "/guide/insured-members" },
+            { text: "Policies", link: "/guide/policies" },
             { text: "Insurers and plans", link: "/guide/insurers-and-plans" },
           ],
         },
@@ -80,7 +80,7 @@ export default defineConfig({
           text: "Keeping it safe",
           items: [
             { text: "Settings", link: "/guide/settings" },
-            { text: "Backups and your data", link: "/guide/backups-and-data" },
+            { text: "Backups and data", link: "/guide/backups-and-data" },
           ],
         },
         {

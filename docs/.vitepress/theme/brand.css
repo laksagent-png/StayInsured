@@ -29,3 +29,78 @@
   border: 1px solid var(--vp-c-divider);
   border-radius: 8px;
 }
+
+/*
+ * Width and type scale.
+ *
+ * The stock theme sets a 688px column, which is right for prose and wrong for
+ * this guide: the screenshots are 1440px wide, so they arrived at half size and
+ * the interface inside them was unreadable. The tables of fields have the same
+ * problem in reverse — they wrap into columns two words wide. Widening the
+ * column fills the page and, more to the point, makes the pictures legible.
+ */
+:root {
+  --vp-layout-max-width: 1680px;
+  --vp-sidebar-width: 284px;
+}
+
+/* One selector deeper than the theme's own rules, which otherwise win on load
+   order and put the 688px column back. */
+.VPDoc.has-aside .content .content-container,
+.VPDoc .container .content-container {
+  max-width: 1120px;
+}
+
+.VPHome .VPHero .container,
+.VPHome .VPFeatures .container {
+  max-width: 1280px;
+}
+
+/* 16px is small for a document read at arm's length, and this one is read while
+   the reader works in another window. */
+.vp-doc {
+  font-size: 17px;
+  line-height: 1.75;
+}
+
+.vp-doc table {
+  font-size: 16px;
+}
+
+/* The wide column exists for the screenshots and the field tables. Prose read
+   at that width is hard to track back to the next line, so it keeps a measure
+   while pictures and tables take the whole column. */
+.vp-doc > div > p,
+.vp-doc > div > ul,
+.vp-doc > div > ol,
+.vp-doc > div > blockquote {
+  max-width: 80ch;
+}
+
+/* A screenshot on its own line is still a paragraph as far as markdown is
+   concerned, and it should have the whole column. */
+.vp-doc > div > p:has(> img) {
+  max-width: none;
+}
+
+.vp-doc h1 {
+  font-size: 40px;
+}
+
+.vp-doc h2 {
+  font-size: 27px;
+}
+
+.vp-doc h3 {
+  font-size: 21px;
+}
+
+.VPSidebarItem .text,
+.VPDocAsideOutline .outline-link {
+  font-size: 15px;
+}
+
+.VPNavBarMenuLink,
+.VPNavBarTitle .title {
+  font-size: 15px;
+}
