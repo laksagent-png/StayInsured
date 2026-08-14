@@ -1,5 +1,5 @@
 /**
- * Photographs every screen in the how-to guide.
+ * Photographs every screen in the guide in docs/guide.
  *
  * Run it with `npm run docs:screenshots` after any change to the interface.
  * The app is served by Vite exactly as it ships, the Rust side is answered by
@@ -17,7 +17,7 @@ import { fixtures } from "./fixtures.mjs";
 import { installTauriMock } from "./mock-tauri.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
-const outDir = path.join(root, "docs", "screenshots");
+const outDir = path.join(root, "docs", "guide", "screenshots");
 const PORT = 5273;
 const WIDTH = 1440;
 const MIN_HEIGHT = 560;
@@ -278,7 +278,7 @@ async function main() {
     await server.close();
   }
 
-  console.log(`\n${taken} screenshots written to docs/screenshots`);
+  console.log(`\n${taken} screenshots written to docs/guide/screenshots`);
 }
 
 main().catch((error) => {

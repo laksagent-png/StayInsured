@@ -10,9 +10,10 @@ with a React user interface).
 [README](README.md) and download an installer from the
 [releases page](https://github.com/laksagent-png/StayInsured/releases).
 
-Deeper reference lives in [docs/](docs/README.md): [DESIGN](docs/DESIGN.md) for
-the architecture and the reasoning behind it, [API](docs/API.md) for the command
-contract, [DATA-MODEL](docs/DATA-MODEL.md) for the schema.
+Deeper reference lives in [docs/technical/](docs/technical/):
+[DESIGN](docs/technical/DESIGN.md) for the architecture and the reasoning behind
+it, [API](docs/technical/API.md) for the command contract,
+[DATA-MODEL](docs/technical/DATA-MODEL.md) for the schema.
 
 ## What it does today
 
@@ -69,11 +70,11 @@ npm run app:build    # output in src-tauri/target/release/bundle
 Other scripts: `npm run dev` (web only), `npm run build` (typecheck and bundle
 the frontend), `npm run icons` (regenerate app and tray icons).
 
-The user-facing [how-to guide](docs/HOW-TO.md) is illustrated from the running
-app, so a change to any screen means re-photographing it:
+The user-facing [agent's guide](docs/guide/README.md) is illustrated from the
+running app, so a change to any screen means re-photographing it:
 
 ```bash
-npm run docs:screenshots   # drives every route and dialog, writes docs/screenshots
+npm run docs:screenshots   # drives every route and dialog, writes docs/guide/screenshots
 npm run docs:check         # fails on a route, control or screenshot the guide misses
 ```
 
@@ -151,7 +152,7 @@ The interface never writes SQL. It calls commands; commands call repositories;
 repositories own the queries. Adding a screen means adding a command and a page,
 not touching the database layer.
 
-[DESIGN](docs/DESIGN.md) explains why each layer is shaped the way it is,
-[API](docs/API.md) lists every command with its arguments and error kinds, and
-[DATA-MODEL](docs/DATA-MODEL.md) documents the tables and the invariants they
-hold.
+[DESIGN](docs/technical/DESIGN.md) explains why each layer is shaped the way it
+is, [API](docs/technical/API.md) lists every command with its arguments and
+error kinds, and [DATA-MODEL](docs/technical/DATA-MODEL.md) documents the tables
+and the invariants they hold.

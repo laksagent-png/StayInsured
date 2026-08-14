@@ -18,7 +18,7 @@ runtime.
 4. `src/lib/types.ts` — the TypeScript mirror of those types
 5. `src/lib/api.ts` — the wrapper, and the only place that calls `invoke`
 
-Document the result in `docs/API.md` in the matching group, with arguments,
+Document the result in `docs/technical/API.md` in the matching group, with arguments,
 return type and error kinds.
 
 ## Rules
@@ -32,7 +32,7 @@ return type and error kinds.
 - No screen calls `invoke` directly; add a wrapper to the `api` object instead.
 - Adding a column to a `Policy` or `Client` response means updating the
   `POLICY_COLUMNS` / `CLIENT_COLUMNS` constant, the `from_row` index order, the
-  TypeScript interface and `docs/API.md` together.
+  TypeScript interface and `docs/technical/API.md` together.
 
 ```rust
 // The whole shape of a write command.

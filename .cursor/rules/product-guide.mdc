@@ -1,0 +1,85 @@
+---
+description: Keep the product guide in docs/guide and its screenshots matching the interface
+globs: src/**/*.tsx,src/**/*.ts,docs/guide/*.md,scripts/docs/*.mjs
+alwaysApply: false
+---
+
+# The product guide
+
+`docs/guide/` is the operator's manual: one page per operation, every control
+explained, illustrated from the running app. A change to the interface that
+leaves it behind is an unfinished change.
+
+It is written for the agent running their book, not for a developer. Anything
+about architecture, commands or the schema belongs in `docs/technical/` instead.
+
+| Page | Owns |
+| --- | --- |
+| `README.md` | Contents. Every other page is linked from here |
+| `install-and-first-run.md` | Installing, creating the book, unlocking, locking, quitting |
+| `getting-around.md` | The sidebar, routes, search, badges, the dashboard |
+| `import-your-book.md` | The import screen end to end, including the recognised-column tables |
+| `clients.md` | The clients list and the client form |
+| `insured-members.md` | Members on a client and on a policy |
+| `policies.md` | The policies list, the policy form, statuses |
+| `renewals.md` | The renewals desk, renewing, policy history |
+| `insurers-and-plans.md` | The insurers screen |
+| `settings.md` | The settings screen except backups |
+| `backups-and-data.md` | Backups, restoring, moving machines, the data folder |
+| `reference.md` | Lookup tables, glossary, questions |
+
+Write it under `documentation-style`: present tense, assertive, no changelog
+framing. Replace the paragraph that described the old behaviour instead of
+adding a note beside it.
+
+## When the interface changes
+
+1. Edit the page above that owns the screen, and only that page. A new
+   operation gets its own page, linked from `README.md`.
+2. Re-photograph the app:
+
+   ```bash
+   npm run docs:screenshots
+   ```
+
+3. Prove the guide still covers everything:
+
+   ```bash
+   npm run docs:check
+   ```
+
+Both commands are also run by `.github/workflows/docs.yml`, so skipping them
+fails the build rather than shipping a stale guide.
+
+## How the screenshots work
+
+`scripts/docs/capture.mjs` serves the real app with Vite, answers the Rust side
+from the demo book in `scripts/docs/fixtures.mjs`, freezes the clock at
+`TODAY`, walks each route, opens each dialog, and sizes the window to the
+content. Every picture in the guide comes from that run — none is taken by hand.
+
+- **A new screen or dialog**: add a shot to the `shots` array in
+  `capture.mjs` with its caption, and reference `screenshots/<name>.png` from
+  the page that owns it. The check fails on a shot that no one shows and on an
+  image the capture script does not produce.
+- **A new command**: answer it in `scripts/docs/mock-tauri.mjs`. An unanswered
+  command throws, and the shot lands on an error state.
+- **New data on screen**: extend `fixtures.mjs` rather than special-casing the
+  page. Dashboard totals, tab counts and list contents are all derived from
+  that one dataset, so they agree with each other.
+- Keep the demo book fictional, and keep it shaped like real output — client
+  codes in the app's `CL-00001` form, plausible Indian insurers and cities. No
+  real client names, numbers or policy numbers ever go into a screenshot.
+
+## What `docs:check` enforces
+
+- Every page in `docs/guide/` is linked from `docs/guide/README.md`.
+- Every route in `src/App.tsx` is named somewhere in the guide.
+- Every sidebar item in `src/components/AppShell.tsx` is named in the guide.
+- Every `<Button>` label in `src/pages/**` is explained, except the generic ones
+  listed in `scripts/docs/check-guide.mjs`.
+- The screenshots on disk, the screenshots in the guide, and the shots the
+  capture script takes are the same set.
+
+Add a label to the generic list only when it genuinely carries no meaning of its
+own. Documenting the operation is the cheaper fix.

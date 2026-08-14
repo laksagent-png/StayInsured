@@ -1,6 +1,6 @@
 ---
 description: How StayInsured documentation is written — current state, assertively, in the present tense
-globs: *.md,docs/*.md
+globs: *.md,docs/**/*.md
 alwaysApply: false
 ---
 

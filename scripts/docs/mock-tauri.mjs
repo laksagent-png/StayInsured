@@ -182,7 +182,7 @@ export function installTauriMock({ fixtures, scenario = {} }) {
     update_client: () => null,
     set_client_archived: () => null,
     delete_client: () => null,
-    next_client_code: () => "CL-0009",
+    next_client_code: () => "CL-00009",
 
     list_members: ({ clientId }) => members.filter((row) => row.clientId === clientId),
     create_member: () => 99,

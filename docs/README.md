@@ -5,16 +5,36 @@ runs offline on macOS and Windows, keeps the whole book in one SQLCipher-encrypt
 database on the user's own machine, and is built as a Tauri 2 app — a Rust core
 with a React interface.
 
-## Where to look
+The documentation is in two halves. [`guide/`](guide/README.md) is written for
+the agent running their book; [`technical/`](technical/) is written for whoever
+is building the app.
+
+## Using the app
+
+| Document | Covers |
+| --- | --- |
+| [The agent's guide](guide/README.md) | Contents page for everything below |
+| [Install and first run](guide/install-and-first-run.md) | Installing, creating the encrypted book, unlocking, locking |
+| [Find your way around](guide/getting-around.md) | The seven screens, search, reading the dashboard |
+| [Import your book](guide/import-your-book.md) | Every recognised column, the mapping, the dry run, failed rows |
+| [Manage clients](guide/clients.md) | Adding, finding, editing, archiving, deleting, exporting |
+| [Record insured members](guide/insured-members.md) | The lives covered under a floater |
+| [Manage policies](guide/policies.md) | The policy form field by field, filters, statuses |
+| [Work the renewals](guide/renewals.md) | The urgency tabs, copy emails, recording a renewal, history |
+| [Insurers and plans](guide/insurers-and-plans.md) | Keeping one company recorded one way |
+| [Settings](guide/settings.md) | Agency details, password, reminder preferences |
+| [Backups and your data](guide/backups-and-data.md) | Taking, restoring and moving the book |
+| [Reference](guide/reference.md) | Categories, statuses, shortcuts, questions |
+
+## Building the app
 
 | Document | Audience | Covers |
 | --- | --- | --- |
-| [README](../README.md) | Agents using the app | Installing, first run, the seven screens, importing a spreadsheet, working renewals, backups |
-| [HOW-TO](HOW-TO.md) | Agents using the app | Every operation with screenshots: setup, import, renewals, clients, policies, insurers, settings |
+| [README](../README.md) | Anyone | What the app is, installing it, the short version of using it |
 | [DEVELOPER](../DEVELOPER.md) | Anyone building it | Requirements, running, testing, cutting a release, code layout |
-| [DESIGN](DESIGN.md) | Anyone changing it | Architecture, security model, renewal-chain and status design, import pipeline, error model, what is deliberately unbuilt |
-| [API](API.md) | Anyone calling the core | All 50 Tauri commands, arguments, return types, error kinds, settings keys |
-| [DATA-MODEL](DATA-MODEL.md) | Anyone touching the schema | Tables, domains, invariants, the `policy_overview` view, migration policy |
+| [DESIGN](technical/DESIGN.md) | Anyone changing it | Architecture, security model, renewal-chain and status design, import pipeline, error model, what is deliberately unbuilt |
+| [API](technical/API.md) | Anyone calling the core | All 50 Tauri commands, arguments, return types, error kinds, settings keys |
+| [DATA-MODEL](technical/DATA-MODEL.md) | Anyone touching the schema | Tables, domains, invariants, the `policy_overview` view, migration policy |
 
 ## The short version
 
@@ -36,7 +56,7 @@ change affects, and how these documents are written. The short version: they
 describe the system as it is now, in the present tense, with no changelogs or
 "recently added" framing.
 
-The how-to guide is held to that by two commands:
+The guide is held to that by two commands:
 
 ```bash
 npm run docs:screenshots   # re-photograph every screen from the running app

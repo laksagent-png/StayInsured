@@ -11,30 +11,30 @@ document the change touched.
 
 | Changed | Check and update |
 | --- | --- |
-| `src-tauri/src/commands.rs`, `src-tauri/src/lib.rs` handler list | `docs/API.md` command tables |
-| `src-tauri/src/models.rs`, `src/lib/types.ts` | `docs/API.md` payload and enum sections |
-| `src-tauri/src/db/schema/*.sql`, `migrations.rs` | `docs/DATA-MODEL.md` (incl. schema version) |
-| `src-tauri/src/repo/**`, `importer.rs`, `exporter.rs`, `vault.rs`, `db/mod.rs` | `docs/DESIGN.md` behaviour and invariants; `docs/DATA-MODEL.md` invariants |
-| `src-tauri/src/error.rs` | Error tables in `docs/API.md` and `docs/DESIGN.md` |
-| A new screen, route or user-visible workflow | `docs/HOW-TO.md` and its screenshots (see `how-to-guide` rule); `README.md`; `docs/DESIGN.md` if the architecture changed |
-| `src/pages/**`, `src/components/**` — any control, label or form field | `docs/HOW-TO.md`, then `npm run docs:screenshots` and `npm run docs:check` |
-| `package.json`, `Cargo.toml`, `tauri.conf.json`, `.github/workflows/**` | `DEVELOPER.md`; release section of `docs/DESIGN.md` |
-| A feature moving from scaffolded to built | "Built, and deliberately not built yet" in `docs/DESIGN.md`, "Reserved for unbuilt features" in `docs/DATA-MODEL.md`, roadmap in `README.md` |
+| `src-tauri/src/commands.rs`, `src-tauri/src/lib.rs` handler list | `docs/technical/API.md` command tables |
+| `src-tauri/src/models.rs`, `src/lib/types.ts` | `docs/technical/API.md` payload and enum sections |
+| `src-tauri/src/db/schema/*.sql`, `migrations.rs` | `docs/technical/DATA-MODEL.md` (incl. schema version) |
+| `src-tauri/src/repo/**`, `importer.rs`, `exporter.rs`, `vault.rs`, `db/mod.rs` | `docs/technical/DESIGN.md` behaviour and invariants; `docs/technical/DATA-MODEL.md` invariants |
+| `src-tauri/src/error.rs` | Error tables in `docs/technical/API.md` and `docs/technical/DESIGN.md` |
+| A new screen, route or user-visible workflow | The page in `docs/guide/` covering that operation, and its screenshots (see `product-guide` rule); `README.md`; `docs/technical/DESIGN.md` if the architecture changed |
+| `src/pages/**`, `src/components/**` — any control, label or form field | The matching `docs/guide/` page, then `npm run docs:screenshots` and `npm run docs:check` |
+| `package.json`, `Cargo.toml`, `tauri.conf.json`, `.github/workflows/**` | `DEVELOPER.md`; release section of `docs/technical/DESIGN.md` |
+| A feature moving from scaffolded to built | "Built, and deliberately not built yet" in `docs/technical/DESIGN.md`, "Reserved for unbuilt features" in `docs/technical/DATA-MODEL.md`, roadmap in `README.md` |
 
 ## Facts that go stale silently
 
 Verify these against the code rather than trusting the prose:
 
-- The command count in `docs/API.md` matches the `generate_handler!` list.
+- The command count in `docs/technical/API.md` matches the `generate_handler!` list.
 - Which commands work while locked matches which ones call `state.db()?`.
 - Enum values, sort keys, settings keys and defaults match `util.rs`,
   the `SORTABLE` tables and `002_seed.sql`.
 - Constants quoted in prose — lapse grace days, page-size clamp, issue cap,
   backup retention, Argon2 cost — match their definitions.
-- The test list in `docs/DESIGN.md` matches `src-tauri/src/tests.rs`.
+- The test list in `docs/technical/DESIGN.md` matches `src-tauri/src/tests.rs`.
 
 ## When docs and code disagree
 
 Fix the docs to match the code, unless the code contradicts a documented
-invariant in `docs/DATA-MODEL.md`. In that case say so rather than quietly
+invariant in `docs/technical/DATA-MODEL.md`. In that case say so rather than quietly
 rewriting the invariant — it probably means the change has a bug.

@@ -1,18 +1,19 @@
 /**
- * Fails when the interface has moved on and docs/HOW-TO.md has not.
+ * Fails when the interface has moved on and the guide in docs/guide has not.
  *
  * It reads the routes, the navigation and every button label out of the source,
- * then insists the guide talks about each one and that the screenshots on disk,
- * the screenshots in the guide and the shots the capture script takes are the
- * same set. Run it with `npm run docs:check`.
+ * then insists the guide talks about each one, that every page is reachable
+ * from the contents, and that the screenshots on disk, the screenshots in the
+ * guide and the shots the capture script takes are the same set. Run it with
+ * `npm run docs:check`.
  */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
-const guidePath = path.join(root, "docs", "HOW-TO.md");
-const shotsDir = path.join(root, "docs", "screenshots");
+const guideDir = path.join(root, "docs", "guide");
+const shotsDir = path.join(guideDir, "screenshots");
 
 /**
  * Labels that carry no meaning on their own. A guide that explains "Cancel"
@@ -95,7 +96,23 @@ function buttonLabels(source) {
   return labels;
 }
 
-const guide = await readFile(guidePath, "utf8");
+// ---------------------------------------------------------------- the guide
+const pageFiles = (await readdir(guideDir)).filter((file) => file.endsWith(".md")).sort();
+const pages = await Promise.all(
+  pageFiles.map(async (file) => ({ file, text: await readFile(path.join(guideDir, file), "utf8") })),
+);
+
+const contents = pages.find((page) => page.file === "README.md");
+if (!contents) fail("docs/guide/README.md is missing — the guide has no contents page");
+
+for (const { file } of pages) {
+  if (file === "README.md") continue;
+  if (contents && !contents.text.includes(`(${file})`)) {
+    fail(`docs/guide/${file} is not linked from the contents page`);
+  }
+}
+
+const guide = pages.map((page) => page.text).join("\n");
 const guideText = normalise(guide);
 const mentions = (value) => guideText.includes(normalise(value));
 
@@ -143,7 +160,7 @@ let manifest = { shots: [] };
 try {
   manifest = JSON.parse(await readFile(path.join(shotsDir, "manifest.json"), "utf8"));
 } catch {
-  fail("docs/screenshots/manifest.json is missing — run `npm run docs:screenshots`");
+  fail("docs/guide/screenshots/manifest.json is missing — run `npm run docs:screenshots`");
 }
 const captured = new Set(manifest.shots.map((shot) => shot.name));
 
@@ -156,18 +173,19 @@ for (const name of referenced) {
 }
 for (const name of onDisk) {
   if (!captured.has(name)) {
-    fail(`docs/screenshots/${name}.png is not produced by the capture script — delete it or add the shot`);
+    fail(`docs/guide/screenshots/${name}.png is not produced by the capture script — delete it or add the shot`);
   }
 }
 
 // ---------------------------------------------------------------- result
 if (problems.length > 0) {
-  console.error("The how-to guide is out of step with the app:\n");
+  console.error("The guide is out of step with the app:\n");
   for (const problem of problems) console.error(`  • ${problem}`);
-  console.error("\nUpdate docs/HOW-TO.md, then run `npm run docs:screenshots`.");
+  console.error("\nUpdate the page in docs/guide, then run `npm run docs:screenshots`.");
   process.exit(1);
 }
 
 console.log(
-  `docs/HOW-TO.md covers ${new Set(routes).size} routes and ${captured.size} screenshots, and is in step with the app.`,
+  `docs/guide covers ${new Set(routes).size} routes across ${pages.length} pages ` +
+    `with ${captured.size} screenshots, and is in step with the app.`,
 );
