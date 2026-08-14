@@ -3,6 +3,10 @@ dist
 dist-ssr
 *.local
 
+# Documentation site build
+docs/.vitepress/dist
+docs/.vitepress/cache
+
 # Rust / Tauri
 src-tauri/target
 src-tauri/gen/schemas

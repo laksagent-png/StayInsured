@@ -102,13 +102,32 @@ const pages = await Promise.all(
   pageFiles.map(async (file) => ({ file, text: await readFile(path.join(guideDir, file), "utf8") })),
 );
 
-const contents = pages.find((page) => page.file === "README.md");
-if (!contents) fail("docs/guide/README.md is missing — the guide has no contents page");
+const contents = pages.find((page) => page.file === "index.md");
+if (!contents) fail("docs/guide/index.md is missing — the guide has no contents page");
 
 for (const { file } of pages) {
-  if (file === "README.md") continue;
+  if (file === "index.md") continue;
   if (contents && !contents.text.includes(`(${file})`)) {
     fail(`docs/guide/${file} is not linked from the contents page`);
+  }
+}
+
+// The published site carries its own copy of the contents in the sidebar, so a
+// page added to one and not the other is invisible in the other.
+const siteConfig = await readFile(path.join(root, "docs", ".vitepress", "config.ts"), "utf8");
+const inSidebar = new Set(
+  Array.from(siteConfig.matchAll(/link: "\/guide\/([a-z-]*)"/g)).map((match) => match[1]),
+);
+for (const { file } of pages) {
+  const slug = file === "index.md" ? "" : file.slice(0, -3);
+  if (!inSidebar.has(slug)) {
+    fail(`docs/guide/${file} is missing from the site sidebar in docs/.vitepress/config.ts`);
+  }
+}
+for (const slug of inSidebar) {
+  const file = slug === "" ? "index.md" : `${slug}.md`;
+  if (!pageFiles.includes(file)) {
+    fail(`The site sidebar points at /guide/${slug}, and docs/guide/${file} does not exist`);
   }
 }
 

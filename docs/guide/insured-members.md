@@ -1,4 +1,4 @@
-[← Guide contents](README.md)
+[← Guide contents](index.md)
 
 # Record insured members
 

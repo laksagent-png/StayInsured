@@ -5,7 +5,7 @@ runs offline on macOS and Windows, keeps the whole book in one SQLCipher-encrypt
 database on the user's own machine, and is built as a Tauri 2 app — a Rust core
 with a React interface.
 
-The documentation is in two halves. [`guide/`](guide/README.md) is written for
+The documentation is in two halves. [`guide/`](guide/index.md) is written for
 the agent running their book; [`technical/`](technical/) is written for whoever
 is building the app.
 
@@ -13,7 +13,7 @@ is building the app.
 
 | Document | Covers |
 | --- | --- |
-| [The agent's guide](guide/README.md) | Contents page for everything below |
+| [The agent's guide](guide/index.md) | Contents page for everything below |
 | [Install and first run](guide/install-and-first-run.md) | Installing, creating the encrypted book, unlocking, locking |
 | [Find your way around](guide/getting-around.md) | The seven screens, search, reading the dashboard |
 | [Import your book](guide/import-your-book.md) | Every recognised column, the mapping, the dry run, failed rows |

@@ -66,7 +66,8 @@ If the app is new to you, read these three in order and you are running.
 ---
 
 Building StayInsured rather than using it? The architecture, command contract
-and database schema live in [docs/technical](../technical/).
+and database schema live in
+[docs/technical](https://github.com/laksagent-png/StayInsured/tree/main/docs/technical).
 
 <sub>Every screen in this guide is photographed from the running app against a
 demo book, and is regenerated whenever the interface changes.</sub>

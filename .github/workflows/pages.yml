@@ -1,0 +1,68 @@
+name: Site
+
+# Publishes the landing page and the agent's guide to GitHub Pages. The guide is
+# only worth publishing while it matches the app, so the screenshots are taken
+# from the current interface and checked before anything is deployed.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deployment at a time, and let a newer commit finish rather than cancelling
+# it half way through a publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build the site
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Page footers show when each page last changed, which needs history.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Re-photograph the app
+        run: npm run docs:screenshots
+
+      - name: Check the guide covers the app
+        run: npm run docs:check
+
+      - name: Build the site
+        run: npm run docs:build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

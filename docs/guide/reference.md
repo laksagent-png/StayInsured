@@ -1,4 +1,4 @@
-[← Guide contents](README.md)
+[← Guide contents](index.md)
 
 # Reference
 
@@ -99,4 +99,4 @@ a file with real client details in it.
 
 ---
 
-[← Guide contents](README.md)
+[← Guide contents](index.md)

@@ -19,6 +19,7 @@ document the change touched.
 | A new screen, route or user-visible workflow | The page in `docs/guide/` covering that operation, and its screenshots (see `product-guide` rule); `README.md`; `docs/technical/DESIGN.md` if the architecture changed |
 | `src/pages/**`, `src/components/**` — any control, label or form field | The matching `docs/guide/` page, then `npm run docs:screenshots` and `npm run docs:check` |
 | `package.json`, `Cargo.toml`, `tauri.conf.json`, `.github/workflows/**` | `DEVELOPER.md`; release section of `docs/technical/DESIGN.md` |
+| A new page in `docs/guide/` | The contents in `docs/guide/index.md`, the sidebar in `docs/.vitepress/config.ts`, and the table in `docs/README.md` |
 | A feature moving from scaffolded to built | "Built, and deliberately not built yet" in `docs/technical/DESIGN.md`, "Reserved for unbuilt features" in `docs/technical/DATA-MODEL.md`, roadmap in `README.md` |
 
 ## Facts that go stale silently

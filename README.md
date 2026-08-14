@@ -10,7 +10,7 @@ internet connection required. Your book sits in an encrypted file on your
 machine that only opens with your password.
 
 Every operation, one page each and with pictures, is in the
-[agent's guide](docs/guide/README.md). This page is the short version.
+[agent's guide](docs/guide/index.md). This page is the short version.
 
 Runs on macOS and Windows. Building from source, or working on the app itself, is
 covered in [DEVELOPER.md](DEVELOPER.md), with the architecture and command

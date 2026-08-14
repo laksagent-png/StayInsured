@@ -14,7 +14,10 @@
     "typecheck": "tsc --noEmit",
     "icons": "node scripts/make-icon.mjs && tauri icon scripts/app-icon.png",
     "docs:screenshots": "node scripts/docs/capture.mjs",
-    "docs:check": "node scripts/docs/check-guide.mjs"
+    "docs:check": "node scripts/docs/check-guide.mjs",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.7",
@@ -42,6 +45,7 @@
     "playwright": "^1.62.1",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.2",
-    "vite": "^6.0.3"
+    "vite": "^6.0.3",
+    "vitepress": "^1.6.4"
   }
 }

@@ -70,13 +70,28 @@ npm run app:build    # output in src-tauri/target/release/bundle
 Other scripts: `npm run dev` (web only), `npm run build` (typecheck and bundle
 the frontend), `npm run icons` (regenerate app and tray icons).
 
-The user-facing [agent's guide](docs/guide/README.md) is illustrated from the
+The user-facing [agent's guide](docs/guide/index.md) is illustrated from the
 running app, so a change to any screen means re-photographing it:
 
 ```bash
 npm run docs:screenshots   # drives every route and dialog, writes docs/guide/screenshots
 npm run docs:check         # fails on a route, control or screenshot the guide misses
 ```
+
+The guide and the landing page are published to
+https://laksagent-png.github.io/StayInsured/ by the **Site** workflow, which
+re-photographs the app and runs the same checks before it deploys. VitePress
+builds it from `docs/`, configured in `docs/.vitepress/config.ts`:
+
+```bash
+npm run docs:dev       # the site with hot reload
+npm run docs:build     # what CI publishes
+npm run docs:preview   # serve the built site
+```
+
+`docs/technical/` is deliberately left out of the site and read on GitHub. Adding
+a guide page means adding it to the sidebar in the config as well as to the
+contents page; `docs:check` fails when the two disagree.
 
 `scripts/docs/` holds the capture: `fixtures.mjs` is the fictional demo book,
 `mock-tauri.mjs` answers the Rust commands in the browser, and `capture.mjs`

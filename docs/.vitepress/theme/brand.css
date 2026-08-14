@@ -1,0 +1,31 @@
+/*
+ * The site wears the app's colours: the teal from src/styles.css, so the
+ * screenshots and the page around them belong to the same product.
+ */
+
+:root {
+  --vp-c-brand-1: #0f766e;
+  --vp-c-brand-2: #0d9488;
+  --vp-c-brand-3: #14b8a6;
+  --vp-c-brand-soft: rgb(20 184 166 / 14%);
+
+  --vp-home-hero-name-color: #0d9488;
+  --vp-button-brand-bg: #0d9488;
+  --vp-button-brand-hover-bg: #0f766e;
+  --vp-button-brand-active-bg: #115e59;
+}
+
+.dark {
+  --vp-c-brand-1: #5eead4;
+  --vp-c-brand-2: #2dd4bf;
+  --vp-c-brand-3: #14b8a6;
+
+  --vp-home-hero-name-color: #2dd4bf;
+}
+
+/* Screenshots are pictures of a window, so give them an edge to sit behind —
+   without one they bleed into the page, and into the dark theme especially. */
+.vp-doc img {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}

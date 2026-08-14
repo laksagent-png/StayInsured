@@ -1,6 +1,6 @@
 ---
 description: Keep the product guide in docs/guide and its screenshots matching the interface
-globs: src/**/*.tsx,src/**/*.ts,docs/guide/*.md,scripts/docs/*.mjs
+globs: src/**/*.tsx,src/**/*.ts,docs/guide/*.md,docs/index.md,docs/.vitepress/**,scripts/docs/*.mjs
 alwaysApply: false
 ---
 
@@ -13,9 +13,13 @@ leaves it behind is an unfinished change.
 It is written for the agent running their book, not for a developer. Anything
 about architecture, commands or the schema belongs in `docs/technical/` instead.
 
+It is also the public site at https://laksagent-png.github.io/StayInsured/, so
+every page is read by people who have never seen the app. `docs/index.md` is the
+landing page and `docs/technical/` is excluded from the site.
+
 | Page | Owns |
 | --- | --- |
-| `README.md` | Contents. Every other page is linked from here |
+| `index.md` | Contents. Every other page is linked from here |
 | `install-and-first-run.md` | Installing, creating the book, unlocking, locking, quitting |
 | `getting-around.md` | The sidebar, routes, search, badges, the dashboard |
 | `import-your-book.md` | The import screen end to end, including the recognised-column tables |
@@ -35,7 +39,8 @@ adding a note beside it.
 ## When the interface changes
 
 1. Edit the page above that owns the screen, and only that page. A new
-   operation gets its own page, linked from `README.md`.
+   operation gets its own page, linked from `index.md` and added to the sidebar
+   in `docs/.vitepress/config.ts`.
 2. Re-photograph the app:
 
    ```bash
@@ -73,7 +78,8 @@ content. Every picture in the guide comes from that run — none is taken by han
 
 ## What `docs:check` enforces
 
-- Every page in `docs/guide/` is linked from `docs/guide/README.md`.
+- Every page in `docs/guide/` is linked from `docs/guide/index.md` and appears in
+  the site sidebar in `docs/.vitepress/config.ts`.
 - Every route in `src/App.tsx` is named somewhere in the guide.
 - Every sidebar item in `src/components/AppShell.tsx` is named in the guide.
 - Every `<Button>` label in `src/pages/**` is explained, except the generic ones
