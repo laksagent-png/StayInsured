@@ -62,7 +62,8 @@ The first release. Everything below is new.
 - An illustrated guide covering every operation, one page each, published at
   https://laksagent-png.github.io/StayInsured/.
 
-### Not built yet
+### Still to come
 
 Automatic reminder emails, stored policy documents, claims tracking, the
-printable report pack, and separate logins for staff.
+printable report pack, and separate logins for staff. Each is planned, and none
+of them is switched on in this version.

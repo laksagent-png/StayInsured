@@ -9,7 +9,7 @@ The lists and answers you look up rather than read.
 - [Keyboard](#keyboard)
 - [Client codes](#client-codes)
 - [Exports](#exports)
-- [What the app does not do yet](#what-the-app-does-not-do-yet)
+- [Still to come](#still-to-come)
 - [Questions](#questions)
 
 ## Categories
@@ -65,11 +65,13 @@ exactly what the current filters show, as Excel or CSV.
 Filter first, export second. "Health policies expiring in March with one
 insurer" is three filters and a button.
 
-## What the app does not do yet
+## Still to come
 
 Automatic reminder emails, stored scan copies of policy documents, claims
 tracking, the printable report pack, and separate logins for your staff. Each is
-planned; none of them is switched on.
+planned, and none of them is switched on today. The
+[release notes](https://laksagent-png.github.io/StayInsured/release-notes.html)
+record each one as it arrives.
 
 ## Questions
 

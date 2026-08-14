@@ -60,10 +60,10 @@ running app.
 Nothing. StayInsured is free and open source, and there is no account to create.
 Your data is yours, in a file you can copy, back up and move.
 
-## What it does not do yet
+## Still to come
 
 Automatic reminder emails, stored scan copies of policy documents, claims
 tracking, the printable report pack, and separate logins for staff. Each is
-planned; none of them is switched on. The
-[reference page](/guide/reference#what-the-app-does-not-do-yet) keeps that list
-current.
+planned, and none of them is switched on today. The
+[reference page](/guide/reference#still-to-come) keeps that list current, and the
+[release notes](/release-notes) say when one arrives.
