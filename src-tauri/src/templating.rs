@@ -21,7 +21,10 @@ pub const CATALOGUE: &[(&str, &str)] = &[
     ("product_name", "The plan name"),
     ("start_date", "When the current year started"),
     ("expiry_date", "When cover ends"),
-    ("days_to_expiry", "Whole days until expiry, negative once past"),
+    (
+        "days_to_expiry",
+        "Whole days until expiry, negative once past",
+    ),
     ("policy_year", "How many years this cover has run"),
     ("sum_insured", "Sum insured, formatted as money"),
     ("premium_amount", "Premium, formatted as money"),
@@ -55,10 +58,8 @@ impl Context {
     /// Convenience for optional columns, where absent should mean empty rather
     /// than the word "None".
     pub fn set_opt(&mut self, key: &str, value: Option<impl Into<String>>) -> &mut Self {
-        self.values.insert(
-            key.to_string(),
-            value.map(Into::into).unwrap_or_default(),
-        );
+        self.values
+            .insert(key.to_string(), value.map(Into::into).unwrap_or_default());
         self
     }
 

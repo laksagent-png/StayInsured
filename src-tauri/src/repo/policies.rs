@@ -1,7 +1,9 @@
 use rusqlite::{params, params_from_iter, types::Value, Connection};
 
 use crate::error::{AppError, AppResult};
-use crate::models::{blank_to_none, Page, Policy, PolicyFilter, PolicyInput, RenewalInput, POLICY_COLUMNS};
+use crate::models::{
+    blank_to_none, Page, Policy, PolicyFilter, PolicyInput, RenewalInput, POLICY_COLUMNS,
+};
 use crate::query::{self, Conditions};
 use crate::util;
 
@@ -25,7 +27,12 @@ const LAPSE_GRACE_DAYS: i64 = 30;
 fn build_conditions(filter: &PolicyFilter) -> Conditions {
     let mut c = Conditions::new();
 
-    if let Some(search) = filter.search.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(search) = filter
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         let pattern = query::like_pattern(search);
         c.add_many(
             "(policy_number LIKE ? ESCAPE '\\' OR client_name LIKE ? ESCAPE '\\' \
@@ -56,7 +63,8 @@ fn build_conditions(filter: &PolicyFilter) -> Conditions {
         }
     }
 
-    if let Some(from) = blank_to_none(filter.expiry_from.clone()).and_then(|d| util::parse_date(&d)) {
+    if let Some(from) = blank_to_none(filter.expiry_from.clone()).and_then(|d| util::parse_date(&d))
+    {
         c.add("expiry_date >= ?", Value::Text(from));
     }
     if let Some(to) = blank_to_none(filter.expiry_to.clone()).and_then(|d| util::parse_date(&d)) {
@@ -103,9 +111,8 @@ pub fn list(conn: &Connection, filter: &PolicyFilter) -> AppResult<Page<Policy>>
         "expiry_date",
     );
 
-    let sql = format!(
-        "SELECT {POLICY_COLUMNS} FROM policy_overview{where_sql}{order} LIMIT ? OFFSET ?"
-    );
+    let sql =
+        format!("SELECT {POLICY_COLUMNS} FROM policy_overview{where_sql}{order} LIMIT ? OFFSET ?");
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
         .query_map(
@@ -183,7 +190,9 @@ fn validate(input: &PolicyInput) -> AppResult<(String, String)> {
     let expiry = util::parse_date(&input.expiry_date)
         .ok_or_else(|| AppError::validation("Expiry date is not a valid date"))?;
     if expiry <= start {
-        return Err(AppError::validation("Expiry date must be after the start date"));
+        return Err(AppError::validation(
+            "Expiry date must be after the start date",
+        ));
     }
     Ok((start, expiry))
 }
@@ -212,7 +221,10 @@ pub fn create(conn: &Connection, input: &PolicyInput) -> AppResult<i64> {
             input.sum_insured,
             input.premium_amount,
             input.gst_amount,
-            input.premium_frequency.clone().unwrap_or_else(|| "annual".into()),
+            input
+                .premium_frequency
+                .clone()
+                .unwrap_or_else(|| "annual".into()),
             blank_to_none(input.payment_mode.clone()),
             blank_to_none(input.next_due_date.clone()).and_then(|d| util::parse_date(&d)),
             input.commission_rate,
@@ -255,7 +267,10 @@ pub fn update(conn: &Connection, id: i64, input: &PolicyInput) -> AppResult<()> 
                 input.sum_insured,
                 input.premium_amount,
                 input.gst_amount,
-                input.premium_frequency.clone().unwrap_or_else(|| "annual".into()),
+                input
+                    .premium_frequency
+                    .clone()
+                    .unwrap_or_else(|| "annual".into()),
                 blank_to_none(input.payment_mode.clone()),
                 blank_to_none(input.next_due_date.clone()).and_then(|d| util::parse_date(&d)),
                 input.commission_rate,
@@ -298,7 +313,9 @@ pub fn renew(conn: &Connection, input: &RenewalInput) -> AppResult<i64> {
             .ok_or_else(|| AppError::other("could not work out the new expiry date"))?,
     };
     if expiry <= start {
-        return Err(AppError::validation("Expiry date must be after the start date"));
+        return Err(AppError::validation(
+            "Expiry date must be after the start date",
+        ));
     }
 
     let policy_number = blank_to_none(input.policy_number.clone())
@@ -366,7 +383,9 @@ pub fn delete(conn: &Connection, id: i64) -> AppResult<()> {
 
 pub fn set_status(conn: &Connection, id: i64, status: &str) -> AppResult<()> {
     if !STATUSES.contains(&status) {
-        return Err(AppError::validation(format!("\"{status}\" is not a valid status")));
+        return Err(AppError::validation(format!(
+            "\"{status}\" is not a valid status"
+        )));
     }
     let changed = conn.execute(
         "UPDATE policies SET status = ?2 WHERE id = ?1",
@@ -395,8 +414,8 @@ pub fn set_members(conn: &Connection, policy_id: i64, member_ids: &[i64]) -> App
 }
 
 pub fn members_of(conn: &Connection, policy_id: i64) -> AppResult<Vec<i64>> {
-    let mut stmt =
-        conn.prepare("SELECT member_id FROM policy_members WHERE policy_id = ?1 ORDER BY member_id")?;
+    let mut stmt = conn
+        .prepare("SELECT member_id FROM policy_members WHERE policy_id = ?1 ORDER BY member_id")?;
     let rows = stmt
         .query_map(params![policy_id], |row| row.get::<_, i64>(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;

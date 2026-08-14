@@ -44,7 +44,8 @@ pub struct Client {
     pub next_expiry: Option<String>,
 }
 
-pub const CLIENT_COLUMNS: &str = "c.id, c.client_code, c.full_name, c.email, c.phone, c.alt_phone, \
+pub const CLIENT_COLUMNS: &str =
+    "c.id, c.client_code, c.full_name, c.email, c.phone, c.alt_phone, \
      c.date_of_birth, c.gender, c.address_line1, c.address_line2, c.city, c.state, c.pincode, \
      c.occupation, c.pan, c.gstin, c.preferred_language, c.reminders_opted_out, c.notes, \
      c.is_archived, c.created_at, c.updated_at";

@@ -27,7 +27,12 @@ fn build_conditions(filter: &ClientFilter) -> Conditions {
         c.add_raw("c.is_archived = 0");
     }
 
-    if let Some(search) = filter.search.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(search) = filter
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         match super::fts_query(search) {
             Some(q) => c.add(
                 "c.id IN (SELECT rowid FROM clients_fts WHERE clients_fts MATCH ?)",
@@ -124,7 +129,9 @@ fn validate(input: &ClientInput) -> AppResult<()> {
     }
     if let Some(email) = blank_to_none(input.email.clone()) {
         if !util::looks_like_email(&email) {
-            return Err(AppError::validation(format!("\"{email}\" is not a valid email address")));
+            return Err(AppError::validation(format!(
+                "\"{email}\" is not a valid email address"
+            )));
         }
     }
     if let Some(dob) = blank_to_none(input.date_of_birth.clone()) {
@@ -164,7 +171,10 @@ pub fn create(conn: &Connection, input: &ClientInput) -> AppResult<i64> {
             blank_to_none(input.occupation.clone()),
             blank_to_none(input.pan.clone()).map(|p| p.to_uppercase()),
             blank_to_none(input.gstin.clone()).map(|g| g.to_uppercase()),
-            input.preferred_language.clone().unwrap_or_else(|| "en".into()),
+            input
+                .preferred_language
+                .clone()
+                .unwrap_or_else(|| "en".into()),
             input.reminders_opted_out.unwrap_or(false) as i64,
             blank_to_none(input.notes.clone()),
         ],
@@ -201,7 +211,10 @@ pub fn update(conn: &Connection, id: i64, input: &ClientInput) -> AppResult<()> 
                 blank_to_none(input.occupation.clone()),
                 blank_to_none(input.pan.clone()).map(|p| p.to_uppercase()),
                 blank_to_none(input.gstin.clone()).map(|g| g.to_uppercase()),
-                input.preferred_language.clone().unwrap_or_else(|| "en".into()),
+                input
+                    .preferred_language
+                    .clone()
+                    .unwrap_or_else(|| "en".into()),
                 input.reminders_opted_out.unwrap_or(false) as i64,
                 blank_to_none(input.notes.clone()),
                 blank_to_none(input.client_code.clone()),
@@ -293,7 +306,8 @@ fn lookup(conn: &Connection, sql: &str, value: &str) -> AppResult<Option<i64>> {
 fn map_unique_error(err: rusqlite::Error) -> AppError {
     match &err {
         rusqlite::Error::SqliteFailure(e, Some(msg))
-            if e.code == rusqlite::ErrorCode::ConstraintViolation && msg.contains("client_code") =>
+            if e.code == rusqlite::ErrorCode::ConstraintViolation
+                && msg.contains("client_code") =>
         {
             AppError::Conflict("That client code is already in use".into())
         }

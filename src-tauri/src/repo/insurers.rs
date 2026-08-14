@@ -7,7 +7,11 @@ const COLUMNS: &str = "i.id, i.name, i.short_code, i.website, i.claim_helpline, 
      i.notes, i.is_active, (SELECT COUNT(*) FROM policies p WHERE p.insurer_id = i.id) AS policy_count";
 
 pub fn list(conn: &Connection, include_inactive: bool) -> AppResult<Vec<Insurer>> {
-    let filter = if include_inactive { "" } else { " WHERE i.is_active = 1" };
+    let filter = if include_inactive {
+        ""
+    } else {
+        " WHERE i.is_active = 1"
+    };
     let sql = format!("SELECT {COLUMNS} FROM insurers i{filter} ORDER BY i.name");
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt

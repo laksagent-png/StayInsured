@@ -54,7 +54,11 @@ impl Conditions {
 }
 
 /// Builds `IN (?, ?, ?)` for a list of strings, rejecting anything outside `allowed`.
-pub fn in_clause(column: &str, values: &[String], allowed: &[&str]) -> Option<(String, Vec<Value>)> {
+pub fn in_clause(
+    column: &str,
+    values: &[String],
+    allowed: &[&str],
+) -> Option<(String, Vec<Value>)> {
     let kept: Vec<String> = values
         .iter()
         .map(|v| v.trim().to_lowercase())
@@ -71,7 +75,12 @@ pub fn in_clause(column: &str, values: &[String], allowed: &[&str]) -> Option<(S
 }
 
 /// Resolves a requested sort column against an allow-list.
-pub fn order_by(requested: Option<&str>, descending: bool, allowed: &[(&str, &str)], fallback: &str) -> String {
+pub fn order_by(
+    requested: Option<&str>,
+    descending: bool,
+    allowed: &[(&str, &str)],
+    fallback: &str,
+) -> String {
     let column = requested
         .and_then(|key| {
             allowed

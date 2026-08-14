@@ -207,7 +207,11 @@ fn dispatch(
     let already_sent = notifications::sent_on(conn, &util::iso(options.today))?;
     let allowance = (cap - already_sent).max(0);
 
-    let waiting = notifications::due(conn, &format!("{} 23:59:59", util::iso(options.today)), 5_000)?;
+    let waiting = notifications::due(
+        conn,
+        &format!("{} 23:59:59", util::iso(options.today)),
+        5_000,
+    )?;
     let total_waiting = waiting.len();
 
     let Some(sender) = sender else {
@@ -309,10 +313,7 @@ fn send_digest(
     if settings::get_or(conn, "desktop_alerts", "true") == "true" {
         alerter.alert(
             "StayInsured",
-            &format!(
-                "{} policies expire within {window} days.",
-                rows.len()
-            ),
+            &format!("{} policies expire within {window} days.", rows.len()),
         );
         run.desktop_alerts += 1;
     }
@@ -352,7 +353,10 @@ fn send_digest(
         .set("provider_name", &provider.name)
         .set("provider_email", &provider.email)
         .set("provider_phone", &provider.phone)
-        .set("today", util::format_date(&today_iso, &provider.date_format))
+        .set(
+            "today",
+            util::format_date(&today_iso, &provider.date_format),
+        )
         .set("expiring_count", rows.len().to_string())
         .set("digest_table", table);
 

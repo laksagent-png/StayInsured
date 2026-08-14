@@ -42,7 +42,9 @@ pub fn setup(
         return Err(AppError::AlreadyInitialised);
     }
     if password.chars().count() < 8 {
-        return Err(AppError::validation("Use a password of at least 8 characters"));
+        return Err(AppError::validation(
+            "Use a password of at least 8 characters",
+        ));
     }
 
     let vault_file = vault::Vault::create();
@@ -151,7 +153,9 @@ pub fn change_password(
     replacement: String,
 ) -> AppResult<()> {
     if replacement.chars().count() < 8 {
-        return Err(AppError::validation("Use a password of at least 8 characters"));
+        return Err(AppError::validation(
+            "Use a password of at least 8 characters",
+        ));
     }
     let db = state.db()?;
     let old_vault = vault::Vault::load(&state.paths.vault)?;
@@ -285,7 +289,10 @@ pub fn delete_member(state: State<AppState>, id: i64) -> AppResult<()> {
 // ------------------------------------------------------------------ insurers & products
 
 #[tauri::command]
-pub fn list_insurers(state: State<AppState>, include_inactive: Option<bool>) -> AppResult<Vec<Insurer>> {
+pub fn list_insurers(
+    state: State<AppState>,
+    include_inactive: Option<bool>,
+) -> AppResult<Vec<Insurer>> {
     state
         .db()?
         .with(|conn| insurers::list(conn, include_inactive.unwrap_or(false)))

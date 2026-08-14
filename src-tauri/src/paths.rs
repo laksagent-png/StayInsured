@@ -32,12 +32,7 @@ impl AppPaths {
             root,
         };
 
-        for dir in [
-            &paths.root,
-            &paths.documents,
-            &paths.backups,
-            &paths.logs,
-        ] {
+        for dir in [&paths.root, &paths.documents, &paths.backups, &paths.logs] {
             std::fs::create_dir_all(dir)?;
         }
 

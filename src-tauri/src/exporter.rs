@@ -18,7 +18,9 @@ const POLICY_COLUMNS: &[PolicyColumn] = &[
     ("Policy number", |p| p.policy_number.clone()),
     ("Insurer", |p| p.insurer_name.clone()),
     ("Plan", |p| p.product_name.clone().unwrap_or_default()),
-    ("Category", |p| util::category_label(&p.category).to_string()),
+    ("Category", |p| {
+        util::category_label(&p.category).to_string()
+    }),
     ("Status", |p| title_case(&p.status)),
     ("Policy year", |p| p.policy_year.to_string()),
     ("Start date", |p| p.start_date.clone()),
@@ -28,11 +30,15 @@ const POLICY_COLUMNS: &[PolicyColumn] = &[
     ("Premium", |p| number(p.premium_amount)),
     ("GST", |p| number(p.gst_amount)),
     ("Frequency", |p| title_case(&p.premium_frequency)),
-    ("Payment mode", |p| p.payment_mode.clone().unwrap_or_default()),
+    ("Payment mode", |p| {
+        p.payment_mode.clone().unwrap_or_default()
+    }),
     ("Commission %", |p| number(p.commission_rate)),
     ("Commission amount", |p| number(p.commission_expected)),
     ("Nominee", |p| p.nominee_name.clone().unwrap_or_default()),
-    ("Vehicle number", |p| p.vehicle_number.clone().unwrap_or_default()),
+    ("Vehicle number", |p| {
+        p.vehicle_number.clone().unwrap_or_default()
+    }),
     ("Notes", |p| p.notes.clone().unwrap_or_default()),
 ];
 
@@ -43,8 +49,12 @@ const CLIENT_COLUMNS: &[ClientColumn] = &[
     ("Name", |c| c.full_name.clone()),
     ("Email", |c| c.email.clone().unwrap_or_default()),
     ("Phone", |c| c.phone.clone().unwrap_or_default()),
-    ("Alternate phone", |c| c.alt_phone.clone().unwrap_or_default()),
-    ("Date of birth", |c| c.date_of_birth.clone().unwrap_or_default()),
+    ("Alternate phone", |c| {
+        c.alt_phone.clone().unwrap_or_default()
+    }),
+    ("Date of birth", |c| {
+        c.date_of_birth.clone().unwrap_or_default()
+    }),
     ("Gender", |c| c.gender.clone().unwrap_or_default()),
     ("Address", |c| {
         [c.address_line1.clone(), c.address_line2.clone()]
@@ -62,7 +72,11 @@ const CLIENT_COLUMNS: &[ClientColumn] = &[
     ("Total policies", |c| c.total_policies.to_string()),
     ("Next expiry", |c| c.next_expiry.clone().unwrap_or_default()),
     ("Reminders", |c| {
-        if c.reminders_opted_out { "Opted out".into() } else { "On".into() }
+        if c.reminders_opted_out {
+            "Opted out".into()
+        } else {
+            "On".into()
+        }
     }),
     ("Notes", |c| c.notes.clone().unwrap_or_default()),
 ];
@@ -113,7 +127,12 @@ fn write_csv(path: &Path, headers: &[&str], rows: &[Vec<String>]) -> AppResult<(
     Ok(())
 }
 
-fn write_xlsx(path: &Path, sheet_name: &str, headers: &[&str], rows: &[Vec<String>]) -> AppResult<()> {
+fn write_xlsx(
+    path: &Path,
+    sheet_name: &str,
+    headers: &[&str],
+    rows: &[Vec<String>],
+) -> AppResult<()> {
     let mut workbook = Workbook::new();
     let sheet = workbook.add_worksheet().set_name(sheet_name)?;
 

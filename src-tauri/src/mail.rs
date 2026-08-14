@@ -51,7 +51,9 @@ impl SmtpConfig {
         Ok(Self {
             host: settings::get_or(conn, "smtp_host", "").trim().to_string(),
             port: settings::get_i64(conn, "smtp_port", 587).clamp(1, 65_535) as u16,
-            username: settings::get_or(conn, "smtp_username", "").trim().to_string(),
+            username: settings::get_or(conn, "smtp_username", "")
+                .trim()
+                .to_string(),
             password: vault::recall_smtp_password().unwrap_or_default(),
             from_name: settings::get_or(conn, "smtp_from_name", "")
                 .trim()
@@ -136,10 +138,9 @@ impl Mailer {
     }
 
     pub fn send(&self, message: &Outgoing) -> AppResult<()> {
-        let to_address = message
-            .to_email
-            .parse()
-            .map_err(|_| AppError::mail(format!("`{}` is not a valid address", message.to_email)))?;
+        let to_address = message.to_email.parse().map_err(|_| {
+            AppError::mail(format!("`{}` is not a valid address", message.to_email))
+        })?;
         let recipient = Mailbox::new(Some(message.to_name.clone()), to_address);
 
         // Both parts are sent: some clients, and some corporate gateways, will

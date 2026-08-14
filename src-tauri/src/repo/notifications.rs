@@ -126,7 +126,12 @@ pub fn mark_sent(conn: &Connection, id: i64) -> AppResult<()> {
 
 /// Stays `queued` for the first few attempts so the next sweep picks it up; a
 /// server that is down for an hour should not need the operator to intervene.
-pub fn mark_attempt_failed(conn: &Connection, id: i64, error: &str, max_attempts: i64) -> AppResult<()> {
+pub fn mark_attempt_failed(
+    conn: &Connection,
+    id: i64,
+    error: &str,
+    max_attempts: i64,
+) -> AppResult<()> {
     conn.execute(
         "UPDATE notification_log \
          SET attempts = attempts + 1, last_error = ?2, \
@@ -216,8 +221,9 @@ pub fn list(conn: &Connection, filter: &NotificationFilter) -> AppResult<Page<No
         SORTABLE,
         "n.scheduled_for",
     );
-    let sql =
-        format!("SELECT {NOTIFICATION_COLUMNS} FROM notification_log n{where_sql}{order} LIMIT ? OFFSET ?");
+    let sql = format!(
+        "SELECT {NOTIFICATION_COLUMNS} FROM notification_log n{where_sql}{order} LIMIT ? OFFSET ?"
+    );
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt

@@ -29,8 +29,18 @@ pub fn parse_date(raw: &str) -> Option<String> {
     }
 
     for format in [
-        "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y", "%d-%m-%y", "%d-%b-%Y", "%d %b %Y",
-        "%d-%B-%Y", "%d %B %Y", "%b %d, %Y", "%B %d, %Y", "%Y/%m/%d",
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%d.%m.%Y",
+        "%d/%m/%y",
+        "%d-%m-%y",
+        "%d-%b-%Y",
+        "%d %b %Y",
+        "%d-%B-%Y",
+        "%d %B %Y",
+        "%b %d, %Y",
+        "%B %d, %Y",
+        "%Y/%m/%d",
     ] {
         if let Ok(d) = NaiveDate::parse_from_str(text, format) {
             return Some(iso(d));
@@ -185,11 +195,33 @@ pub fn normalise_category(raw: &str) -> String {
     }
     let has = |needles: &[&str]| needles.iter().any(|n| text.contains(n));
 
-    if has(&["mediclaim", "health", "hospital", "family floater", "medical"]) {
+    if has(&[
+        "mediclaim",
+        "health",
+        "hospital",
+        "family floater",
+        "medical",
+    ]) {
         "health".into()
-    } else if has(&["term", "endowment", "ulip", "life", "money back", "pension", "annuity"]) {
+    } else if has(&[
+        "term",
+        "endowment",
+        "ulip",
+        "life",
+        "money back",
+        "pension",
+        "annuity",
+    ]) {
         "life".into()
-    } else if has(&["motor", "car", "bike", "two wheeler", "2 wheeler", "vehicle", "auto"]) {
+    } else if has(&[
+        "motor",
+        "car",
+        "bike",
+        "two wheeler",
+        "2 wheeler",
+        "vehicle",
+        "auto",
+    ]) {
         "motor".into()
     } else if has(&["travel", "trip", "international", "overseas", "student"]) {
         "travel".into()
@@ -250,11 +282,7 @@ pub fn normalise_phone(raw: &str) -> Option<String> {
     if digits.is_empty() {
         return None;
     }
-    Some(if plus {
-        format!("+{digits}")
-    } else {
-        digits
-    })
+    Some(if plus { format!("+{digits}") } else { digits })
 }
 
 pub fn looks_like_email(value: &str) -> bool {

@@ -130,7 +130,9 @@ fn recall(account: &str) -> Option<String> {
 fn forget(account: &str) -> AppResult<()> {
     match entry(account)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(AppError::other(format!("could not clear the keychain: {e}"))),
+        Err(e) => Err(AppError::other(format!(
+            "could not clear the keychain: {e}"
+        ))),
     }
 }
 

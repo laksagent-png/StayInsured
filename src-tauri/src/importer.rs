@@ -20,71 +20,354 @@ pub struct FieldSpec {
 }
 
 pub const FIELDS: &[FieldSpec] = &[
-    FieldSpec { key: "fullName", label: "Client name", group: "Client", required: true,
-        synonyms: &["client name", "customer name", "name", "insured name", "proposer name", "policy holder", "policyholder", "holder name"] },
-    FieldSpec { key: "clientCode", label: "Client code", group: "Client", required: false,
-        synonyms: &["client code", "client id", "customer id", "customer code", "code", "ref", "reference"] },
-    FieldSpec { key: "email", label: "Email", group: "Client", required: false,
-        synonyms: &["email", "email id", "e mail", "mail", "email address"] },
-    FieldSpec { key: "phone", label: "Mobile", group: "Client", required: false,
-        synonyms: &["phone", "mobile", "mobile no", "contact", "contact no", "cell", "phone number"] },
-    FieldSpec { key: "altPhone", label: "Alternate phone", group: "Client", required: false,
-        synonyms: &["alt phone", "alternate phone", "landline", "secondary phone", "phone 2"] },
-    FieldSpec { key: "dateOfBirth", label: "Date of birth", group: "Client", required: false,
-        synonyms: &["dob", "date of birth", "birth date", "birthday"] },
-    FieldSpec { key: "gender", label: "Gender", group: "Client", required: false,
-        synonyms: &["gender", "sex"] },
-    FieldSpec { key: "addressLine1", label: "Address", group: "Client", required: false,
-        synonyms: &["address", "address 1", "address line 1", "street"] },
-    FieldSpec { key: "addressLine2", label: "Address line 2", group: "Client", required: false,
-        synonyms: &["address 2", "address line 2", "locality", "area"] },
-    FieldSpec { key: "city", label: "City", group: "Client", required: false,
-        synonyms: &["city", "town", "district"] },
-    FieldSpec { key: "state", label: "State", group: "Client", required: false,
-        synonyms: &["state", "province"] },
-    FieldSpec { key: "pincode", label: "Pincode", group: "Client", required: false,
-        synonyms: &["pincode", "pin code", "postal code", "zip", "zipcode", "pin"] },
-    FieldSpec { key: "occupation", label: "Occupation", group: "Client", required: false,
-        synonyms: &["occupation", "profession", "job"] },
-    FieldSpec { key: "pan", label: "PAN", group: "Client", required: false,
-        synonyms: &["pan", "pan no", "pan number"] },
-
-    FieldSpec { key: "policyNumber", label: "Policy number", group: "Policy", required: true,
-        synonyms: &["policy no", "policy number", "policy", "certificate no", "policy id"] },
-    FieldSpec { key: "insurerName", label: "Insurer", group: "Policy", required: true,
-        synonyms: &["insurer", "insurance company", "company", "insurance provider", "underwriter", "insurer name"] },
-    FieldSpec { key: "productName", label: "Plan / product", group: "Policy", required: false,
-        synonyms: &["product", "plan", "plan name", "product name", "scheme", "policy type name"] },
-    FieldSpec { key: "category", label: "Category", group: "Policy", required: false,
-        synonyms: &["category", "type", "policy type", "line of business", "lob", "segment", "product category"] },
-    FieldSpec { key: "startDate", label: "Start date", group: "Policy", required: false,
-        synonyms: &["start date", "from date", "issue date", "commencement", "risk start", "inception", "policy start"] },
-    FieldSpec { key: "expiryDate", label: "Expiry date", group: "Policy", required: true,
-        synonyms: &["expiry date", "expiry", "end date", "to date", "valid till", "renewal date", "due date", "maturity date", "policy end"] },
-    FieldSpec { key: "sumInsured", label: "Sum insured", group: "Policy", required: false,
-        synonyms: &["sum insured", "sum assured", "si", "cover", "coverage", "cover amount"] },
-    FieldSpec { key: "premiumAmount", label: "Premium", group: "Policy", required: false,
-        synonyms: &["premium", "premium amount", "gross premium", "total premium", "amount"] },
-    FieldSpec { key: "gstAmount", label: "GST", group: "Policy", required: false,
-        synonyms: &["gst", "tax", "gst amount", "service tax"] },
-    FieldSpec { key: "premiumFrequency", label: "Premium frequency", group: "Policy", required: false,
-        synonyms: &["frequency", "premium frequency", "payment frequency", "mode of payment term"] },
-    FieldSpec { key: "paymentMode", label: "Payment mode", group: "Policy", required: false,
-        synonyms: &["payment mode", "mode", "paid by", "payment method"] },
-    FieldSpec { key: "commissionRate", label: "Commission %", group: "Policy", required: false,
-        synonyms: &["commission rate", "commission %", "comm %", "brokerage %", "commission percent"] },
-    FieldSpec { key: "commissionExpected", label: "Commission amount", group: "Policy", required: false,
-        synonyms: &["commission", "commission amount", "brokerage", "payout"] },
-    FieldSpec { key: "nomineeName", label: "Nominee", group: "Policy", required: false,
-        synonyms: &["nominee", "nominee name", "beneficiary"] },
-    FieldSpec { key: "nomineeRelation", label: "Nominee relation", group: "Policy", required: false,
-        synonyms: &["nominee relation", "nominee relationship", "relation with nominee"] },
-    FieldSpec { key: "vehicleNumber", label: "Vehicle number", group: "Policy", required: false,
-        synonyms: &["vehicle no", "vehicle number", "registration no", "reg no", "rc number"] },
-    FieldSpec { key: "memberNames", label: "Covered members", group: "Policy", required: false,
-        synonyms: &["members", "insured members", "covered members", "family members", "lives covered"] },
-    FieldSpec { key: "notes", label: "Notes", group: "Policy", required: false,
-        synonyms: &["notes", "remarks", "comments", "description"] },
+    FieldSpec {
+        key: "fullName",
+        label: "Client name",
+        group: "Client",
+        required: true,
+        synonyms: &[
+            "client name",
+            "customer name",
+            "name",
+            "insured name",
+            "proposer name",
+            "policy holder",
+            "policyholder",
+            "holder name",
+        ],
+    },
+    FieldSpec {
+        key: "clientCode",
+        label: "Client code",
+        group: "Client",
+        required: false,
+        synonyms: &[
+            "client code",
+            "client id",
+            "customer id",
+            "customer code",
+            "code",
+            "ref",
+            "reference",
+        ],
+    },
+    FieldSpec {
+        key: "email",
+        label: "Email",
+        group: "Client",
+        required: false,
+        synonyms: &["email", "email id", "e mail", "mail", "email address"],
+    },
+    FieldSpec {
+        key: "phone",
+        label: "Mobile",
+        group: "Client",
+        required: false,
+        synonyms: &[
+            "phone",
+            "mobile",
+            "mobile no",
+            "contact",
+            "contact no",
+            "cell",
+            "phone number",
+        ],
+    },
+    FieldSpec {
+        key: "altPhone",
+        label: "Alternate phone",
+        group: "Client",
+        required: false,
+        synonyms: &[
+            "alt phone",
+            "alternate phone",
+            "landline",
+            "secondary phone",
+            "phone 2",
+        ],
+    },
+    FieldSpec {
+        key: "dateOfBirth",
+        label: "Date of birth",
+        group: "Client",
+        required: false,
+        synonyms: &["dob", "date of birth", "birth date", "birthday"],
+    },
+    FieldSpec {
+        key: "gender",
+        label: "Gender",
+        group: "Client",
+        required: false,
+        synonyms: &["gender", "sex"],
+    },
+    FieldSpec {
+        key: "addressLine1",
+        label: "Address",
+        group: "Client",
+        required: false,
+        synonyms: &["address", "address 1", "address line 1", "street"],
+    },
+    FieldSpec {
+        key: "addressLine2",
+        label: "Address line 2",
+        group: "Client",
+        required: false,
+        synonyms: &["address 2", "address line 2", "locality", "area"],
+    },
+    FieldSpec {
+        key: "city",
+        label: "City",
+        group: "Client",
+        required: false,
+        synonyms: &["city", "town", "district"],
+    },
+    FieldSpec {
+        key: "state",
+        label: "State",
+        group: "Client",
+        required: false,
+        synonyms: &["state", "province"],
+    },
+    FieldSpec {
+        key: "pincode",
+        label: "Pincode",
+        group: "Client",
+        required: false,
+        synonyms: &[
+            "pincode",
+            "pin code",
+            "postal code",
+            "zip",
+            "zipcode",
+            "pin",
+        ],
+    },
+    FieldSpec {
+        key: "occupation",
+        label: "Occupation",
+        group: "Client",
+        required: false,
+        synonyms: &["occupation", "profession", "job"],
+    },
+    FieldSpec {
+        key: "pan",
+        label: "PAN",
+        group: "Client",
+        required: false,
+        synonyms: &["pan", "pan no", "pan number"],
+    },
+    FieldSpec {
+        key: "policyNumber",
+        label: "Policy number",
+        group: "Policy",
+        required: true,
+        synonyms: &[
+            "policy no",
+            "policy number",
+            "policy",
+            "certificate no",
+            "policy id",
+        ],
+    },
+    FieldSpec {
+        key: "insurerName",
+        label: "Insurer",
+        group: "Policy",
+        required: true,
+        synonyms: &[
+            "insurer",
+            "insurance company",
+            "company",
+            "insurance provider",
+            "underwriter",
+            "insurer name",
+        ],
+    },
+    FieldSpec {
+        key: "productName",
+        label: "Plan / product",
+        group: "Policy",
+        required: false,
+        synonyms: &[
+            "product",
+            "plan",
+            "plan name",
+            "product name",
+            "scheme",
+            "policy type name",
+        ],
+    },
+    FieldSpec {
+        key: "category",
+        label: "Category",
+        group: "Policy",
+        required: false,
+        synonyms: &[
+            "category",
+            "type",
+            "policy type",
+            "line of business",
+            "lob",
+            "segment",
+            "product category",
+        ],
+    },
+    FieldSpec {
+        key: "startDate",
+        label: "Start date",
+        group: "Policy",
+        required: false,
+        synonyms: &[
+            "start date",
+            "from date",
+            "issue date",
+            "commencement",
+            "risk start",
+            "inception",
+            "policy start",
+        ],
+    },
+    FieldSpec {
+        key: "expiryDate",
+        label: "Expiry date",
+        group: "Policy",
+        required: true,
+        synonyms: &[
+            "expiry date",
+            "expiry",
+            "end date",
+            "to date",
+            "valid till",
+            "renewal date",
+            "due date",
+            "maturity date",
+            "policy end",
+        ],
+    },
+    FieldSpec {
+        key: "sumInsured",
+        label: "Sum insured",
+        group: "Policy",
+        required: false,
+        synonyms: &[
+            "sum insured",
+            "sum assured",
+            "si",
+            "cover",
+            "coverage",
+            "cover amount",
+        ],
+    },
+    FieldSpec {
+        key: "premiumAmount",
+        label: "Premium",
+        group: "Policy",
+        required: false,
+        synonyms: &[
+            "premium",
+            "premium amount",
+            "gross premium",
+            "total premium",
+            "amount",
+        ],
+    },
+    FieldSpec {
+        key: "gstAmount",
+        label: "GST",
+        group: "Policy",
+        required: false,
+        synonyms: &["gst", "tax", "gst amount", "service tax"],
+    },
+    FieldSpec {
+        key: "premiumFrequency",
+        label: "Premium frequency",
+        group: "Policy",
+        required: false,
+        synonyms: &[
+            "frequency",
+            "premium frequency",
+            "payment frequency",
+            "mode of payment term",
+        ],
+    },
+    FieldSpec {
+        key: "paymentMode",
+        label: "Payment mode",
+        group: "Policy",
+        required: false,
+        synonyms: &["payment mode", "mode", "paid by", "payment method"],
+    },
+    FieldSpec {
+        key: "commissionRate",
+        label: "Commission %",
+        group: "Policy",
+        required: false,
+        synonyms: &[
+            "commission rate",
+            "commission %",
+            "comm %",
+            "brokerage %",
+            "commission percent",
+        ],
+    },
+    FieldSpec {
+        key: "commissionExpected",
+        label: "Commission amount",
+        group: "Policy",
+        required: false,
+        synonyms: &["commission", "commission amount", "brokerage", "payout"],
+    },
+    FieldSpec {
+        key: "nomineeName",
+        label: "Nominee",
+        group: "Policy",
+        required: false,
+        synonyms: &["nominee", "nominee name", "beneficiary"],
+    },
+    FieldSpec {
+        key: "nomineeRelation",
+        label: "Nominee relation",
+        group: "Policy",
+        required: false,
+        synonyms: &[
+            "nominee relation",
+            "nominee relationship",
+            "relation with nominee",
+        ],
+    },
+    FieldSpec {
+        key: "vehicleNumber",
+        label: "Vehicle number",
+        group: "Policy",
+        required: false,
+        synonyms: &[
+            "vehicle no",
+            "vehicle number",
+            "registration no",
+            "reg no",
+            "rc number",
+        ],
+    },
+    FieldSpec {
+        key: "memberNames",
+        label: "Covered members",
+        group: "Policy",
+        required: false,
+        synonyms: &[
+            "members",
+            "insured members",
+            "covered members",
+            "family members",
+            "lives covered",
+        ],
+    },
+    FieldSpec {
+        key: "notes",
+        label: "Notes",
+        group: "Policy",
+        required: false,
+        synonyms: &["notes", "remarks", "comments", "description"],
+    },
 ];
 
 #[derive(Debug, Serialize)]
@@ -308,7 +591,13 @@ fn cell_to_string(cell: &Data) -> String {
 fn normalise_header(header: &str) -> String {
     header
         .chars()
-        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { ' ' })
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -518,10 +807,19 @@ fn import_row(
         // A malformed address should not sink the row; it is reported and dropped.
         util::looks_like_email(e)
     });
-    let phone = reader.get("phone").as_deref().and_then(util::normalise_phone);
+    let phone = reader
+        .get("phone")
+        .as_deref()
+        .and_then(util::normalise_phone);
     let code = reader.get("clientCode");
 
-    let client_id = match clients::find_match(conn, code.as_deref(), email.as_deref(), phone.as_deref(), &name)? {
+    let client_id = match clients::find_match(
+        conn,
+        code.as_deref(),
+        email.as_deref(),
+        phone.as_deref(),
+        &name,
+    )? {
         Some(id) => {
             if update_existing {
                 let touched = fill_client_gaps(conn, id, reader)?;
@@ -541,7 +839,10 @@ fn import_row(
                     phone: phone.clone(),
                     alt_phone: reader.get("altPhone"),
                     date_of_birth: reader.get("dateOfBirth"),
-                    gender: reader.get("gender").as_deref().and_then(util::normalise_gender),
+                    gender: reader
+                        .get("gender")
+                        .as_deref()
+                        .and_then(util::normalise_gender),
                     address_line1: reader.get("addressLine1"),
                     address_line2: reader.get("addressLine2"),
                     city: reader.get("city"),
@@ -564,9 +865,11 @@ fn import_row(
         .get("insurerName")
         .ok_or_else(|| AppError::validation("Insurer is blank"))?;
 
-    let insurer_count_before: i64 = conn.query_row("SELECT COUNT(*) FROM insurers", [], |r| r.get(0))?;
+    let insurer_count_before: i64 =
+        conn.query_row("SELECT COUNT(*) FROM insurers", [], |r| r.get(0))?;
     let insurer_id = insurers::find_or_create(conn, &insurer_name)?;
-    let insurer_count_after: i64 = conn.query_row("SELECT COUNT(*) FROM insurers", [], |r| r.get(0))?;
+    let insurer_count_after: i64 =
+        conn.query_row("SELECT COUNT(*) FROM insurers", [], |r| r.get(0))?;
     if insurer_count_after > insurer_count_before {
         report.insurers_created += 1;
     }
@@ -609,13 +912,25 @@ fn import_row(
         status: None,
         start_date: start,
         expiry_date: expiry,
-        sum_insured: reader.get("sumInsured").as_deref().and_then(util::parse_number),
-        premium_amount: reader.get("premiumAmount").as_deref().and_then(util::parse_number),
-        gst_amount: reader.get("gstAmount").as_deref().and_then(util::parse_number),
+        sum_insured: reader
+            .get("sumInsured")
+            .as_deref()
+            .and_then(util::parse_number),
+        premium_amount: reader
+            .get("premiumAmount")
+            .as_deref()
+            .and_then(util::parse_number),
+        gst_amount: reader
+            .get("gstAmount")
+            .as_deref()
+            .and_then(util::parse_number),
         premium_frequency: reader.get("premiumFrequency").map(normalise_frequency),
         payment_mode: reader.get("paymentMode"),
         next_due_date: None,
-        commission_rate: reader.get("commissionRate").as_deref().and_then(util::parse_number),
+        commission_rate: reader
+            .get("commissionRate")
+            .as_deref()
+            .and_then(util::parse_number),
         commission_expected: reader
             .get("commissionExpected")
             .as_deref()
@@ -683,10 +998,22 @@ fn fill_client_gaps(conn: &Connection, id: i64, reader: &RowReader) -> AppResult
         params![
             id,
             reader.get("email").filter(|e| util::looks_like_email(e)),
-            reader.get("phone").as_deref().and_then(util::normalise_phone),
-            reader.get("altPhone").as_deref().and_then(util::normalise_phone),
-            reader.get("dateOfBirth").as_deref().and_then(util::parse_date),
-            reader.get("gender").as_deref().and_then(util::normalise_gender),
+            reader
+                .get("phone")
+                .as_deref()
+                .and_then(util::normalise_phone),
+            reader
+                .get("altPhone")
+                .as_deref()
+                .and_then(util::normalise_phone),
+            reader
+                .get("dateOfBirth")
+                .as_deref()
+                .and_then(util::parse_date),
+            reader
+                .get("gender")
+                .as_deref()
+                .and_then(util::normalise_gender),
             reader.get("addressLine1"),
             reader.get("city"),
             reader.get("state"),
@@ -741,7 +1068,13 @@ fn record_batch(
         conn.execute(
             "INSERT INTO import_errors (batch_id, row_number, column_name, value, message) \
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![batch_id, issue.row as i64, issue.column, issue.value, issue.message],
+            params![
+                batch_id,
+                issue.row as i64,
+                issue.column,
+                issue.value,
+                issue.message
+            ],
         )?;
     }
     Ok(())
