@@ -449,7 +449,14 @@ database in a temporary directory, with no window:
 - renewal builds a chain, carries values forward and preserves last year's
   premium
 - statuses follow the calendar and the dashboard agrees with them
-- a duplicate policy number for one insurer is refused
+- a duplicate policy number for one insurer is refused, while two insurers may
+  each use the same number
+- a cancelled policy is left alone by the sweep in both directions
+- an expiry corrected to a future date brings the policy back to active
+- editing a policy leaves its chain, its year and last year's record alone
+- a status the rest of the app cannot read is refused
+- a chain keeps exactly one open year however many times it is renewed
+- deleting a year leaves the earlier ones standing
 - a member from another client cannot be attached to a policy
 - a messy spreadsheet maps correctly, a dry run writes nothing, and re-importing
   updates in place instead of duplicating

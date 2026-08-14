@@ -583,6 +583,320 @@ fn duplicate_policy_number_for_same_insurer_is_rejected() {
 }
 
 #[test]
+fn two_insurers_may_each_use_the_same_policy_number() {
+    let temp = TempDb::new("number-scope");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Ishaan Bose"))?;
+            let star = insurers::find_or_create(conn, "Star Health")?;
+            let care = insurers::find_or_create(conn, "Care Health")?;
+            assert_ne!(star, care);
+
+            policies::create(conn, &sample_policy(client, star, "POL-7", "2027-03-31"))?;
+            let other = policies::create(conn, &sample_policy(client, care, "POL-7", "2027-03-31"));
+            assert!(
+                other.is_ok(),
+                "a number is only spoken for within the insurer that issued it"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_cancelled_policy_is_left_alone_by_the_sweep() {
+    let temp = TempDb::new("cancelled");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Farah Sheikh"))?;
+            let insurer = insurers::find_or_create(conn, "HDFC ERGO")?;
+
+            // One that the calendar would call lapsed, one it would call active.
+            let mut old_input = sample_policy(
+                client,
+                insurer,
+                "X-1",
+                &util::iso(util::today() - chrono::Duration::days(90)),
+            );
+            old_input.start_date = util::iso(util::today() - chrono::Duration::days(455));
+            let long_gone = policies::create(conn, &old_input)?;
+            let current = policies::create(
+                conn,
+                &sample_policy(
+                    client,
+                    insurer,
+                    "X-2",
+                    &util::iso(util::today() + chrono::Duration::days(120)),
+                ),
+            )?;
+
+            policies::set_status(conn, long_gone, "cancelled")?;
+            policies::set_status(conn, current, "cancelled")?;
+            policies::sync_statuses(conn)?;
+
+            // Cancelling is a decision somebody made; the calendar does not get
+            // to overrule it in either direction.
+            assert_eq!(policies::get(conn, long_gone)?.status, "cancelled");
+            assert_eq!(policies::get(conn, current)?.status, "cancelled");
+
+            let summary = dashboard::load(conn)?;
+            assert_eq!(summary.active_policies, 0);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn an_expiry_moved_forward_brings_a_policy_back() {
+    let temp = TempDb::new("revive");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Tara Menon"))?;
+            let insurer = insurers::find_or_create(conn, "Bajaj Allianz")?;
+
+            let start = util::iso(util::today() - chrono::Duration::days(370));
+            let mut input = sample_policy(
+                client,
+                insurer,
+                "R-1",
+                &util::iso(util::today() - chrono::Duration::days(5)),
+            );
+            input.start_date = start.clone();
+            let id = policies::create(conn, &input)?;
+
+            policies::sync_statuses(conn)?;
+            assert_eq!(policies::get(conn, id)?.status, "expired");
+
+            // The date was typed wrong and has been corrected.
+            let mut corrected = sample_policy(
+                client,
+                insurer,
+                "R-1",
+                &util::iso(util::today() + chrono::Duration::days(120)),
+            );
+            corrected.start_date = start;
+            policies::update(conn, id, &corrected)?;
+            assert_eq!(
+                policies::get(conn, id)?.status,
+                "expired",
+                "an edit that says nothing about status does not decide one"
+            );
+
+            policies::sync_statuses(conn)?;
+            assert_eq!(
+                policies::get(conn, id)?.status,
+                "active",
+                "the sweep reads the corrected date and puts it back"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn editing_a_policy_leaves_its_place_in_the_chain_alone() {
+    let temp = TempDb::new("edit");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Kabir Malhotra"))?;
+            let insurer = insurers::find_or_create(conn, "ICICI Lombard")?;
+            let first =
+                policies::create(conn, &sample_policy(client, insurer, "C-1", "2027-03-31"))?;
+            let second = policies::renew(
+                conn,
+                &RenewalInput {
+                    policy_id: first,
+                    policy_number: Some("C-2".into()),
+                    start_date: None,
+                    expiry_date: None,
+                    sum_insured: None,
+                    premium_amount: None,
+                    gst_amount: None,
+                    commission_rate: None,
+                    commission_expected: None,
+                    notes: None,
+                },
+            )?;
+            let before = policies::get(conn, second)?;
+
+            let mut edit = sample_policy(client, insurer, "C-2-revised", "2028-03-31");
+            edit.start_date = before.start_date.clone();
+            edit.premium_amount = Some(31_000.0);
+            policies::update(conn, second, &edit)?;
+
+            let after = policies::get(conn, second)?;
+            assert_eq!(after.policy_number, "C-2-revised");
+            assert_eq!(after.premium_amount, Some(31_000.0));
+            assert_eq!(after.chain_id, before.chain_id, "still the same policy");
+            assert_eq!(after.policy_year, 2);
+            assert_eq!(after.previous_policy_id, Some(first));
+            assert_eq!(
+                policies::get(conn, first)?.status,
+                "renewed",
+                "last year is not disturbed by an edit to this one"
+            );
+
+            // A status supplied deliberately is honoured.
+            let mut cancelling = sample_policy(client, insurer, "C-2-revised", "2028-03-31");
+            cancelling.start_date = before.start_date;
+            cancelling.status = Some("cancelled".into());
+            policies::update(conn, second, &cancelling)?;
+            assert_eq!(policies::get(conn, second)?.status, "cancelled");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn only_the_statuses_the_app_knows_are_accepted() {
+    let temp = TempDb::new("statuses");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Anil Kapoor"))?;
+            let insurer = insurers::find_or_create(conn, "Star Health")?;
+            let id = policies::create(conn, &sample_policy(client, insurer, "S-1", "2027-03-31"))?;
+
+            for status in ["active", "expired", "renewed", "lapsed", "cancelled"] {
+                policies::set_status(conn, id, status)?;
+                assert_eq!(policies::get(conn, id)?.status, status);
+            }
+
+            assert!(
+                matches!(
+                    policies::set_status(conn, id, "archived"),
+                    Err(crate::error::AppError::Validation(_))
+                ),
+                "a status the rest of the app cannot read is refused"
+            );
+            assert_eq!(
+                policies::get(conn, id)?.status,
+                "cancelled",
+                "and the refused write changes nothing"
+            );
+            assert!(matches!(
+                policies::set_status(conn, 9_999, "active"),
+                Err(crate::error::AppError::NotFound("Policy"))
+            ));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_chain_keeps_exactly_one_open_year() {
+    let temp = TempDb::new("chain-head");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Divya Krishnan"))?;
+            let insurer = insurers::find_or_create(conn, "Star Health")?;
+            let year_one =
+                policies::create(conn, &sample_policy(client, insurer, "Y-1", "2027-03-31"))?;
+
+            let renew_as = |conn: &_, previous, number: &str| {
+                policies::renew(
+                    conn,
+                    &RenewalInput {
+                        policy_id: previous,
+                        policy_number: Some(number.into()),
+                        start_date: None,
+                        expiry_date: None,
+                        sum_insured: None,
+                        premium_amount: None,
+                        gst_amount: None,
+                        commission_rate: None,
+                        commission_expected: None,
+                        notes: None,
+                    },
+                )
+            };
+            let year_two = renew_as(conn, year_one, "Y-2")?;
+            let year_three = renew_as(conn, year_two, "Y-3")?;
+
+            let chain = policies::chain(conn, year_two)?;
+            assert_eq!(
+                chain.iter().map(|p| p.policy_year).collect::<Vec<_>>(),
+                vec![1, 2, 3],
+                "the chain reads in order from any year in it"
+            );
+            assert_eq!(
+                chain.iter().filter(|p| !p.is_renewed).count(),
+                1,
+                "however long the chain, one year is open"
+            );
+            assert_eq!(chain[2].id, year_three);
+
+            let latest = policies::list(
+                conn,
+                &PolicyFilter {
+                    latest_only: Some(true),
+                    ..Default::default()
+                },
+            )?;
+            assert_eq!(latest.total, 1);
+            assert_eq!(latest.rows[0].id, year_three);
+
+            // Three years of history, one policy on the desk.
+            let everything = policies::list(conn, &PolicyFilter::default())?;
+            assert_eq!(everything.total, 3);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn deleting_a_year_leaves_the_earlier_ones_standing() {
+    let temp = TempDb::new("delete-year");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Rahul Verma"))?;
+            let insurer = insurers::find_or_create(conn, "Star Health")?;
+            let first =
+                policies::create(conn, &sample_policy(client, insurer, "D-1", "2027-03-31"))?;
+            let second = policies::renew(
+                conn,
+                &RenewalInput {
+                    policy_id: first,
+                    policy_number: Some("D-2".into()),
+                    start_date: None,
+                    expiry_date: None,
+                    sum_insured: None,
+                    premium_amount: None,
+                    gst_amount: None,
+                    commission_rate: None,
+                    commission_expected: None,
+                    notes: None,
+                },
+            )?;
+
+            policies::delete(conn, second)?;
+
+            let remaining = policies::chain(conn, first)?;
+            assert_eq!(remaining.len(), 1, "the year that was deleted is gone");
+            assert_eq!(remaining[0].id, first);
+            assert_eq!(
+                remaining[0].premium_amount,
+                Some(24_500.0),
+                "and the year before it is untouched"
+            );
+            assert!(
+                !remaining[0].is_renewed,
+                "with its successor removed it is the open year again"
+            );
+
+            assert!(matches!(
+                policies::get(conn, second),
+                Err(crate::error::AppError::NotFound("Policy"))
+            ));
+            assert!(matches!(
+                policies::delete(conn, second),
+                Err(crate::error::AppError::NotFound("Policy"))
+            ));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
 fn members_attach_only_to_their_own_client() {
     let temp = TempDb::new("members");
     temp.db
