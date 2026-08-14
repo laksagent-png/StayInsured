@@ -19,6 +19,7 @@ is building the app.
 | [Import your book](guide/import-your-book.md) | Every recognised column, the mapping, the dry run, failed rows |
 | [Manage clients](guide/clients.md) | Adding, finding, editing, archiving, deleting, exporting |
 | [Record insured members](guide/insured-members.md) | The lives covered under a floater |
+| [Keep the paperwork](guide/documents.md) | Attaching scans to a client or policy, and reading them back |
 | [Manage policies](guide/policies.md) | The policy form field by field, filters, statuses |
 | [Work the renewals](guide/renewals.md) | The urgency tabs, copy emails, recording a renewal, history |
 | [Send the reminders](guide/reminders.md) | The rule ladder, writing the messages, the daily run, the outbox |

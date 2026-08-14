@@ -29,6 +29,7 @@ export function installTauriMock({ fixtures, scenario = {} }) {
   const insurers = fixtures.insurers.map((row) => ({ ...row }));
   const products = fixtures.products.map((row) => ({ ...row }));
   const members = fixtures.members.map((row) => ({ ...row }));
+  const documents = fixtures.documents.map((row) => ({ ...row }));
   const settings = { ...fixtures.settings };
   const session = { ...fixtures.session, ...(scenario.session ?? {}) };
 
@@ -244,6 +245,15 @@ export function installTauriMock({ fixtures, scenario = {} }) {
     update_member: () => null,
     delete_member: () => null,
 
+    list_documents: ({ clientId }) =>
+      documents
+        .filter((row) => row.clientId === clientId)
+        .sort((a, b) => (a.uploadedAt < b.uploadedAt ? 1 : -1)),
+    attach_document: () => 99,
+    document_content: () => new ArrayBuffer(0),
+    save_document_copy: () => null,
+    delete_document: () => null,
+
     list_insurers: ({ includeInactive }) =>
       insurers.filter((row) => includeInactive || row.isActive),
     insurer_options: () =>
@@ -346,7 +356,10 @@ export function installTauriMock({ fixtures, scenario = {} }) {
     backup_now: () => `${session.dataDir}/backups/stayinsured-${fixtures.today}.db`,
     reveal_data_dir: () => null,
 
-    "plugin:dialog|open": () => "/Users/you/Documents/book-2026.xlsx",
+    "plugin:dialog|open": ({ options }) =>
+      (options?.filters?.[0]?.extensions ?? []).includes("pdf")
+        ? "/Users/you/Documents/star-health-renewal-2026.pdf"
+        : "/Users/you/Documents/book-2026.xlsx",
     "plugin:dialog|save": () => "/Users/you/Documents/stayinsured-export.xlsx",
     "plugin:dialog|message": () => null,
     "plugin:autostart|is_enabled": () => true,

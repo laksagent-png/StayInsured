@@ -7,9 +7,11 @@ use std::sync::Mutex;
 use crate::db::Database;
 use crate::importer::{self, ImportOptions};
 use crate::mail::{self, Outgoing};
-use crate::models::{ClientFilter, ClientInput, PolicyFilter, PolicyInput, RenewalInput};
+use crate::models::{
+    ClientFilter, ClientInput, DocumentInput, PolicyFilter, PolicyInput, RenewalInput,
+};
 use crate::reminders::{self, NoAlerts, SweepOptions};
-use crate::repo::{clients, dashboard, insurers, members, policies, products, settings};
+use crate::repo::{clients, dashboard, documents, insurers, members, policies, products, settings};
 use crate::templating;
 use crate::util;
 use crate::vault::Vault;
@@ -945,6 +947,132 @@ fn a_client_name_with_an_ampersand_cannot_break_the_message() {
             let mut raw = templating::Context::new();
             raw.set("digest_table", "<table><tr><td>1</td></tr></table>");
             assert!(templating::render("{{{digest_table}}}", &raw).starts_with("<table>"));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn documents_are_copied_into_the_book_and_survive_the_policy() {
+    let temp = TempDb::new("documents");
+    let source = temp.dir.join("schedule.pdf");
+    let bytes = b"%PDF-1.7 not really a pdf, but the bytes must come back exactly".to_vec();
+    std::fs::write(&source, &bytes).unwrap();
+
+    temp.db
+        .with(|conn| {
+            let client_id = clients::create(conn, &sample_client("Ananya Rao"))?;
+            let insurer_id = insurers::find_or_create(conn, "Star Health")?;
+            let policy_id = policies::create(
+                conn,
+                &sample_policy(client_id, insurer_id, "SH/2026/9", "2027-03-31"),
+            )?;
+
+            let id = documents::attach(
+                conn,
+                &DocumentInput {
+                    client_id,
+                    policy_id: Some(policy_id),
+                    title: None,
+                    path: source.to_string_lossy().to_string(),
+                },
+            )?;
+
+            let listed = documents::list_for_client(conn, client_id)?;
+            assert_eq!(listed.len(), 1);
+            assert_eq!(
+                listed[0].title, "schedule",
+                "the file name becomes the title"
+            );
+            assert_eq!(listed[0].mime_type, "application/pdf");
+            assert_eq!(listed[0].size_bytes, bytes.len() as i64);
+            assert_eq!(listed[0].policy_number.as_deref(), Some("SH/2026/9"));
+
+            assert_eq!(
+                documents::content(conn, id)?,
+                bytes,
+                "bytes must round trip"
+            );
+
+            // The agent's own copy is untouched: this is a copy in, not a move.
+            assert!(source.exists());
+
+            let again = documents::attach(
+                conn,
+                &DocumentInput {
+                    client_id,
+                    policy_id: None,
+                    title: Some("Second go".into()),
+                    path: source.to_string_lossy().to_string(),
+                },
+            );
+            assert!(
+                matches!(again, Err(crate::error::AppError::Conflict(_))),
+                "the same file twice on one client is a mis-click"
+            );
+
+            let text = temp.dir.join("notes.txt");
+            std::fs::write(&text, "not a scan").unwrap();
+            let rejected = documents::attach(
+                conn,
+                &DocumentInput {
+                    client_id,
+                    policy_id: None,
+                    title: None,
+                    path: text.to_string_lossy().to_string(),
+                },
+            );
+            assert!(matches!(
+                rejected,
+                Err(crate::error::AppError::Validation(_))
+            ));
+
+            // Deleting the policy keeps the paperwork on the client.
+            policies::delete(conn, policy_id)?;
+            let orphaned = documents::list_for_client(conn, client_id)?;
+            assert_eq!(orphaned.len(), 1);
+            assert_eq!(orphaned[0].policy_id, None);
+
+            documents::delete(conn, id)?;
+            assert!(documents::list_for_client(conn, client_id)?.is_empty());
+            let blobs: i64 =
+                conn.query_row("SELECT COUNT(*) FROM document_contents", [], |row| {
+                    row.get(0)
+                })?;
+            assert_eq!(blobs, 0, "the bytes go with the row");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn deleting_a_client_takes_their_documents() {
+    let temp = TempDb::new("documents-cascade");
+    let source = temp.dir.join("proposal.png");
+    std::fs::write(&source, b"\x89PNG\r\n\x1a\n pretend image").unwrap();
+
+    temp.db
+        .with(|conn| {
+            let client_id = clients::create(conn, &sample_client("Vikram Nair"))?;
+            documents::attach(
+                conn,
+                &DocumentInput {
+                    client_id,
+                    policy_id: None,
+                    title: Some("Proposal form".into()),
+                    path: source.to_string_lossy().to_string(),
+                },
+            )?;
+
+            clients::delete(conn, client_id)?;
+
+            let rows: i64 =
+                conn.query_row("SELECT COUNT(*) FROM documents", [], |row| row.get(0))?;
+            let blobs: i64 =
+                conn.query_row("SELECT COUNT(*) FROM document_contents", [], |row| {
+                    row.get(0)
+                })?;
+            assert_eq!((rows, blobs), (0, 0));
             Ok(())
         })
         .unwrap();

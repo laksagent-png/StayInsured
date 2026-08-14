@@ -4,6 +4,8 @@ import type {
   ClientFilter,
   ClientInput,
   Dashboard,
+  Document,
+  DocumentInput,
   EmailTemplate,
   EmailTemplateInput,
   ImportFieldInfo,
@@ -100,6 +102,14 @@ export const api = {
   createMember: (input: MemberInput) => call<number>("create_member", { input }),
   updateMember: (id: number, input: MemberInput) => call<void>("update_member", { id, input }),
   deleteMember: (id: number) => call<void>("delete_member", { id }),
+
+  // documents
+  listDocuments: (clientId: number) => call<Document[]>("list_documents", { clientId }),
+  attachDocument: (input: DocumentInput) => call<number>("attach_document", { input }),
+  /** Raw bytes rather than JSON, so a scan can go straight into a Blob. */
+  documentContent: (id: number) => call<ArrayBuffer>("document_content", { id }),
+  saveDocumentCopy: (id: number, path: string) => call<void>("save_document_copy", { id, path }),
+  deleteDocument: (id: number) => call<void>("delete_document", { id }),
 
   // insurers & products
   listInsurers: (includeInactive = false) =>

@@ -83,8 +83,8 @@ Click a client's name.
 ![Client page](screenshots/client-detail.png)
 
 Everything about them is on one page: contact details, the
-[members they cover](insured-members.md), and every policy they hold with its
-status and expiry date.
+[members they cover](insured-members.md), every policy they hold with its status
+and expiry date, and the [documents](documents.md) you have attached.
 
 From here you can **Edit** the client, **Add policy** without choosing the client
 again, add or remove members, and renew or edit any policy on the list.

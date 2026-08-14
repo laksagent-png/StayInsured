@@ -6,6 +6,7 @@ use crate::error::AppResult;
 const MIGRATIONS: &[(i32, &str)] = &[
     (1, include_str!("schema/001_init.sql")),
     (2, include_str!("schema/002_seed.sql")),
+    (3, include_str!("schema/003_documents.sql")),
 ];
 
 pub fn apply(tx: &Transaction) -> AppResult<()> {

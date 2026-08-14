@@ -160,6 +160,49 @@ pub struct MemberInput {
     pub notes: Option<String>,
 }
 
+// ---------------------------------------------------------------- documents
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Document {
+    pub id: i64,
+    pub client_id: i64,
+    pub policy_id: Option<i64>,
+    pub policy_number: Option<String>,
+    pub title: String,
+    pub file_name: String,
+    pub mime_type: String,
+    pub size_bytes: i64,
+    pub uploaded_at: String,
+}
+
+impl Document {
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            client_id: row.get(1)?,
+            policy_id: row.get(2)?,
+            policy_number: row.get(3)?,
+            title: row.get(4)?,
+            file_name: row.get(5)?,
+            mime_type: row.get(6)?,
+            size_bytes: row.get(7)?,
+            uploaded_at: row.get(8)?,
+        })
+    }
+}
+
+/// Attaching names the file to copy in; the bytes are read by the backend rather
+/// than carried across the bridge.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentInput {
+    pub client_id: i64,
+    pub policy_id: Option<i64>,
+    pub title: Option<String>,
+    pub path: String,
+}
+
 // ---------------------------------------------------------------- insurers & products
 
 #[derive(Debug, Serialize)]

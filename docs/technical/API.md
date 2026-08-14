@@ -1,7 +1,7 @@
 # API specification
 
 StayInsured has no HTTP API. Its API is the set of Tauri commands the Rust core
-exposes to the webview — 68 commands that are the only way the interface reaches
+exposes to the webview — 73 commands that are the only way the interface reaches
 data.
 
 The contract is defined in four files that must always agree:
@@ -196,6 +196,43 @@ ordered self, spouse, then everyone else by name.
 
 A member can only be attached to a policy belonging to their own client;
 `create_policy` and `update_policy` silently ignore ids from another client.
+
+## Documents
+
+| Command | Arguments | Returns |
+| --- | --- | --- |
+| `list_documents` | `clientId: number` | `Document[]` |
+| `attach_document` | `input: DocumentInput` | `number` |
+| `document_content` | `id: number` | `ArrayBuffer` |
+| `save_document_copy` | `id: number`, `path: string` | `void` |
+| `delete_document` | `id: number` | `void` |
+
+`DocumentInput` carries `clientId`, the `path` of the file to copy in, an
+optional `policyId` and an optional `title` that defaults to the file name
+without its extension. The backend reads the file itself, so the bytes never
+cross the bridge on the way in.
+
+**`attach_document` copies; it never moves.** The agent's own file is left where
+it is, and removing the attachment does not touch it.
+
+Accepted types are PDF, PNG, JPG and WEBP, decided by extension, and a single
+file may not exceed 20 MB. Anything else returns `validation` naming the limit.
+The same bytes attached twice to one client return `conflict`, matched on the
+SHA-256 the row stores; the same file across two clients is a shared form and is
+allowed.
+
+**`document_content` answers with raw bytes rather than JSON**, so a scan reaches
+the viewer without a base64 round trip. `api.documentContent` types it as an
+`ArrayBuffer`, which the interface turns into a `Blob` URL and revokes when the
+viewer closes. Bytes are written to disk only by `save_document_copy`, at a path
+the agent picks.
+
+`Document` responses carry metadata only — `title`, `fileName`, `mimeType`,
+`sizeBytes`, `uploadedAt` and the `policyNumber` of the policy they hang off,
+when they hang off one. Lists come back newest first.
+
+Errors: `validation` (unreadable path, unsupported type, empty file, over the
+size limit), `conflict` (already attached to this client), `not_found`.
 
 ## Insurers and plans
 

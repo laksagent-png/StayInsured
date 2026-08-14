@@ -124,7 +124,7 @@ const shots = [
   },
   {
     name: "client-detail",
-    caption: "Client page: contact details, members covered and every policy held",
+    caption: "Client page: contact details, members covered, every policy held and the paperwork behind them",
     route: "/clients/1",
   },
   {
@@ -135,6 +135,18 @@ const shots = [
       await page.getByRole("button", { name: "Add", exact: true }).first().click();
       await page.waitForTimeout(500);
     },
+  },
+  {
+    name: "client-documents",
+    caption: "Documents kept inside the encrypted book, filed against the policy they belong to",
+    route: "/clients/1",
+    element: ".card:has-text('Documents')",
+  },
+  {
+    name: "document-attach",
+    caption: "Attaching a scan: name it, and say which policy it belongs to",
+    route: "/clients/1",
+    prepare: click("Attach"),
   },
   {
     name: "policies",

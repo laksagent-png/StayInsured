@@ -96,6 +96,25 @@ export interface ClientFilter {
   pageSize?: number;
 }
 
+export interface Document {
+  id: number;
+  clientId: number;
+  policyId: number | null;
+  policyNumber: string | null;
+  title: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+}
+
+export interface DocumentInput {
+  clientId: number;
+  policyId?: number | null;
+  title?: string | null;
+  path: string;
+}
+
 export interface InsuredMember {
   id: number;
   clientId: number;

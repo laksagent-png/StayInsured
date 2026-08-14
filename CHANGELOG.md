@@ -5,6 +5,23 @@ settings survive every version below.
 
 ## Upcoming
 
+### Documents
+
+- **Keep the paperwork with the client.** Every client page has a Documents
+  panel: attach the policy schedule, the signed proposal, the RC book or an ID
+  proof, say which policy it belongs to, and open it from there. PDFs and
+  photographs both show in the app.
+- **The scans go inside your encrypted book**, not in a folder beside it, so your
+  backup carries them, your password protects them, and moving to a new computer
+  brings them along.
+- Attaching copies your file rather than moving it, so tidying your Downloads
+  folder afterwards costs you nothing. The download button writes a copy back out
+  wherever you choose, for sending a schedule on to a client.
+- PDF, PNG, JPG and WEBP, up to 20 MB each. The same file cannot land on one
+  client twice, matched on its contents rather than its name.
+- Deleting a client takes their paperwork with them. Deleting a policy does not:
+  last year's schedule stays on the client.
+
 ## 0.2.0 — 15 August 2026
 
 ### Reminders

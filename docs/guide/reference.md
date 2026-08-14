@@ -67,9 +67,9 @@ insurer" is three filters and a button.
 
 ## Still to come
 
-Stored scan copies of policy documents, claims tracking, premium and commission
-records, the printable report pack, and separate logins for your staff. Each is
-planned, and none of them is switched on today. The
+Claims tracking, premium and commission records, the printable report pack, and
+separate logins for your staff. Each is planned, and none of them is switched on
+today. The
 [release notes](https://laksagent-png.github.io/StayInsured/release-notes.html)
 record each one as it arrives.
 

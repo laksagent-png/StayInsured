@@ -92,6 +92,13 @@ const members = [
   { id: 6, clientId: 4, fullName: "Lakshmi Iyer", relationship: "mother", dateOfBirth: "1958-03-11", gender: "female" },
 ].map((row) => ({ notes: null, ...row }));
 
+const documents = [
+  { id: 1, clientId: 1, policyId: 2, policyNumber: "IL/MOT/778211", title: "Registration certificate", fileName: "mh12ab1234-rc.jpg", mimeType: "image/jpeg", sizeBytes: 736_120, uploadedAt: "2025-09-01 11:37:55" },
+  { id: 2, clientId: 1, policyId: 1, policyNumber: "SH/2025/0091823", title: "Policy schedule 2025-26", fileName: "star-health-schedule.pdf", mimeType: "application/pdf", sizeBytes: 412_336, uploadedAt: "2025-08-21 09:14:02" },
+  { id: 3, clientId: 1, policyId: 1, policyNumber: "SH/2025/0091823", title: "Proposal form, signed", fileName: "proposal-form-signed.pdf", mimeType: "application/pdf", sizeBytes: 1_284_910, uploadedAt: "2025-08-20 16:02:41" },
+  { id: 4, clientId: 1, policyId: null, policyNumber: null, title: "PAN card", fileName: "pan-abcps1234f.png", mimeType: "image/png", sizeBytes: 168_442, uploadedAt: "2024-08-19 10:21:08" },
+];
+
 const rawPolicies = [
   { id: 1, chainId: "chain-a", policyYear: 2, previousPolicyId: 101, policyNumber: "SH/2025/0091823", clientId: 1, insurerId: 1, productId: 1, category: "health", status: "active", startDate: "2025-08-20", expiryDate: "2026-08-21", sumInsured: 1000000, premiumAmount: 24500, gstAmount: 4410, commissionRate: 12.5, nomineeName: "Sneha Sharma", nomineeRelation: "Spouse", notes: "Floater covering three members." },
   { id: 2, chainId: "chain-b", policyYear: 1, policyNumber: "IL/MOT/778211", clientId: 1, insurerId: 3, productId: 4, category: "motor", status: "active", startDate: "2025-09-01", expiryDate: "2026-08-31", sumInsured: 850000, premiumAmount: 12800, gstAmount: 2304, commissionRate: 10, vehicleNumber: "MH12AB1234" },
@@ -535,11 +542,12 @@ export const fixtures = {
     initialised: true,
     unlocked: true,
     canUseKeychain: true,
-    schemaVersion: 2,
+    schemaVersion: 3,
     dataDir: "/Users/you/Library/Application Support/com.stayinsured.app",
   },
   clients,
   members,
+  documents,
   insurers,
   products,
   policies,

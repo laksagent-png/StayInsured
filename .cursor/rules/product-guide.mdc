@@ -25,6 +25,7 @@ landing page and `docs/technical/` is excluded from the site.
 | `import-your-book.md` | The import screen end to end, including the recognised-column tables |
 | `clients.md` | The clients list and the client form |
 | `insured-members.md` | Members on a client and on a policy |
+| `documents.md` | Attaching, viewing, saving and removing stored documents |
 | `policies.md` | The policies list, the policy form, statuses |
 | `renewals.md` | The renewals desk, renewing, policy history |
 | `insurers-and-plans.md` | The insurers screen |

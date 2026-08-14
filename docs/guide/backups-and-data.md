@@ -20,7 +20,8 @@ was taken (`stayinsured-20260814-093000.db`).
 
 The copy is encrypted with the same password as the live book, which is what
 makes it safe to keep in cloud storage. It is also a consistent snapshot, so you
-can take one with the app open and work in progress.
+can take one with the app open and work in progress. Scans you have attached are
+inside the book, so the backup carries those too.
 
 Take one before anything large: a big [import](import-your-book.md), a password
 change, or a machine upgrade.
@@ -51,10 +52,9 @@ Fourteen is the default and suits daily backups with a fortnight of history.
 
 | Inside | What it is |
 | --- | --- |
-| `stayinsured.db` | Your book — clients, policies, everything |
+| `stayinsured.db` | Your book — clients, policies, [documents](documents.md), everything |
 | `vault.json` | The encryption parameters. Useless without your password, but required with it |
 | `backups/` | Every backup taken on this machine |
-| `documents/` | Reserved for policy documents, which are not yet stored in the app |
 | `logs/` | Diagnostics, useful when reporting a problem |
 
 Everything the app writes is under that one folder, which is why moving it is a

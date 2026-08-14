@@ -4,8 +4,9 @@ The schema lives in `src-tauri/src/db/schema/`, applied by
 `src-tauri/src/db/migrations.rs`. Everything below is one encrypted SQLite
 database, `stayinsured.db`, opened through SQLCipher.
 
-Current schema version: **2** — `001_init.sql` (structure) and `002_seed.sql`
-(defaults). `session_state.schemaVersion` reports it at runtime.
+Current schema version: **3** — `001_init.sql` (structure), `002_seed.sql`
+(defaults) and `003_documents.sql` (stored files).
+`session_state.schemaVersion` reports it at runtime.
 
 ## Migration policy
 
@@ -23,6 +24,9 @@ schema fresh installs get. Any change is a new numbered file added to the list.
 erDiagram
     clients ||--o{ insured_members : has
     clients ||--o{ policies : holds
+    clients ||--o{ documents : keeps
+    policies ||--o{ documents : "evidenced by"
+    documents ||--|| document_contents : stores
     insurers ||--o{ products : offers
     insurers ||--o{ policies : underwrites
     products ||--o{ policies : "instantiated as"
@@ -89,6 +93,21 @@ Which insured members a policy year covers — `(policy_id, member_id)`, cascadi
 on both sides. The insert path only accepts members belonging to the policy's own
 client.
 
+### `documents` and `document_contents`
+
+Scans and paperwork, held **inside** the encrypted database rather than beside
+it. `documents` carries `client_id` (cascading), an optional `policy_id` set to
+`NULL` when the policy goes, `title`, `file_name`, `mime_type`, `size_bytes`,
+`sha256` and `uploaded_at`. `document_contents` holds the bytes, one row per
+document, cascading on delete.
+
+The split is not decorative. SQLite packs the beginning of a blob into the row's
+own page, so a listing that shared a table with the file bytes would page through
+megabytes of scan to read a column of titles.
+
+`UNIQUE (client_id, sha256)` makes attaching the same file to one client twice a
+`conflict`. Across clients it is a shared form, and stays allowed.
+
 ## Domains
 
 | Domain | Values | Enforced by |
@@ -129,6 +148,10 @@ These hold across the whole database and the code depends on them.
 9. **One rule sends to one policy year once.** `UNIQUE (rule_id, policy_id,
    policy_period)` on `notification_log`, written before the send is attempted,
    is what makes that true across restarts and repeated sweeps.
+10. **Everything the agent stores lives in this one file.** A backup is a single
+    `VACUUM INTO` of the database, so a scan kept beside it would be both the one
+    unencrypted part of a client's record and the one part a backup leaves
+    behind. This is why document bytes are a blob and not a path.
 
 ## Derived objects
 
@@ -234,7 +257,6 @@ their shape constrains the design of what is built.
 | --- | --- | --- |
 | `premium_payments` | Installment schedule and receipts | Empty |
 | `commissions` | Expected versus received payout | Empty; `policies` carries the summary fields the UI uses |
-| `claims` | Claim intimation through settlement | Empty |
-| `documents` | Scanned files against a client, policy, member or claim | Empty; `documents/` exists and the asset protocol is already scoped to it |
+| `claims` | Claim intimation through settlement | Empty; documents will hang off a claim the way they hang off a policy |
 | `audit_log` | Before and after JSON per change | Empty |
 | `saved_views` | Named filter sets per entity | Empty |

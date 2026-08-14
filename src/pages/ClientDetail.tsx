@@ -7,6 +7,7 @@ import { api, ApiError } from "../lib/api";
 import type { InsuredMember, MemberInput, Policy, PolicyFilter } from "../lib/types";
 import { date, initials, titleCase } from "../lib/format";
 import { ClientForm } from "../components/ClientForm";
+import { DocumentsPanel } from "../components/DocumentsPanel";
 import { PolicyForm } from "../components/PolicyForm";
 import { PolicyTable } from "../components/PolicyTable";
 import { RenewModal } from "../components/RenewModal";
@@ -265,6 +266,8 @@ export function ClientDetailPage() {
           emptyDescription="Add the client's first policy to start tracking renewals."
         />
       </Card>
+
+      <DocumentsPanel clientId={clientId} />
 
       <ClientForm open={editOpen} client={data} onClose={() => setEditOpen(false)} />
       <PolicyForm

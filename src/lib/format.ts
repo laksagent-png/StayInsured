@@ -27,6 +27,11 @@ export function count(value: number): string {
   return new Intl.NumberFormat("en-IN").format(value);
 }
 
+export function fileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 export function date(value: string | null | undefined): string {
   if (!value) return "—";
   try {

@@ -123,8 +123,8 @@ npm run check          # typecheck, then rustfmt, clippy and the Rust tests
 ```
 
 Rust tests cover the data layer end to end — migrations, renewal chains, status
-rules, import idempotency, export, backup, and the reminder engine against a
-recording fake mailer. To run them alone:
+rules, import idempotency, export, backup, documents, and the reminder engine
+against a recording fake mailer. To run them alone:
 
 ```bash
 cd src-tauri && cargo test --lib
@@ -223,8 +223,9 @@ where `latest.json` is among the assets.
 | Linux | `~/.local/share/com.stayinsured.app` |
 
 Inside: `stayinsured.db` (encrypted), `vault.json` (key derivation parameters —
-not the key), `documents/`, `backups/`, `logs/`. **Settings → Reveal data
-folder** opens it.
+not the key), `backups/`, `logs/`. **Settings → Reveal data folder** opens it.
+Attached documents are blobs in the database rather than files on disk, so the
+whole book is one file.
 
 Backups are encrypted copies of the database. Point the backup folder at a
 Google Drive or Dropbox directory if you want them off the machine.

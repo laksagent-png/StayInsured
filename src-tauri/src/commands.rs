@@ -11,8 +11,8 @@ use crate::mail::{Mailer, SmtpConfig};
 use crate::models::*;
 use crate::reminders::SweepOptions;
 use crate::repo::{
-    clients, dashboard, insurers, members, notifications, policies, products, rules, settings,
-    templates,
+    clients, dashboard, documents, insurers, members, notifications, policies, products, rules,
+    settings, templates,
 };
 use crate::state::AppState;
 use crate::{exporter, mail, reminders, templating, util, vault};
@@ -284,6 +284,40 @@ pub fn update_member(state: State<AppState>, id: i64, input: MemberInput) -> App
 #[tauri::command]
 pub fn delete_member(state: State<AppState>, id: i64) -> AppResult<()> {
     state.db()?.with_tx(|tx| members::delete(tx, id))
+}
+
+// ------------------------------------------------------------------ documents
+
+#[tauri::command]
+pub fn list_documents(state: State<AppState>, client_id: i64) -> AppResult<Vec<Document>> {
+    state
+        .db()?
+        .with(|conn| documents::list_for_client(conn, client_id))
+}
+
+#[tauri::command]
+pub fn attach_document(state: State<AppState>, input: DocumentInput) -> AppResult<i64> {
+    state.db()?.with_tx(|tx| documents::attach(tx, &input))
+}
+
+/// The stored bytes, sent raw rather than as JSON so that opening a scan does not
+/// cost a base64 round trip through the bridge.
+#[tauri::command]
+pub fn document_content(state: State<AppState>, id: i64) -> AppResult<tauri::ipc::Response> {
+    let bytes = state.db()?.with(|conn| documents::content(conn, id))?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+#[tauri::command]
+pub fn save_document_copy(state: State<AppState>, id: i64, path: String) -> AppResult<()> {
+    let bytes = state.db()?.with(|conn| documents::content(conn, id))?;
+    std::fs::write(&path, bytes)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_document(state: State<AppState>, id: i64) -> AppResult<()> {
+    state.db()?.with_tx(|tx| documents::delete(tx, id))
 }
 
 // ------------------------------------------------------------------ insurers & products

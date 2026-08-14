@@ -89,7 +89,9 @@ new machine is a single folder copy.
 | Windows | `%APPDATA%\com.stayinsured.app` |
 | Linux | `~/.local/share/com.stayinsured.app` |
 
-It holds `stayinsured.db`, `vault.json`, `documents/`, `backups/` and `logs/`.
+It holds `stayinsured.db`, `vault.json`, `backups/` and `logs/`. Scanned
+documents are not among them: they are blobs inside the database, so the book is
+one file to copy and one file to encrypt.
 
 ## Security model
 
@@ -240,6 +242,30 @@ then phone, then name — and the importer depends on that order.
 Archiving is the soft option and the default one offered in the UI; deleting a
 client cascades to their policies.
 
+### Stored documents
+
+Scans live in the database as blobs, not as files beside it. The alternative —
+a `documents/` folder addressed by path — was the original scaffolding, and it
+fails the two promises the app is built on: the folder would be the one
+unencrypted part of a client's record, and `backup_now` is a single `VACUUM INTO`
+of the database, so those files would be the one part a backup silently left
+behind.
+
+The bytes therefore travel a deliberate route. Attaching passes a **path**, and
+`repo::documents::attach` reads the file itself, so nothing large crosses the
+bridge as JSON. Reading passes **raw bytes** back through `tauri::ipc::Response`
+rather than base64, and the interface turns them into a `Blob` URL that it revokes
+when the viewer closes. Bytes reach the disk again only through
+`save_document_copy`, at a path the agent chose. Attaching is a copy, never a
+move: the agent's own file is untouched, so removing an attachment cannot lose
+the original.
+
+Three limits keep the book a size that can still be copied on every backup: 20 MB
+per file, PDF, PNG, JPG and WEBP only, and `UNIQUE (client_id, sha256)` so the
+same file attached twice to one client is refused as the mis-click it is. A
+document hangs off a client, and optionally off one of their policies; deleting
+that policy sets the link to `NULL` rather than shredding the paperwork.
+
 ## Import pipeline
 
 Import is the highest-risk operation in the app: it takes an unknown file and
@@ -374,9 +400,11 @@ from it, so the two cannot say different things.
   two languages and must be edited together.
 
 Window and permissions are deliberately narrow: 1440×900 with a 1024×680
-minimum, a CSP of `default-src 'self'`, the asset protocol scoped to
-`$APPDATA/documents/**`, and a capability file granting only dialog,
-notification, opener, autostart, updater, restart and window dragging.
+minimum, a CSP of `default-src 'self'` widened only to `blob:` for images and
+frames so the document viewer can render what it has just read out of the
+database, and a capability file granting only dialog, notification, opener,
+autostart, updater, restart and window dragging. There is no asset protocol,
+because nothing the app displays comes from a file on disk.
 
 ## Error model
 
@@ -431,6 +459,9 @@ database in a temporary directory, with no window:
 - a template fills in the policy, refuses unknown names, and cannot be broken by
   a client name containing an ampersand
 - the plain-text part keeps the shape of the HTML it was derived from
+- a document copies into the book byte for byte, refuses a second copy of itself,
+  refuses a type that is not a scan, and outlives the policy it was filed under
+- deleting a client takes their documents and the bytes with them
 
 Run them with `cd src-tauri && cargo test --lib`. The frontend is covered by
 `tsc --noEmit`; there is no UI test suite.
@@ -493,13 +524,14 @@ installs have to be replaced by hand once.
 Working today: clients and insured members, policies with renewal chains, the
 renewals desk, the dashboard, insurers and plans, spreadsheet import with a dry
 run, export, reminders — rules, templates, the outbox and the daily sweep over
-the agent's own SMTP server — settings, encrypted backups, lock and unlock, and
-signed self-updating from the GitHub release.
+the agent's own SMTP server — stored documents, settings, encrypted backups, lock
+and unlock, and signed self-updating from the GitHub release.
 
 The schema still carries tables that no screen writes to: `premium_payments`,
-`commissions`, `claims`, `documents`, `audit_log` and `saved_views`. They exist
-because their shape affects the design of what is built.
+`commissions`, `claims`, `audit_log` and `saved_views`. They exist because their
+shape affects the design of what is built.
 
-Unbuilt, in the order they are worth building: the reporting pack, document
-storage against a policy, premium and commission tracking, claims, and multi-user
-logins. The [README](../README.md) is the running list.
+Unbuilt, in the order they are worth building: the reporting pack, premium and
+commission tracking, claims, and multi-user logins. Claims come after documents
+on purpose — an intimation without the letter attached to it is half a record.
+The [README](../README.md) is the running list.

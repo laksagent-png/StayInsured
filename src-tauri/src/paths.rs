@@ -11,7 +11,6 @@ pub struct AppPaths {
     pub root: PathBuf,
     pub database: PathBuf,
     pub vault: PathBuf,
-    pub documents: PathBuf,
     pub backups: PathBuf,
     pub logs: PathBuf,
 }
@@ -26,13 +25,12 @@ impl AppPaths {
         let paths = Self {
             database: root.join("stayinsured.db"),
             vault: root.join("vault.json"),
-            documents: root.join("documents"),
             backups: root.join("backups"),
             logs: root.join("logs"),
             root,
         };
 
-        for dir in [&paths.root, &paths.documents, &paths.backups, &paths.logs] {
+        for dir in [&paths.root, &paths.backups, &paths.logs] {
             std::fs::create_dir_all(dir)?;
         }
 

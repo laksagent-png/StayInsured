@@ -96,7 +96,8 @@ or PAN. Narrow by city, by the kind of cover they hold, by who has no email
 address on file, or show archived clients.
 
 **Client page** — one client in full: contact details, the family members covered
-under their policies, and every policy they hold, past and present.
+under their policies, every policy they hold, past and present, and the scanned
+paperwork behind them.
 
 **Policies** — every policy you have placed, searchable by policy number, client
 name or vehicle number, filterable by category, status and expiry window.
@@ -184,6 +185,23 @@ separately, because each falls due at its own time.
 Family members covered under a policy are recorded on the client too, so you know
 who is on the family floater without opening the paperwork.
 
+## The paperwork itself
+
+The **Documents** panel on a client page holds the scans: the policy schedule,
+the signed proposal, the RC book, the PAN card. Attach a PDF or a photograph, say
+which policy it belongs to, and it opens in the app whenever you need it. The app
+takes a copy rather than moving your file, so tidying your Downloads folder later
+costs you nothing.
+
+They go **inside your encrypted book**, not into a folder beside it. That means
+your backup carries them, your password protects them, and moving to a new
+computer moves them too — there is no second pile to remember. Files can be PDF,
+PNG, JPG or WEBP, up to 20 MB each, and the same file cannot be attached to one
+client twice.
+
+The download button on any row writes a copy wherever you choose, which is how
+you send a schedule on to a client.
+
 ---
 
 ## Reminders
@@ -223,7 +241,8 @@ If you would rather write to people yourself, the **Renewals** screen and its
 
 ## Backups
 
-Your data lives in one encrypted file, so backing up means copying that file.
+Your data lives in one encrypted file — clients, policies, settings and every
+scan you have attached — so backing up means copying that file.
 
 Under **Settings → Data & backups** you can **Back up now** at any time, and set
 **Copy backups to** — a folder of your choosing. Point it at your Google Drive or
@@ -276,6 +295,5 @@ but do not attach a file containing real client details.
 
 ## Still to come
 
-Being honest about what is not built yet: the printable report pack, storing
-scanned policy documents against a client, premium and commission records,
-claims tracking, and logins for more than one person.
+Being honest about what is not built yet: the printable report pack, premium and
+commission records, claims tracking, and logins for more than one person.
