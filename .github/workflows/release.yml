@@ -1,0 +1,122 @@
+name: Build installers
+
+# Tagging a version publishes a release with installers attached. Running the
+# workflow by hand builds the same installers and leaves them as artifacts on
+# the run, which is the way to test a build without announcing a version.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One universal binary covers both Apple Silicon and Intel Macs, so
+          # users are not asked which chip they have.
+          - platform: macos-latest
+            target: universal-apple-darwin
+            label: macOS
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: Windows
+            rust-targets: x86_64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Check the tag matches the app version
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "v$version" != "${{ github.ref_name }}" ]; then
+            echo "Tag ${{ github.ref_name }} does not match app version $version." >&2
+            echo "Bump the version in src-tauri/tauri.conf.json, src-tauri/Cargo.toml" >&2
+            echo "and package.json, then retag. Otherwise the installers ship" >&2
+            echo "under a version number nobody asked for." >&2
+            exit 1
+          fi
+
+      # The encrypted database vendors OpenSSL, and building it needs Perl and
+      # NASM. The runner image ships both today; this is here so a change to the
+      # image fails as a clear message rather than a wall of C errors.
+      - name: Check the OpenSSL build tools are present
+        if: matrix.label == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command perl -ErrorAction SilentlyContinue)) {
+            choco install -y strawberryperl
+          }
+          if (-not (Get-Command nasm -ErrorAction SilentlyContinue)) {
+            choco install -y nasm
+            "C:\Program Files\NASM" | Out-File -FilePath $env:GITHUB_PATH -Append
+          }
+
+      - run: npm ci
+
+      # The data layer holds the money and the renewal dates. A release should
+      # not be cut while its tests are failing.
+      - name: Test the data layer
+        if: matrix.label == 'macOS'
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      - name: Build the installers
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target ${{ matrix.target }}
+          # Empty means no release is created, which is what a manual run wants.
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: StayInsured ${{ github.ref_name }}
+          releaseDraft: false
+          prerelease: false
+          releaseBody: |
+            Download the installer for your machine below.
+
+            **macOS**: open the `.dmg` and drag StayInsured to Applications. The
+            app is not signed with an Apple certificate, so the first launch
+            needs a right-click on the app and then Open, rather than a
+            double-click. macOS remembers the choice.
+
+            **Windows**: run the `.exe` installer. Windows SmartScreen will warn
+            about an unknown publisher, since the app is not signed; choose More
+            info and then Run anyway.
+
+            Your data stays on your machine in an encrypted database. Upgrading
+            keeps it: the installer replaces the app, not the data folder.
+
+      - name: Keep the installers when there is no release to attach them to
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: StayInsured-${{ matrix.label }}
+          if-no-files-found: error
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe

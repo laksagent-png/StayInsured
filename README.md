@@ -6,6 +6,22 @@ your machine in an encrypted database; nothing is sent anywhere.
 Runs on macOS, Windows and Linux from the same codebase (Tauri 2: a Rust core
 with a React user interface).
 
+## Download
+
+Installers for macOS and Windows are attached to each release:
+https://github.com/laksagent-png/StayInsured/releases
+
+Neither is code-signed, so both operating systems will object the first time:
+
+- **macOS** — right-click the app and choose Open instead of double-clicking.
+  Double-clicking an unsigned app gives a dead end; right-click gives an Open
+  button. Only needed once.
+- **Windows** — SmartScreen warns about an unknown publisher. Choose More info,
+  then Run anyway.
+
+Signing removes both warnings but needs a paid Apple Developer account and a
+Windows code-signing certificate.
+
 ## What it does today
 
 - **Clients** — contact details, addresses, insured family members, archive
@@ -67,6 +83,26 @@ rules, import idempotency, export, backup:
 ```bash
 cd src-tauri && cargo test --lib
 ```
+
+## Cutting a release
+
+GitHub Actions builds both installers. Bump the version in the three places
+that carry it, then tag:
+
+```bash
+# src-tauri/tauri.conf.json, src-tauri/Cargo.toml, package.json
+git commit -am "Release 0.2.0"
+git tag v0.2.0
+git push origin main --tags
+```
+
+The workflow refuses to build if the tag and the app version disagree, so the
+installers can never ship under the wrong number. It publishes a release with a
+universal macOS `.dmg` and a Windows `.exe` and `.msi`.
+
+To test a build without announcing a version, run the **Build installers**
+workflow by hand from the Actions tab; it attaches the installers to the run
+instead of creating a release.
 
 ## First run
 
