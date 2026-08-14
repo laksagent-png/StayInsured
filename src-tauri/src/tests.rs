@@ -8,7 +8,8 @@ use crate::db::Database;
 use crate::importer::{self, ImportOptions};
 use crate::mail::{self, Outgoing};
 use crate::models::{
-    ClientFilter, ClientInput, DocumentInput, MemberInput, PolicyFilter, PolicyInput, RenewalInput,
+    ClientFilter, ClientInput, DocumentInput, InsurerInput, MemberInput, PolicyFilter, PolicyInput,
+    ProductInput, RenewalInput,
 };
 use crate::reminders::{self, NoAlerts, SweepOptions};
 use crate::repo::{clients, dashboard, documents, insurers, members, policies, products, settings};
@@ -597,6 +598,211 @@ fn two_insurers_may_each_use_the_same_policy_number() {
             assert!(
                 other.is_ok(),
                 "a number is only spoken for within the insurer that issued it"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+fn sample_insurer(name: &str, short_code: &str, active: bool) -> InsurerInput {
+    InsurerInput {
+        name: name.into(),
+        short_code: Some(short_code.into()),
+        website: None,
+        claim_helpline: None,
+        support_email: None,
+        notes: None,
+        is_active: Some(active),
+    }
+}
+
+fn sample_product(insurer_id: i64, name: &str) -> ProductInput {
+    ProductInput {
+        insurer_id,
+        name: name.into(),
+        category: "health".into(),
+        code: None,
+        notes: None,
+        is_active: Some(true),
+    }
+}
+
+#[test]
+fn an_insurer_carrying_policies_is_retired_rather_than_deleted() {
+    let temp = TempDb::new("insurer-guard");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Nikhil Jain"))?;
+            let insurer = insurers::create(
+                conn,
+                &sample_insurer("Zenith General Insurance", "zen", true),
+            )?;
+            let plan = products::create(conn, &sample_product(insurer, "Zenith Secure"))?;
+
+            let mut input = sample_policy(client, insurer, "Z-1", "2027-03-31");
+            input.product_id = Some(plan);
+            let policy = policies::create(conn, &input)?;
+
+            let message = match insurers::delete(conn, insurer) {
+                Err(crate::error::AppError::Conflict(message)) => message,
+                _ => panic!("an insurer holding policies must not be deletable"),
+            };
+            assert!(
+                message.contains('1') && message.contains("Deactivate"),
+                "the refusal says how many are in the way and what to do instead: {message}"
+            );
+
+            // Deactivating is the way to retire one, and it leaves the history
+            // behind it readable.
+            insurers::update(
+                conn,
+                insurer,
+                &sample_insurer("Zenith General Insurance", "ZEN", false),
+            )?;
+            assert!(!insurers::list(conn, false)?.iter().any(|i| i.id == insurer));
+            assert!(insurers::list(conn, true)?.iter().any(|i| i.id == insurer));
+            assert!(
+                !insurers::lookup(conn)?.iter().any(|i| i.id == insurer),
+                "a retired insurer is off the pickers for new policies"
+            );
+            assert_eq!(
+                policies::get(conn, policy)?.insurer_name,
+                "Zenith General Insurance"
+            );
+
+            // Once nothing points at it, it can go, and its plans go with it.
+            policies::delete(conn, policy)?;
+            insurers::delete(conn, insurer)?;
+            let plans_left: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM products WHERE id = ?1",
+                [plan],
+                |row| row.get(0),
+            )?;
+            assert_eq!(plans_left, 0);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn deleting_a_plan_leaves_the_policies_that_used_it() {
+    let temp = TempDb::new("plan-delete");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Sneha Patil"))?;
+            let insurer = insurers::find_or_create(conn, "Star Health")?;
+            let plan = products::create(conn, &sample_product(insurer, "Family Health Optima"))?;
+
+            let mut input = sample_policy(client, insurer, "P-1", "2027-03-31");
+            input.product_id = Some(plan);
+            let policy = policies::create(conn, &input)?;
+            assert_eq!(policies::get(conn, policy)?.product_id, Some(plan));
+
+            products::delete(conn, plan)?;
+
+            // A catalogue tidy-up must not take a policy year with it.
+            let after = policies::get(conn, policy)?;
+            assert_eq!(after.product_id, None, "the policy forgets which plan");
+            assert_eq!(after.product_name, None);
+            assert_eq!(after.premium_amount, Some(24_500.0), "and keeps the rest");
+            assert_eq!(after.status, "active");
+
+            assert!(matches!(
+                products::delete(conn, plan),
+                Err(crate::error::AppError::NotFound("Plan"))
+            ));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn an_abbreviated_insurer_name_finds_the_one_already_in_the_book() {
+    let temp = TempDb::new("insurer-matching");
+    temp.db
+        .with(|conn| {
+            let seeded = insurers::list(conn, true)?.len();
+
+            // Spreadsheets write the short version; the seed carries the long one.
+            let star = insurers::find_or_create(conn, "Star Health")?;
+            let matched = insurers::list(conn, true)?
+                .into_iter()
+                .find(|i| i.id == star)
+                .expect("the insurer it matched should be in the list");
+            assert_eq!(matched.name, "Star Health and Allied Insurance");
+            assert_eq!(
+                insurers::list(conn, true)?.len(),
+                seeded,
+                "matching an abbreviation must not add a second version of it"
+            );
+
+            assert_eq!(
+                insurers::find_or_create(conn, "  star health and allied insurance  ")?,
+                star,
+                "case and surrounding space are not a different insurer"
+            );
+            assert_eq!(
+                insurers::find_or_create(conn, "STAR")?,
+                star,
+                "nor is the short code"
+            );
+
+            // A name nothing matches is added rather than guessed at.
+            let fresh = insurers::find_or_create(conn, "Zenith General Insurance")?;
+            assert_eq!(insurers::list(conn, true)?.len(), seeded + 1);
+            assert_eq!(
+                insurers::find_or_create(conn, "Zenith General Insurance Company Limited")?,
+                fresh,
+                "a longer spelling of the same name is the same insurer"
+            );
+            assert_eq!(insurers::list(conn, true)?.len(), seeded + 1);
+
+            assert!(matches!(
+                insurers::find_or_create(conn, "   "),
+                Err(crate::error::AppError::Validation(_))
+            ));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_plan_is_unique_to_its_insurer_and_needs_a_known_category() {
+    let temp = TempDb::new("plans");
+    temp.db
+        .with(|conn| {
+            let star = insurers::find_or_create(conn, "Star Health")?;
+            let care = insurers::find_or_create(conn, "Care Health")?;
+
+            let first = products::create(conn, &sample_product(star, "Family Health Optima"))?;
+            assert!(
+                matches!(
+                    products::create(conn, &sample_product(star, "Family Health Optima")),
+                    Err(crate::error::AppError::Conflict(_))
+                ),
+                "one insurer cannot list the same plan twice"
+            );
+            products::create(conn, &sample_product(care, "Family Health Optima"))?;
+
+            let mut nonsense = sample_product(star, "Odd One Out");
+            nonsense.category = "spaceship".into();
+            assert!(matches!(
+                products::create(conn, &nonsense),
+                Err(crate::error::AppError::Validation(_))
+            ));
+
+            // The importer resolves a plan name within the insurer, and declines
+            // to invent one from an empty cell.
+            assert_eq!(
+                products::find_or_create(conn, star, "Family Health Optima", "health")?,
+                Some(first)
+            );
+            assert_eq!(products::find_or_create(conn, star, "   ", "health")?, None);
+            assert!(products::find_or_create(conn, star, "Young Star", "health")?.is_some());
+            assert_eq!(
+                products::list(conn, Some(star), false)?.len(),
+                2,
+                "only the two plans that insurer actually offers"
             );
             Ok(())
         })

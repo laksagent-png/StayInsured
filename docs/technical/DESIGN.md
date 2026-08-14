@@ -458,6 +458,13 @@ database in a temporary directory, with no window:
 - a chain keeps exactly one open year however many times it is renewed
 - deleting a year leaves the earlier ones standing
 - a member from another client cannot be attached to a policy
+- an insurer holding policies is refused deletion and retired instead, and
+  retiring one leaves its policies readable
+- deleting a plan detaches it from the policies that used it rather than
+  taking them with it
+- an abbreviated insurer name matches the one already in the book, and only a
+  name nothing matches is added
+- a plan is unique to its insurer and must carry a known category
 - a messy spreadsheet maps correctly, a dry run writes nothing, and re-importing
   updates in place instead of duplicating
 - an unmapped required field refuses the import
