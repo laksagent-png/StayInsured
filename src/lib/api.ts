@@ -4,6 +4,8 @@ import type {
   ClientFilter,
   ClientInput,
   Dashboard,
+  EmailTemplate,
+  EmailTemplateInput,
   ImportFieldInfo,
   ImportOptions,
   ImportPreview,
@@ -13,14 +15,23 @@ import type {
   InsurerInput,
   LookupItem,
   MemberInput,
+  Notification,
+  NotificationFilter,
   Page,
+  Placeholder,
+  PlannedReminder,
   Policy,
   PolicyFilter,
   PolicyInput,
   Product,
   ProductInput,
+  ReminderOverview,
+  ReminderRule,
+  ReminderRuleInput,
+  ReminderRun,
   RenewalInput,
   SessionState,
+  TemplatePreview,
 } from "./types";
 
 export type ErrorKind =
@@ -30,6 +41,7 @@ export type ErrorKind =
   | "validation"
   | "not_found"
   | "conflict"
+  | "mail"
   | "internal";
 
 /** Errors cross the bridge as `{ kind, message }`; this restores that shape. */
@@ -125,6 +137,33 @@ export const api = {
     call<number>("export_policies", { filter, path }),
   exportClients: (filter: ClientFilter, path: string) =>
     call<number>("export_clients", { filter, path }),
+
+  // message templates
+  listTemplates: () => call<EmailTemplate[]>("list_templates"),
+  createTemplate: (input: EmailTemplateInput) => call<number>("create_template", { input }),
+  updateTemplate: (id: number, input: EmailTemplateInput) =>
+    call<void>("update_template", { id, input }),
+  deleteTemplate: (id: number) => call<void>("delete_template", { id }),
+  templatePlaceholders: () => call<Placeholder[]>("template_placeholders"),
+  previewTemplate: (subject: string, bodyHtml: string) =>
+    call<TemplatePreview>("preview_template", { subject, bodyHtml }),
+
+  // reminder rules
+  listRules: () => call<ReminderRule[]>("list_rules"),
+  createRule: (input: ReminderRuleInput) => call<number>("create_rule", { input }),
+  updateRule: (id: number, input: ReminderRuleInput) => call<void>("update_rule", { id, input }),
+  deleteRule: (id: number) => call<void>("delete_rule", { id }),
+
+  // reminders
+  reminderOverview: () => call<ReminderOverview>("reminder_overview"),
+  planReminders: () => call<PlannedReminder[]>("plan_reminders"),
+  runReminders: (dryRun?: boolean) => call<ReminderRun>("run_reminders", { dryRun: dryRun ?? null }),
+  listNotifications: (filter: NotificationFilter) =>
+    call<Page<Notification>>("list_notifications", { filter }),
+  retryNotification: (id: number) => call<void>("retry_notification", { id }),
+  cancelNotification: (id: number) => call<void>("cancel_notification", { id }),
+  setSmtpPassword: (password: string | null) => call<void>("set_smtp_password", { password }),
+  sendTestEmail: (to: string) => call<void>("send_test_email", { to }),
 
   // settings & maintenance
   getSettings: () => call<Record<string, string>>("get_settings"),

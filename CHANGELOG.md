@@ -3,6 +3,36 @@
 Upgrading replaces the app and never the data: your book, your backups and your
 settings survive every version below.
 
+## Upcoming
+
+## 0.2.0 — 15 August 2026
+
+### Reminders
+
+- **The app writes to your clients before their cover runs out.** A ladder of
+  rules — 60, 30, 15, 7 and 1 day before expiry out of the box, with a
+  week-after chaser you can switch on — decides who hears from you and when.
+  Change any rung, switch one off, add your own, or limit one to a kind of
+  cover.
+- **Write the messages in the app.** The editor fills your wording in with a
+  real policy from your book as you type, so you read what the client will read,
+  and it points at a placeholder you have misspelt before it can reach anyone.
+- **Mail goes out through your own mailbox** under **Settings → Sending email**,
+  so replies come back to you and nobody else holds your client list. **Send
+  test** proves the details before a client depends on them. The password is
+  kept in your computer's password manager, never in your book or a backup.
+- **It starts in practice mode.** Everything is worked out and nothing is sent,
+  so you can read a week of messages before switching sending on.
+- **A daily run at a time you choose**, whether or not the window is open. A
+  computer that was asleep at nine catches up when you open it, and still only
+  runs once.
+- **The Reminders screen** shows what is due today, your rules, your messages,
+  and what happened to every message. Anything that failed can be sent again.
+- Nobody gets the same reminder twice, clients who asked not to be contacted are
+  left out, clients with no address are reported rather than passed over in
+  silence, renewing a policy calls off the reminders queued for it, and what is
+  over your daily limit waits for tomorrow.
+
 ## 0.1.0 — 15 August 2026
 
 The first release. Everything below is new.
@@ -60,3 +90,4 @@ The first release. Everything below is new.
 Automatic reminder emails, stored policy documents, claims tracking, the
 printable report pack, and separate logins for staff. Each is planned, and none
 of them is switched on in this version.
+

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
+  BellRing,
   Building2,
   CalendarClock,
   FileSpreadsheet,
@@ -19,6 +20,7 @@ import { Badge, Button, Input } from "./ui";
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/renewals", label: "Renewals", icon: CalendarClock, badge: "renewals" },
+  { to: "/reminders", label: "Reminders", icon: BellRing, badge: "reminders" },
   { to: "/clients", label: "Clients", icon: Users },
   { to: "/policies", label: "Policies", icon: ShieldCheck },
   { to: "/insurers", label: "Insurers & plans", icon: Building2 },
@@ -34,6 +36,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const dashboard = useQuery({ queryKey: ["dashboard"], queryFn: api.dashboard });
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
+  const reminders = useQuery({ queryKey: ["reminderOverview"], queryFn: api.reminderOverview });
 
   const lock = useMutation({
     mutationFn: api.lock,
@@ -56,6 +59,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   const dueCount = dashboard.data?.expiringThisMonth ?? 0;
+  // Reminders needing attention: what is due to go out plus anything that failed.
+  const reminderCount = (reminders.data?.dueToday ?? 0) + (reminders.data?.failed ?? 0);
   const providerName = settings.data?.provider_name || "StayInsured";
 
   return (
@@ -92,6 +97,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="flex-1">{label}</span>
               {"badge" in rest && rest.badge === "renewals" && dueCount > 0 && (
                 <Badge tone="warning">{dueCount}</Badge>
+              )}
+              {"badge" in rest && rest.badge === "reminders" && reminderCount > 0 && (
+                <Badge tone={reminders.data?.failed ? "danger" : "info"}>{reminderCount}</Badge>
               )}
             </NavLink>
           ))}

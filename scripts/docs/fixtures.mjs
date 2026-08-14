@@ -15,6 +15,25 @@ function daysUntil(iso) {
   return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(2026, 7, 14)) / DAY);
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Matches how the app writes a date on screen: 21 Aug 2026. */
+function formatDay(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${d} ${MONTHS[m - 1]} ${y}`;
+}
+
+const categoryLabels = {
+  health: "Health",
+  life: "Life",
+  motor: "Motor",
+  travel: "Travel / International",
+  home: "Home",
+  personal_accident: "Personal Accident",
+  critical_illness: "Critical Illness",
+  other: "Other",
+};
+
 const insurers = [
   { id: 1, name: "Star Health", shortCode: "STAR", claimHelpline: "1800 425 2255", supportEmail: "support@starhealth.in", website: "https://www.starhealth.in" },
   { id: 2, name: "HDFC ERGO", shortCode: "HDFCERGO", claimHelpline: "022 6234 6234", supportEmail: "care@hdfcergo.com", website: "https://www.hdfcergo.com" },
@@ -74,12 +93,12 @@ const members = [
 ].map((row) => ({ notes: null, ...row }));
 
 const rawPolicies = [
-  { id: 1, chainId: "chain-a", policyYear: 2, previousPolicyId: 101, policyNumber: "SH/2025/0091823", clientId: 1, insurerId: 1, productId: 1, category: "health", status: "active", startDate: "2025-08-20", expiryDate: "2026-08-19", sumInsured: 1000000, premiumAmount: 24500, gstAmount: 4410, commissionRate: 12.5, nomineeName: "Sneha Sharma", nomineeRelation: "Spouse", notes: "Floater covering three members." },
+  { id: 1, chainId: "chain-a", policyYear: 2, previousPolicyId: 101, policyNumber: "SH/2025/0091823", clientId: 1, insurerId: 1, productId: 1, category: "health", status: "active", startDate: "2025-08-20", expiryDate: "2026-08-21", sumInsured: 1000000, premiumAmount: 24500, gstAmount: 4410, commissionRate: 12.5, nomineeName: "Sneha Sharma", nomineeRelation: "Spouse", notes: "Floater covering three members." },
   { id: 2, chainId: "chain-b", policyYear: 1, policyNumber: "IL/MOT/778211", clientId: 1, insurerId: 3, productId: 4, category: "motor", status: "active", startDate: "2025-09-01", expiryDate: "2026-08-31", sumInsured: 850000, premiumAmount: 12800, gstAmount: 2304, commissionRate: 10, vehicleNumber: "MH12AB1234" },
   { id: 3, chainId: "chain-c", policyYear: 3, previousPolicyId: 103, policyNumber: "HE/OR/554120", clientId: 2, insurerId: 2, productId: 2, category: "health", status: "active", startDate: "2025-08-18", expiryDate: "2026-08-17", sumInsured: 1500000, premiumAmount: 31200, gstAmount: 5616, commissionRate: 15, nomineeName: "Rahul Desai", nomineeRelation: "Son" },
   { id: 4, chainId: "chain-d", policyYear: 1, policyNumber: "LIC/915/220481", clientId: 2, insurerId: 4, productId: 3, category: "life", status: "active", startDate: "2019-04-01", expiryDate: "2039-03-31", sumInsured: 5000000, premiumAmount: 48000, gstAmount: 2160, commissionRate: 7.5, nomineeName: "Rahul Desai", nomineeRelation: "Son" },
   { id: 5, chainId: "chain-e", policyYear: 1, policyNumber: "NIA/MOT/330912", clientId: 3, insurerId: 8, productId: null, category: "motor", status: "expired", startDate: "2025-08-10", expiryDate: "2026-08-09", sumInsured: 640000, premiumAmount: 9600, gstAmount: 1728, commissionRate: 10, vehicleNumber: "GJ01CD5678" },
-  { id: 6, chainId: "chain-f", policyYear: 1, policyNumber: "NB/RA2/119006", clientId: 4, insurerId: 5, productId: 6, category: "health", status: "active", startDate: "2025-08-25", expiryDate: "2026-08-24", sumInsured: 2000000, premiumAmount: 27800, gstAmount: 5004, commissionRate: 12.5, nomineeName: "Lakshmi Iyer", nomineeRelation: "Mother" },
+  { id: 6, chainId: "chain-f", policyYear: 1, policyNumber: "NB/RA2/119006", clientId: 4, insurerId: 5, productId: 6, category: "health", status: "active", startDate: "2025-08-25", expiryDate: "2026-08-29", sumInsured: 2000000, premiumAmount: 27800, gstAmount: 5004, commissionRate: 12.5, nomineeName: "Lakshmi Iyer", nomineeRelation: "Mother" },
   { id: 7, chainId: "chain-g", policyYear: 1, policyNumber: "TA/TG/908771", clientId: 5, insurerId: 6, productId: 5, category: "travel", status: "active", startDate: "2026-07-01", expiryDate: "2026-09-15", sumInsured: 4200000, premiumAmount: 4200, gstAmount: 756, commissionRate: 15 },
   { id: 8, chainId: "chain-h", policyYear: 2, previousPolicyId: 104, policyNumber: "SH/2025/0112947", clientId: 6, insurerId: 1, productId: 1, category: "health", status: "active", startDate: "2025-09-20", expiryDate: "2026-09-19", sumInsured: 1500000, premiumAmount: 33900, gstAmount: 6102, commissionRate: 12.5 },
   { id: 9, chainId: "chain-i", policyYear: 1, policyNumber: "BA/MOT/641203", clientId: 7, insurerId: 7, productId: null, category: "motor", status: "active", startDate: "2025-10-05", expiryDate: "2026-10-04", sumInsured: 1250000, premiumAmount: 14300, gstAmount: 2574, commissionRate: 10, vehicleNumber: "TS09EF9012" },
@@ -290,11 +309,220 @@ const settings = {
   locale: "en-IN",
   date_format: "dd MMM yyyy",
   expiring_soon_window: "30",
+  reminders_enabled: "true",
   reminder_send_time: "09:00",
   daily_send_cap: "400",
+  dry_run: "false",
   desktop_alerts: "true",
+  digest_enabled: "true",
+  smtp_host: "smtp.gmail.com",
+  smtp_port: "587",
+  smtp_username: "desk@sharmainsurance.in",
+  smtp_from_name: "Sharma Insurance Services",
+  smtp_from_email: "renewals@sharmainsurance.in",
+  smtp_encryption: "starttls",
   backup_dir: "/Users/you/Google Drive/StayInsured",
   backup_retention: "14",
+};
+
+// ---------------------------------------------------------------- reminders
+
+const templates = [
+  {
+    id: 1,
+    name: "Policy expiry reminder",
+    trigger: "expiry_reminder",
+    subject: "Your {{category_label}} policy expires on {{expiry_date}}",
+    bodyHtml:
+      '<div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;color:#1f2937;line-height:1.6">' +
+      "<p>Dear {{client_name}},</p>" +
+      "<p>This is a reminder that your <strong>{{category_label}}</strong> policy with " +
+      "<strong>{{insurer_name}}</strong> is due to expire on <strong>{{expiry_date}}</strong>" +
+      " — that is {{days_to_expiry}} days from today.</p>" +
+      '<table cellpadding="6" style="border-collapse:collapse;margin:16px 0;font-size:14px">' +
+      '<tr><td style="color:#6b7280">Policy number</td><td><strong>{{policy_number}}</strong></td></tr>' +
+      '<tr><td style="color:#6b7280">Insurer</td><td>{{insurer_name}}</td></tr>' +
+      '<tr><td style="color:#6b7280">Sum insured</td><td>{{sum_insured}}</td></tr>' +
+      '<tr><td style="color:#6b7280">Premium</td><td>{{premium_amount}}</td></tr>' +
+      "</table>" +
+      "<p>To keep your cover running without a break, please renew before the expiry date. " +
+      "Reply to this email or call us and we will take care of the paperwork.</p>" +
+      "<p>Warm regards,<br />{{provider_name}}<br />{{provider_phone}}</p></div>",
+    isActive: true,
+    createdAt: "2026-04-01T06:00:00Z",
+    updatedAt: "2026-07-14T09:20:00Z",
+    usedByRules: 3,
+  },
+  {
+    id: 2,
+    name: "Final expiry notice",
+    trigger: "expiry_reminder",
+    subject: "Action needed: {{category_label}} policy expires {{expiry_date}}",
+    bodyHtml:
+      '<div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;color:#1f2937;line-height:1.6">' +
+      "<p>Dear {{client_name}},</p>" +
+      "<p>Your {{category_label}} policy <strong>{{policy_number}}</strong> expires on " +
+      "<strong>{{expiry_date}}</strong>. After that date you are without cover.</p>" +
+      "<p>Please get in touch today and we will complete the renewal for you.</p>" +
+      "<p>Warm regards,<br />{{provider_name}}<br />{{provider_phone}}</p></div>",
+    isActive: true,
+    createdAt: "2026-04-01T06:00:00Z",
+    updatedAt: "2026-04-01T06:00:00Z",
+    usedByRules: 2,
+  },
+  {
+    id: 3,
+    name: "Lapsed policy follow up",
+    trigger: "post_expiry",
+    subject: "Your {{category_label}} policy has lapsed",
+    bodyHtml:
+      '<div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;color:#1f2937;line-height:1.6">' +
+      "<p>Dear {{client_name}},</p>" +
+      "<p>Our records show that policy <strong>{{policy_number}}</strong> with {{insurer_name}} " +
+      "expired on {{expiry_date}} and has not yet been renewed.</p>" +
+      "<p>Warm regards,<br />{{provider_name}}</p></div>",
+    isActive: true,
+    createdAt: "2026-04-01T06:00:00Z",
+    updatedAt: "2026-04-01T06:00:00Z",
+    usedByRules: 1,
+  },
+  {
+    id: 4,
+    name: "Renewal confirmation",
+    trigger: "renewal_confirmation",
+    subject: "Renewal confirmed — policy {{policy_number}}",
+    bodyHtml:
+      '<div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;color:#1f2937;line-height:1.6">' +
+      "<p>Dear {{client_name}},</p>" +
+      "<p>Your {{category_label}} cover with {{insurer_name}} has been renewed. " +
+      "The new policy runs to <strong>{{expiry_date}}</strong>.</p>" +
+      "<p>Warm regards,<br />{{provider_name}}</p></div>",
+    isActive: true,
+    createdAt: "2026-04-01T06:00:00Z",
+    updatedAt: "2026-04-01T06:00:00Z",
+    usedByRules: 0,
+  },
+  {
+    id: 5,
+    name: "Provider daily digest",
+    trigger: "provider_digest",
+    subject: "StayInsured: {{expiring_count}} policies need attention",
+    bodyHtml:
+      '<div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:14px;color:#1f2937">' +
+      "<p>Summary for {{today}}:</p>{{{digest_table}}}</div>",
+    isActive: true,
+    createdAt: "2026-04-01T06:00:00Z",
+    updatedAt: "2026-04-01T06:00:00Z",
+    usedByRules: 0,
+  },
+];
+
+const reminderRules = [
+  { id: 1, name: "60 days before expiry", offsetDays: 60, audience: "client", channel: "email", templateId: 1, sortOrder: 1, isActive: true },
+  { id: 2, name: "30 days before expiry", offsetDays: 30, audience: "client", channel: "email", templateId: 1, sortOrder: 2, isActive: true },
+  { id: 3, name: "15 days before expiry", offsetDays: 15, audience: "client", channel: "email", templateId: 1, sortOrder: 3, isActive: true },
+  { id: 4, name: "7 days before expiry", offsetDays: 7, audience: "client", channel: "both", templateId: 2, sortOrder: 4, isActive: true },
+  { id: 5, name: "1 day before expiry", offsetDays: 1, audience: "client", channel: "both", templateId: 2, sortOrder: 5, isActive: true },
+  { id: 6, name: "7 days after expiry", offsetDays: -7, audience: "client", channel: "email", templateId: 3, sortOrder: 6, isActive: false },
+].map((rule) => ({
+  category: null,
+  ...rule,
+  templateName: templates.find((t) => t.id === rule.templateId)?.name ?? null,
+}));
+
+const placeholders = [
+  { name: "client_name", description: "The client's full name" },
+  { name: "client_code", description: "Their code, such as CL-00001" },
+  { name: "client_email", description: "The address the message is going to" },
+  { name: "client_phone", description: "Their phone number" },
+  { name: "policy_number", description: "The policy number" },
+  { name: "category_label", description: "Health, Motor, Life and so on" },
+  { name: "insurer_name", description: "The insurer" },
+  { name: "product_name", description: "The plan name" },
+  { name: "start_date", description: "When the current year started" },
+  { name: "expiry_date", description: "When cover ends" },
+  { name: "days_to_expiry", description: "Whole days until expiry, negative once past" },
+  { name: "policy_year", description: "How many years this cover has run" },
+  { name: "sum_insured", description: "Sum insured, formatted as money" },
+  { name: "premium_amount", description: "Premium, formatted as money" },
+  { name: "nominee_name", description: "The nominee on the policy" },
+  { name: "vehicle_number", description: "Registration number, for motor policies" },
+  { name: "provider_name", description: "Your agency name" },
+  { name: "provider_email", description: "Your agency email" },
+  { name: "provider_phone", description: "Your agency phone" },
+  { name: "provider_address", description: "Your agency address" },
+  { name: "today", description: "Today's date" },
+  { name: "expiring_count", description: "How many policies the digest covers" },
+  { name: "digest_table", description: "The digest table itself, as HTML" },
+];
+
+/** Derived from the book, so the list agrees with the policies on every other screen. */
+const plannedReminders = reminderRules
+  .filter((rule) => rule.isActive)
+  .flatMap((rule) =>
+    active
+      .filter((policy) => policy.daysToExpiry === rule.offsetDays)
+      .map((policy) => ({
+        ruleId: rule.id,
+        ruleName: rule.name,
+        policyId: policy.id,
+        policyNumber: policy.policyNumber,
+        clientId: policy.clientId,
+        clientName: policy.clientName,
+        toAddress: policy.clientEmail,
+        expiryDate: policy.expiryDate,
+        daysToExpiry: rule.offsetDays,
+        channel: rule.channel,
+        subject: `Your ${categoryLabels[policy.category]} policy expires on ${formatDay(policy.expiryDate)}`,
+        blockedReason: policy.clientEmail
+          ? null
+          : "No email address on the client",
+      })),
+  );
+
+const notifications = [
+  { id: 41, ruleId: 3, policyId: 8, clientId: 6, status: "sent", scheduledFor: "2026-09-04", sentAt: "2026-08-12T03:30:00Z", attempts: 1 },
+  { id: 40, ruleId: 2, policyId: 9, clientId: 7, status: "sent", scheduledFor: "2026-09-04", sentAt: "2026-08-11T03:30:00Z", attempts: 1 },
+  { id: 39, ruleId: 1, policyId: 10, clientId: 8, status: "sent", scheduledFor: "2026-08-12", sentAt: "2026-08-10T03:30:00Z", attempts: 1 },
+  { id: 38, ruleId: 4, policyId: 5, clientId: 3, status: "skipped", scheduledFor: "2026-08-02", sentAt: null, attempts: 0, lastError: "No email address on the client" },
+  { id: 37, ruleId: 2, policyId: 12, clientId: 3, status: "failed", scheduledFor: "2026-06-29", sentAt: null, attempts: 3, lastError: "The server rejected the username or password." },
+  { id: 36, ruleId: 1, policyId: 13, clientId: 6, status: "sent", scheduledFor: "2026-09-02", sentAt: "2026-08-08T03:30:00Z", attempts: 1 },
+].map((row) => {
+  const policy = policies.find((p) => p.id === row.policyId);
+  const rule = reminderRules.find((r) => r.id === row.ruleId);
+  return {
+    ruleName: rule?.name ?? null,
+    policyNumber: policy?.policyNumber ?? null,
+    clientName: policy?.clientName ?? null,
+    policyPeriod: policy?.expiryDate ?? TODAY,
+    audience: "client",
+    channel: rule?.channel ?? "email",
+    toAddress: policy?.clientEmail ?? null,
+    subject: `Your ${categoryLabels[policy?.category ?? "other"]} policy expires on ${formatDay(policy?.expiryDate ?? TODAY)}`,
+    lastError: null,
+    createdAt: `${row.scheduledFor}T03:30:00Z`,
+    ...row,
+  };
+});
+
+const reminderOverview = {
+  enabled: true,
+  dryRun: false,
+  smtpConfigured: true,
+  smtpPasswordSet: true,
+  fromEmail: settings.smtp_from_email,
+  sendTime: settings.reminder_send_time,
+  dailyCap: Number(settings.daily_send_cap),
+  digestEnabled: true,
+  desktopAlerts: true,
+  activeRules: reminderRules.filter((rule) => rule.isActive).length,
+  dueToday: plannedReminders.length,
+  queued: notifications.filter((row) => row.status === "queued").length,
+  failed: notifications.filter((row) => row.status === "failed").length,
+  sentToday: 2,
+  lastSweep: `${TODAY}T03:30:00Z`,
+  clientsOptedOut: clients.filter((row) => row.remindersOptedOut).length,
+  expiringWithoutEmail: active.filter((row) => row.daysToExpiry <= 30 && !row.clientEmail).length,
 };
 
 export const fixtures = {
@@ -304,7 +532,7 @@ export const fixtures = {
     initialised: true,
     unlocked: true,
     canUseKeychain: true,
-    schemaVersion: 3,
+    schemaVersion: 2,
     dataDir: "/Users/you/Library/Application Support/com.stayinsured.app",
   },
   clients,
@@ -319,4 +547,10 @@ export const fixtures = {
   finalReport,
   settings,
   categoryOrder,
+  templates,
+  reminderRules,
+  placeholders,
+  plannedReminders,
+  notifications,
+  reminderOverview,
 };

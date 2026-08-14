@@ -56,8 +56,9 @@ you how many were copied.
 | The same client on two expiring policies | Copied once |
 | Very long lists | Up to 500 addresses in one go |
 
-This is how renewal chasing works today. Automatic sending is not switched on —
-see [Settings](settings.md#reminders).
+This is the manual route, for a batch you want to write yourself. To have the
+app write to them on a schedule instead, see [Send the
+reminders](reminders.md).
 
 ## Export the list
 

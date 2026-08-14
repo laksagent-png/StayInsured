@@ -336,3 +336,153 @@ export interface ImportReport {
   failed: number;
   issues: ImportIssue[];
 }
+
+export type TemplateTrigger =
+  | "expiry_reminder"
+  | "post_expiry"
+  | "welcome"
+  | "renewal_confirmation"
+  | "annual_summary"
+  | "provider_digest"
+  | "custom";
+
+export interface EmailTemplate {
+  id: number;
+  name: string;
+  trigger: TemplateTrigger;
+  subject: string;
+  bodyHtml: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  usedByRules: number;
+}
+
+export interface EmailTemplateInput {
+  name: string;
+  trigger: TemplateTrigger;
+  subject: string;
+  bodyHtml: string;
+  isActive?: boolean;
+}
+
+export interface Placeholder {
+  name: string;
+  description: string;
+}
+
+export interface TemplatePreview {
+  subject: string;
+  html: string;
+  text: string;
+  unknownPlaceholders: string[];
+  samplePolicy: string | null;
+}
+
+export type ReminderAudience = "client" | "provider";
+export type ReminderChannel = "email" | "desktop" | "both";
+
+export interface ReminderRule {
+  id: number;
+  name: string;
+  offsetDays: number;
+  category: string | null;
+  audience: ReminderAudience;
+  channel: ReminderChannel;
+  templateId: number | null;
+  templateName: string | null;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface ReminderRuleInput {
+  name: string;
+  offsetDays: number;
+  category?: string | null;
+  audience: ReminderAudience;
+  channel: ReminderChannel;
+  templateId?: number | null;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+export type NotificationStatus = "queued" | "sent" | "failed" | "skipped" | "cancelled";
+
+export interface Notification {
+  id: number;
+  ruleId: number | null;
+  ruleName: string | null;
+  policyId: number | null;
+  policyNumber: string | null;
+  clientId: number | null;
+  clientName: string | null;
+  policyPeriod: string;
+  audience: ReminderAudience;
+  channel: ReminderChannel;
+  toAddress: string | null;
+  subject: string | null;
+  status: NotificationStatus;
+  attempts: number;
+  lastError: string | null;
+  scheduledFor: string;
+  sentAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationFilter {
+  statuses?: NotificationStatus[];
+  clientId?: number;
+  policyId?: number;
+  search?: string;
+  sort?: string;
+  descending?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PlannedReminder {
+  ruleId: number;
+  ruleName: string;
+  policyId: number;
+  policyNumber: string;
+  clientId: number;
+  clientName: string;
+  toAddress: string | null;
+  expiryDate: string;
+  daysToExpiry: number;
+  channel: ReminderChannel;
+  subject: string;
+  blockedReason: string | null;
+}
+
+export interface ReminderRun {
+  dryRun: boolean;
+  queued: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  heldByCap: number;
+  desktopAlerts: number;
+  digestSent: boolean;
+  issues: string[];
+}
+
+export interface ReminderOverview {
+  enabled: boolean;
+  dryRun: boolean;
+  smtpConfigured: boolean;
+  smtpPasswordSet: boolean;
+  fromEmail: string;
+  sendTime: string;
+  dailyCap: number;
+  digestEnabled: boolean;
+  desktopAlerts: boolean;
+  activeRules: number;
+  dueToday: number;
+  queued: number;
+  failed: number;
+  sentToday: number;
+  lastSweep: string | null;
+  clientsOptedOut: number;
+  expiringWithoutEmail: number;
+}

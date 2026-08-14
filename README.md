@@ -2,12 +2,12 @@
 
 StayInsured keeps your client book, every policy you have placed, and every
 renewal date in one place on your own computer. It tells you what is about to
-lapse, holds the full history of each policy year after year, and hands you a
-list of who to contact this week.
+lapse, holds the full history of each policy year after year, writes to the
+clients whose cover is running out, and hands you the list of who to call.
 
-Nothing is uploaded anywhere. There is no account, no subscription and no
-internet connection required. Your book sits in an encrypted file on your
-machine that only opens with your password.
+Nothing is uploaded anywhere. There is no account and no subscription. Your book
+sits in an encrypted file on your machine that only opens with your password,
+and reminders go out through your own mailbox rather than through us.
 
 Every operation, one page each and with pictures, is in the
 [agent's guide](docs/guide/index.md). This page is the short version.
@@ -63,7 +63,7 @@ click the tray icon and choose Quit.
 
 ---
 
-## The seven screens
+## The eight screens
 
 **Dashboard** — the state of your book at a glance: how many clients, how many
 live policies, what expires in the next stretch, the premium you manage, your
@@ -71,6 +71,9 @@ commission, and the split across health, life, motor and the rest. Every number
 is clickable and takes you to the list behind it.
 
 **Renewals** — your working list, and the screen you will live in. See below.
+
+**Reminders** — what the app writes to your clients, when, and what happened to
+each message. See below.
 
 **Clients** — everybody in your book. Search by name, phone, email, client code
 or PAN. Narrow by city, by the kind of cover they hold, by who has no email
@@ -87,8 +90,8 @@ name or vehicle number, filterable by category, status and expiry window.
 **Insurers** — the list of insurance companies and their plans. Keeping this tidy
 means "HDFC Ergo" does not end up recorded three different ways.
 
-**Settings** — your agency details, your password, backups, and where your data
-lives.
+**Settings** — your agency details, your password, backups, your mail server, and
+where your data lives.
 
 ---
 
@@ -167,16 +170,40 @@ who is on the family floater without opening the paperwork.
 
 ---
 
-## Reminders, and what works today
+## Reminders
 
-Automatic reminder emails are being built and are not switched on yet. What you
-have today is the **Renewals** screen plus its **Copy emails** button, which gets
-you a ready-made recipient list in a few seconds.
+The app can write to your clients before their cover runs out, so chasing a
+renewal is something you check rather than something you do.
 
-The settings for the automatic version are already there under
-**Settings → Reminders** — what time of day to send, how many to send per day,
-whether to start the app at login — and what you save now will be used when
-sending is switched on. Filling them in early does no harm.
+Out of the box it writes 60, 30, 15, 7 and 1 day before expiry, with a
+week-after-expiry chaser that ships switched off in case you would rather make
+that one a phone call. Each rung of the ladder is a rule you can change, switch
+off or add to, and each one sends a message you can rewrite. The editor shows the message filled in with a real policy from your
+book as you type, so you see what the client sees.
+
+Mail goes out through **your own mailbox**, over your provider's mail server, so
+replies come back to you and no third party ever holds your client list. Put the
+details in under **Settings → Sending email** and press **Send test** to prove
+it works. Most providers need an app password rather than your normal one.
+
+**It starts in practice mode.** Everything is worked out and nothing is sent,
+which lets you read a week of messages before a single client receives one. When
+the wording and the timing look right, turn practice mode off and switch
+reminders on.
+
+A few things it does so you do not have to think about them: a client only ever
+gets one copy of a given reminder, however often the app runs; anybody who has
+asked not to be contacted is left out; a client with no email address is
+reported rather than silently skipped; renewing a policy calls off the reminders
+still queued for it; and if your provider limits how much you can send in a day,
+the rest waits for tomorrow rather than being lost.
+
+The **Reminders** screen shows what is due today, the rules, the messages, and
+the history of every message with what happened to it. Anything that failed can
+be sent again from there.
+
+If you would rather write to people yourself, the **Renewals** screen and its
+**Copy emails** button are still there.
 
 ## Backups
 
@@ -193,8 +220,8 @@ copy to move to a new computer.
 
 ## Settings worth knowing
 
-- **Agency name, contact email, phone, address** — used in the app and in client
-  emails later.
+- **Agency name, contact email, phone, address** — used in the app and in the
+  emails your clients receive.
 - **Expiring soon window** — how many days ahead counts as "expiring soon" on the
   dashboard. Set it to how far ahead you actually start chasing renewals.
 - **Currency** — Indian rupees by default.
@@ -214,7 +241,9 @@ which works well for replacing a machine.
 person today, and multiple logins are planned.
 
 **Is my data on the internet?** No. It never leaves your computer unless you
-point backups at a cloud folder yourself.
+point backups at a cloud folder yourself. The one connection the app makes is to
+your own mail server when it sends a reminder, and that carries the message, not
+your book.
 
 **What if I forget my password?** If you ticked "remember on this device", that
 computer can still open the book, and you should change the password to something
@@ -231,6 +260,6 @@ but do not attach a file containing real client details.
 
 ## Still to come
 
-Being honest about what is not built yet: automatic reminder emails with editable
-templates, the printable report pack, storing scanned policy documents against a
-client, claims tracking, and logins for more than one person.
+Being honest about what is not built yet: the printable report pack, storing
+scanned policy documents against a client, premium and commission records,
+claims tracking, and logins for more than one person.

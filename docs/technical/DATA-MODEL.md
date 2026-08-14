@@ -29,6 +29,9 @@ erDiagram
     policies ||--o{ policy_members : covers
     insured_members ||--o{ policy_members : "covered by"
     policies ||--o| policies : "renews into"
+    email_templates ||--o{ reminder_rules : "sent by"
+    reminder_rules ||--o{ notification_log : produces
+    policies ||--o{ notification_log : "chased by"
 ```
 
 ### `clients`
@@ -123,6 +126,9 @@ These hold across the whole database and the code depends on them.
    retire one.
 8. **Blank means `NULL`.** Optional text is trimmed and empty values stored as
    `NULL`, so unique indexes and the "missing email" filter behave predictably.
+9. **One rule sends to one policy year once.** `UNIQUE (rule_id, policy_id,
+   policy_period)` on `notification_log`, written before the send is attempted,
+   is what makes that true across restarts and repeated sweeps.
 
 ## Derived objects
 
@@ -170,25 +176,65 @@ are listed in [API.md](API.md#settings-keys).
 Every committed import records its file name, source type, counts and the mapping
 JSON used, with each reported issue in `import_errors`. Dry runs write nothing.
 
+## Reminders
+
+### `email_templates`
+
+`name` (unique), `trigger`, `subject`, `body_html`, `is_active` and timestamps.
+`trigger` is checked against `expiry_reminder`, `post_expiry`, `welcome`,
+`renewal_confirmation`, `annual_summary`, `provider_digest`, `custom`. Bodies
+hold `{{placeholders}}`; the catalogue of names lives in `templating::CATALOGUE`
+rather than in the database, so the editor and the renderer cannot disagree.
+Five templates are seeded.
+
+A template cannot be deleted while a rule points at it. That is enforced in the
+repository rather than by a constraint, because the message it returns names how
+many rules are affected.
+
+### `reminder_rules`
+
+`name` (unique), `offset_days`, optional `category`, `audience`, `channel`,
+`template_id`, `is_active`, `sort_order`.
+
+**`offset_days` is counted from expiry: positive is before, negative after.**
+The seeded ladder is 60, 30, 15, 7 and 1 day before, all active, plus a
+seven-day-after rule that ships inactive.
+
+`template_id` is `ON DELETE SET NULL`, and `audience` and `channel` are checked
+against `client | provider` and `email | desktop | both`.
+
+### `notification_log`
+
+The outbox. A row is written before anything is sent, carrying `rule_id`,
+`policy_id`, `client_id`, `policy_period`, `audience`, `channel`, `to_address`,
+`subject`, `body_snapshot`, `status`, `attempts`, `last_error`, `scheduled_for`
+and `sent_at`. `status` is checked against `queued | sent | failed | skipped |
+cancelled`. Indexed on status, `scheduled_for` and policy.
+
+**`UNIQUE (rule_id, policy_id, policy_period)` is the invariant the whole
+reminder feature rests on.** `policy_period` holds the expiry date of the policy
+year being chased, so the key reads "this rule, this policy, this year" and a
+reminder fires exactly once per policy year however often the scheduler sweeps
+or the app restarts. Queueing uses `INSERT OR IGNORE`, so the second attempt is
+a no-op rather than an error.
+
+`rule_id` is `ON DELETE SET NULL`: deleting a rule must not erase the record of
+what it sent. `policy_id` and `client_id` cascade, because a deleted client's
+send history has nothing left to describe.
+
+`body_snapshot` keeps the message as it was rendered. Editing a template later
+does not rewrite what a client was actually sent.
+
 ## Reserved for unbuilt features
 
-These tables are created and seeded where relevant, and no screen writes to them
-yet. They exist because their shape constrains the design of what is built.
+These tables are created and no screen writes to them yet. They exist because
+their shape constrains the design of what is built.
 
 | Table | Purpose | State |
 | --- | --- | --- |
-| `email_templates` | Reminder and confirmation bodies with `{{placeholders}}` | 5 templates seeded and editable |
-| `reminder_rules` | Offset ladder from expiry; positive is before, negative after | 60/30/15/7/1-day rules active, a 7-day-after rule inactive |
-| `notification_log` | Send outbox, written before anything is sent | Empty |
 | `premium_payments` | Installment schedule and receipts | Empty |
 | `commissions` | Expected versus received payout | Empty; `policies` carries the summary fields the UI uses |
 | `claims` | Claim intimation through settlement | Empty |
 | `documents` | Scanned files against a client, policy, member or claim | Empty; `documents/` exists and the asset protocol is already scoped to it |
 | `audit_log` | Before and after JSON per change | Empty |
 | `saved_views` | Named filter sets per entity | Empty |
-
-The load-bearing one is `notification_log`'s
-`UNIQUE (rule_id, policy_id, policy_period)`: it is what will make a reminder
-fire exactly once per policy year however often the scheduler sweeps or the app
-restarts, and the tray-resident lifecycle exists so that sweep has somewhere to
-run.

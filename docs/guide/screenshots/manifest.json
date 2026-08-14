@@ -68,6 +68,26 @@
       "route": "/policies"
     },
     {
+      "name": "reminders",
+      "caption": "Reminders: what goes out today, and how the last run went",
+      "route": "/reminders"
+    },
+    {
+      "name": "reminder-rules",
+      "caption": "The ladder: each rule sends one message, once, per policy year",
+      "route": "/reminders"
+    },
+    {
+      "name": "reminder-message",
+      "caption": "Writing a message, with the preview filled in from a real policy",
+      "route": "/reminders"
+    },
+    {
+      "name": "reminder-history",
+      "caption": "History: every message, why one was skipped, and what to retry",
+      "route": "/reminders"
+    },
+    {
       "name": "import-mapping",
       "caption": "Import: the app guesses your column headings, and you correct the guesses",
       "route": "/import"
@@ -89,7 +109,7 @@
     },
     {
       "name": "settings",
-      "caption": "Settings: agency details, password, backups and reminder preferences",
+      "caption": "Settings: agency details, password, backups, reminders and your mail server",
       "route": "/settings"
     }
   ]

@@ -15,14 +15,15 @@ is building the app.
 | --- | --- |
 | [The agent's guide](guide/index.md) | Contents page for everything below |
 | [Install and first run](guide/install-and-first-run.md) | Installing, creating the encrypted book, unlocking, locking |
-| [Find your way around](guide/getting-around.md) | The seven screens, search, reading the dashboard |
+| [Find your way around](guide/getting-around.md) | The eight screens, search, reading the dashboard |
 | [Import your book](guide/import-your-book.md) | Every recognised column, the mapping, the dry run, failed rows |
 | [Manage clients](guide/clients.md) | Adding, finding, editing, archiving, deleting, exporting |
 | [Record insured members](guide/insured-members.md) | The lives covered under a floater |
 | [Manage policies](guide/policies.md) | The policy form field by field, filters, statuses |
 | [Work the renewals](guide/renewals.md) | The urgency tabs, copy emails, recording a renewal, history |
+| [Send the reminders](guide/reminders.md) | The rule ladder, writing the messages, the daily run, the outbox |
 | [Insurers and plans](guide/insurers-and-plans.md) | Keeping one company recorded one way |
-| [Settings](guide/settings.md) | Agency details, password, reminder preferences |
+| [Settings](guide/settings.md) | Agency details, password, reminders, the mail server |
 | [Backups and your data](guide/backups-and-data.md) | Taking, restoring and moving the book |
 | [Reference](guide/reference.md) | Categories, statuses, shortcuts, questions |
 

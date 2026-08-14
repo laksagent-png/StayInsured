@@ -66,7 +66,10 @@ export default defineConfig({
         },
         {
           text: "Daily work",
-          items: [{ text: "Renewals", link: "/guide/renewals" }],
+          items: [
+            { text: "Renewals", link: "/guide/renewals" },
+            { text: "Reminders", link: "/guide/reminders" },
+          ],
         },
         {
           text: "The book",

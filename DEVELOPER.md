@@ -32,9 +32,13 @@ it, [API](docs/technical/API.md) for the command contract,
   same file does not create duplicates.
 - **Export** — any filtered list to `.xlsx` or `.csv`.
 - **Insurers and products** — a catalogue that keeps naming consistent.
+- **Reminders** — a rule ladder measured from expiry, templates edited in the
+  app, an outbox that guarantees one send per policy year, and a daily sweep
+  over the agent's own SMTP server. The engine takes `Sender` and `Alerter`
+  trait objects, so it is tested without a mail server or a window.
 
-Reminder emails, reports and document storage are the next phases; the schema
-and settings for them are already in place.
+Reports, document storage, premium and commission tracking, claims and
+multi-user logins are the next phases; the schema for them is already in place.
 
 ## Security
 
@@ -46,6 +50,8 @@ and settings for them are already in place.
   Turning that off means typing the password every time.
 - Lose the password with no keychain entry and the data is unrecoverable. That
   is the point of encryption; keep a copy of the password somewhere safe.
+- The SMTP password lives in the same keychain, never in the database, so a
+  backup copied to a cloud folder carries no working credential.
 
 ## Requirements
 
@@ -69,6 +75,16 @@ npm run app:build    # output in src-tauri/target/release/bundle
 
 Other scripts: `npm run dev` (web only), `npm run build` (typecheck and bundle
 the frontend), `npm run icons` (regenerate app and tray icons).
+
+To fill an empty book for testing by hand:
+
+```bash
+npm run sample:data        # writes sample-data/, then import the files in order
+```
+
+Expiries are measured from the day it runs, so every renewal window, dashboard
+bucket and reminder rule has a policy sitting on its boundary.
+`sample-data/README.md` states the counts each screen should then show.
 
 The user-facing [agent's guide](docs/guide/index.md) is illustrated from the
 running app, so a change to any screen means re-photographing it:
@@ -99,7 +115,8 @@ takes the pictures with a frozen clock so only real changes show up in a diff.
 The **Documentation** workflow runs both commands on every pull request.
 
 Rust tests cover the data layer end to end — migrations, renewal chains, status
-rules, import idempotency, export, backup:
+rules, import idempotency, export, backup, and the reminder engine against a
+recording fake mailer:
 
 ```bash
 cd src-tauri && cargo test --lib
@@ -107,10 +124,9 @@ cd src-tauri && cargo test --lib
 
 ## Cutting a release
 
-GitHub Actions builds both installers. Rename the **Unreleased** heading in
-[CHANGELOG.md](CHANGELOG.md) to the version and its date, open a fresh
-Unreleased section above it, bump the version in the three places that carry it,
-then tag:
+GitHub Actions builds both installers. Rename the **Upcoming** heading in
+[CHANGELOG.md](CHANGELOG.md) to the version and its date, open a fresh Upcoming
+section above it, bump the version in the three places that carry it, then tag:
 
 ```bash
 # CHANGELOG.md, src-tauri/tauri.conf.json, src-tauri/Cargo.toml, package.json
@@ -125,7 +141,7 @@ under the wrong number or with nothing to say for themselves. The release body
 is the changelog section plus the standing install instructions, and it carries
 a universal macOS `.dmg` with a Windows `.exe` and `.msi`.
 
-Every user-visible change adds a line under **Unreleased** as it is made, not at
+Every user-visible change adds a line under **Upcoming** as it is made, not at
 release time — the person who made the change is the one who knows what it means
 for an agent. The same file is published at
 https://laksagent-png.github.io/StayInsured/release-notes.html, included from the
@@ -169,6 +185,10 @@ src-tauri/src/
   repo/                 queries, one module per entity
   importer.rs           spreadsheet reading, mapping, validation
   exporter.rs           xlsx and csv writing
+  reminders.rs          due matching, the outbox, the retry and cap rules
+  templating.rs         placeholder rendering and escaping
+  mail.rs               SMTP transport and the plain-text part
+  scheduler.rs          the once-a-minute tick behind the daily sweep
   vault.rs              password hashing, key derivation, keychain
   tests.rs              data-layer tests
 ```

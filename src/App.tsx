@@ -10,6 +10,7 @@ import { ClientsPage } from "./pages/Clients";
 import { ClientDetailPage } from "./pages/ClientDetail";
 import { PoliciesPage } from "./pages/Policies";
 import { RenewalsPage } from "./pages/Renewals";
+import { RemindersPage } from "./pages/Reminders";
 import { ImportPage } from "./pages/Import";
 import { InsurersPage } from "./pages/Insurers";
 import { SettingsPage } from "./pages/Settings";
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/clients/:id" element={<ClientDetailPage />} />
         <Route path="/policies" element={<PoliciesPage />} />
         <Route path="/renewals" element={<RenewalsPage />} />
+        <Route path="/reminders" element={<RemindersPage />} />
         <Route path="/import" element={<ImportPage />} />
         <Route path="/insurers" element={<InsurersPage />} />
         <Route path="/settings" element={<SettingsPage />} />

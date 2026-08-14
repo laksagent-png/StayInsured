@@ -32,6 +32,9 @@ export function installTauriMock({ fixtures, scenario = {} }) {
   const settings = { ...fixtures.settings };
   const session = { ...fixtures.session, ...(scenario.session ?? {}) };
 
+  const templates = fixtures.templates.map((row) => ({ ...row }));
+  const rules = fixtures.reminderRules.map((row) => ({ ...row }));
+
   const empty = scenario.empty === true;
   const visibleClients = empty ? [] : clients;
   const visiblePolicies = empty ? [] : policies;
@@ -157,6 +160,58 @@ export function installTauriMock({ fixtures, scenario = {} }) {
     other: "Other",
   };
 
+  const emptyOverview = {
+    ...fixtures.reminderOverview,
+    enabled: false,
+    smtpConfigured: false,
+    smtpPasswordSet: false,
+    activeRules: 0,
+    dueToday: 0,
+    queued: 0,
+    failed: 0,
+    sentToday: 0,
+    lastSweep: null,
+    clientsOptedOut: 0,
+    expiringWithoutEmail: 0,
+  };
+
+  // The template preview renders against a real policy, exactly as the Rust
+  // side does, so the picture in the guide shows a filled-in message.
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const showDate = (iso) => {
+    const [y, m, d] = String(iso).split("-").map(Number);
+    return `${d} ${months[m - 1]} ${y}`;
+  };
+  const samplePolicy = policies[0];
+  const sample = {
+    client_name: samplePolicy.clientName,
+    client_code: samplePolicy.clientCode,
+    client_email: samplePolicy.clientEmail,
+    client_phone: samplePolicy.clientPhone,
+    policy_number: samplePolicy.policyNumber,
+    category_label: categoryLabels[samplePolicy.category],
+    insurer_name: samplePolicy.insurerName,
+    product_name: samplePolicy.productName ?? "",
+    start_date: showDate(samplePolicy.startDate),
+    expiry_date: showDate(samplePolicy.expiryDate),
+    days_to_expiry: String(samplePolicy.daysToExpiry),
+    policy_year: String(samplePolicy.policyYear),
+    sum_insured: `₹${(samplePolicy.sumInsured ?? 0).toLocaleString("en-IN")}`,
+    premium_amount: `₹${(samplePolicy.premiumAmount ?? 0).toLocaleString("en-IN")}`,
+    nominee_name: samplePolicy.nomineeName ?? "",
+    vehicle_number: samplePolicy.vehicleNumber ?? "",
+    provider_name: settings.provider_name,
+    provider_email: settings.provider_email,
+    provider_phone: settings.provider_phone,
+    provider_address: settings.provider_address,
+    today: showDate(fixtures.today),
+    expiring_count: "12",
+    digest_table: "<table><tr><td>Ananya Sharma</td><td>Expires in 7 days</td></tr></table>",
+  };
+
+  const fill = (text) =>
+    String(text ?? "").replace(/\{\{\{?\s*([a-z_]+)\s*\}?\}\}/g, (_, name) => sample[name] ?? "");
+
   const handlers = {
     session_state: () => session,
     setup: () => ({ ...session, initialised: true, unlocked: true }),
@@ -232,6 +287,57 @@ export function installTauriMock({ fixtures, scenario = {} }) {
     export_policies: ({ filter }) => filterPolicies({ ...filter, pageSize: 10_000 }).total,
     export_clients: ({ filter }) => filterClients({ ...filter, pageSize: 10_000 }).total,
 
+    list_templates: () => templates,
+    create_template: () => 99,
+    update_template: () => null,
+    delete_template: () => null,
+    template_placeholders: () => fixtures.placeholders,
+    preview_template: ({ subject, bodyHtml }) => ({
+      subject: fill(subject),
+      html: fill(bodyHtml),
+      text: fill(bodyHtml)
+        .replace(/<[^>]+>/g, "\n")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join("\n"),
+      unknownPlaceholders: (`${subject} ${bodyHtml}`.match(/\{\{\{?\s*([a-z_]+)\s*\}?\}\}/g) ?? [])
+        .map((token) => token.replace(/[{}]/g, "").trim())
+        .filter((name, index, all) => all.indexOf(name) === index)
+        .filter((name) => !sample[name]),
+      samplePolicy: `${samplePolicy.policyNumber} · ${samplePolicy.clientName}`,
+    }),
+
+    list_rules: () => rules,
+    create_rule: () => 99,
+    update_rule: () => null,
+    delete_rule: () => null,
+
+    reminder_overview: () => (empty ? emptyOverview : fixtures.reminderOverview),
+    plan_reminders: () => (empty ? [] : fixtures.plannedReminders),
+    run_reminders: ({ dryRun }) => ({
+      dryRun: dryRun ?? false,
+      queued: fixtures.plannedReminders.length,
+      sent: dryRun ? 0 : fixtures.plannedReminders.length,
+      failed: 0,
+      skipped: 0,
+      heldByCap: 0,
+      desktopAlerts: 1,
+      digestSent: !dryRun,
+      issues: [],
+    }),
+    list_notifications: ({ filter = {} }) => {
+      let rows = empty ? [] : fixtures.notifications.slice();
+      if (filter.statuses?.length) {
+        rows = rows.filter((row) => filter.statuses.includes(row.status));
+      }
+      return page(rows, filter);
+    },
+    retry_notification: () => null,
+    cancel_notification: () => null,
+    set_smtp_password: () => null,
+    send_test_email: () => null,
+
     get_settings: () => settings,
     save_settings: ({ values }) => {
       Object.assign(settings, values);
@@ -253,6 +359,10 @@ export function installTauriMock({ fixtures, scenario = {} }) {
 
   window.__DOCS_PENDING__ = 0;
   window.__DOCS_SETTLED_AT__ = 0;
+
+  // Screens that listen for a background sweep unregister on unmount, and the
+  // event plugin reaches for this directly rather than through `invoke`.
+  window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
 
   window.__TAURI_INTERNALS__ = {
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },

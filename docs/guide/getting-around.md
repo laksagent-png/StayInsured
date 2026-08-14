@@ -2,7 +2,7 @@
 
 # Find your way around
 
-The seven screens, the search box, and how to read the dashboard.
+The eight screens, the search box, and how to read the dashboard.
 
 - [The sidebar](#the-sidebar)
 - [Search and the badges](#search-and-the-badges)
@@ -17,14 +17,19 @@ The seven screens, the search box, and how to read the dashboard.
 | --- | --- | --- |
 | **Dashboard** | `/` | The state of the book in one view |
 | **Renewals** | `/renewals` | The working list, ordered by urgency |
+| **Reminders** | `/reminders` | What the app writes to clients, and when |
 | **Clients** | `/clients` | Everyone in the book |
 | **Policies** | `/policies` | Every policy year you have placed |
 | **Insurers & plans** | `/insurers` | The companies and products you sell |
 | **Import data** | `/import` | Bring a spreadsheet in |
-| **Settings** | `/settings` | Agency details, password, backups |
+| **Settings** | `/settings` | Agency details, password, backups, your mail server |
 
 The number beside **Renewals** counts the policies expiring within 30 days. It
 updates as you work, so an empty badge means the week is clear.
+
+The number beside **Reminders** counts what is due to go out today plus anything
+that failed to send. It turns red when something has failed, because those are
+the clients who did not hear from you.
 
 Your agency name sits at the top of the sidebar and **Lock app** at the foot.
 

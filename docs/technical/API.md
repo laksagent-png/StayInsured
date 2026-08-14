@@ -1,7 +1,7 @@
 # API specification
 
 StayInsured has no HTTP API. Its API is the set of Tauri commands the Rust core
-exposes to the webview — 50 commands that are the only way the interface reaches
+exposes to the webview — 68 commands that are the only way the interface reaches
 data.
 
 The contract is defined in four files that must always agree:
@@ -57,12 +57,14 @@ try {
 | `validation` | Input rejected; the message says why | Show it on the form |
 | `not_found` | The entity does not exist | Refetch the list |
 | `conflict` | A uniqueness or in-use rule refuses the change | Show the message; it explains the alternative |
+| `mail` | The mail server is unconfigured, unreachable or refused the message | Show the message on the mail settings, not as a queue failure |
 | `internal` | Database, file, serialisation or spreadsheet failure | Show the message as a toast |
 
 **Any command that reads or writes data returns `locked` until the session is
 unlocked.** These commands work while locked: `session_state`, `setup`,
 `unlock`, `unlock_with_keychain`, `lock`, `forget_device`, `category_options`,
-`import_fields`, `preview_import` and `write_import_template`.
+`import_fields`, `preview_import`, `write_import_template` and
+`template_placeholders`.
 
 ## Conventions
 
@@ -335,6 +337,142 @@ one example row, and returns the path.
 pagination, and write `.xlsx` or `.csv` chosen by the file extension. Anything
 else returns `validation`. The return value is the number of rows written.
 
+## Message templates
+
+| Command | Arguments | Returns |
+| --- | --- | --- |
+| `list_templates` | — | `EmailTemplate[]` |
+| `create_template` | `input: EmailTemplateInput` | `number` |
+| `update_template` | `id: number`, `input: EmailTemplateInput` | `void` |
+| `delete_template` | `id: number` | `void` |
+| `template_placeholders` | — | `Placeholder[]` |
+| `preview_template` | `subject: string`, `bodyHtml: string` | `TemplatePreview` |
+
+`EmailTemplateInput` requires `name`, `trigger`, `subject` and `bodyHtml`.
+`trigger` is one of `expiry_reminder`, `post_expiry`, `welcome`,
+`renewal_confirmation`, `annual_summary`, `provider_digest`, `custom`. Names are
+unique. `EmailTemplate` responses add `usedByRules`.
+
+**`delete_template` refuses while a rule points at it** and returns `conflict`
+naming the count, so a rule cannot silently lose the message it sends.
+
+**`template_placeholders`** returns the whole catalogue — `client_name`,
+`policy_number`, `expiry_date`, `days_to_expiry`, `premium_amount`,
+`provider_name` and the rest — each with the description shown beside it in the
+editor. It needs no database.
+
+**`preview_template`** renders unsaved editor content against a real policy,
+preferring one that expires soon, and falls back to worked-up example values
+when the book is empty. It returns the rendered `subject`, `html`, the derived
+plain-text `text` part, `samplePolicy` naming what the values came from, and
+`unknownPlaceholders` — names the catalogue does not hold, which are almost
+always typos.
+
+Placeholders are written `{{name}}` and are HTML-escaped. `{{{name}}}` inserts
+raw HTML and exists for values the app builds itself, such as `digest_table`. A
+name that resolves to nothing renders as empty rather than being left in the
+message.
+
+Errors: `validation` (missing name, subject or body, unknown trigger),
+`conflict` (duplicate name, template in use), `not_found`.
+
+## Reminder rules
+
+| Command | Arguments | Returns |
+| --- | --- | --- |
+| `list_rules` | — | `ReminderRule[]` |
+| `create_rule` | `input: ReminderRuleInput` | `number` |
+| `update_rule` | `id: number`, `input: ReminderRuleInput` | `void` |
+| `delete_rule` | `id: number` | `void` |
+
+A rule is one rung of the ladder: send `template` to `audience` when a policy is
+`offsetDays` from expiry. `ReminderRuleInput` takes `name`, `offsetDays`,
+optional `category`, `audience`, `channel`, optional `templateId`, `isActive`
+and `sortOrder`.
+
+- **`offsetDays` counts back from expiry.** 30 means 30 days before; a negative
+  value is that many days after, and those rules match only `expired` or
+  `lapsed` policies with no successor. The range is −365 to 365.
+- **`audience`** is `client` or `provider`. A `client` rule must name a
+  template, because it has nothing to say without one.
+- **`channel`** is `email`, `desktop` or `both`.
+- **`category`** narrows the rule to one policy category; omitted means all.
+
+Rules are listed furthest ahead of expiry first, then by `sortOrder` and name.
+Names are unique. Deleting a rule leaves its history: `notification_log.rule_id`
+becomes `NULL` rather than the sent record disappearing.
+
+Errors: `validation` (missing name, offset out of range, unknown audience,
+channel or category, client rule with no template), `conflict` (duplicate name),
+`not_found` (unknown template or rule).
+
+## Reminders
+
+| Command | Arguments | Returns |
+| --- | --- | --- |
+| `reminder_overview` | — | `ReminderOverview` |
+| `plan_reminders` | — | `PlannedReminder[]` |
+| `run_reminders` | `dryRun?: boolean` | `ReminderRun` |
+| `list_notifications` | `filter: NotificationFilter` | `Page<Notification>` |
+| `retry_notification` | `id: number` | `void` |
+| `cancel_notification` | `id: number` | `void` |
+| `set_smtp_password` | `password?: string` | `void` |
+| `send_test_email` | `to: string` | `void` |
+
+**`reminder_overview`** is everything the reminders screen needs to describe the
+state in a sentence: `enabled`, `dryRun`, `smtpConfigured`, `smtpPasswordSet`,
+`fromEmail`, `sendTime`, `dailyCap`, `digestEnabled`, `desktopAlerts`,
+`activeRules`, `dueToday`, `queued`, `failed`, `sentToday`, `lastSweep`,
+`clientsOptedOut` and `expiringWithoutEmail`.
+
+**`plan_reminders`** matches today's date against the active rules and returns
+what would go out, writing nothing. Each `PlannedReminder` carries the rule, the
+policy, the client, the resolved `subject`, and `blockedReason` when the
+reminder will not be sent — an opted-out client, a missing address, an address
+that does not parse.
+
+**`run_reminders`** plans, queues and sends in one pass, and returns counts of
+`queued`, `sent`, `failed`, `skipped`, `heldByCap`, `desktopAlerts`,
+`digestSent` and up to 20 `issues`. `dryRun` overrides the `dry_run` setting for
+this run only.
+
+- **A reminder fires once per policy year.** `UNIQUE (rule_id, policy_id,
+  policy_period)` on the outbox is what guarantees it, however often the sweep
+  runs.
+- **A blocked reminder is recorded as `skipped`, once,** so the operator can see
+  why nothing went out and the same client is not raised again tomorrow.
+- **A failed send stays `queued`** for three attempts before it is parked as
+  `failed`, which rides out a mail server having a bad morning without the
+  operator intervening.
+- **The daily cap is a send limit, not a queue limit.** What is over the cap
+  stays queued for tomorrow and is counted in `heldByCap`.
+- **A dry run writes nothing and sends nothing** — no outbox rows, no
+  `last_sweep_at`. It reports what a real run would queue.
+- **Renewing cancels the pending reminders** for the year that was renewed, so a
+  reminder queued yesterday does not chase a client who has already renewed.
+
+`NotificationFilter`: `statuses[]`, `clientId`, `policyId`, `search` (address,
+subject or client name), `sort`, `descending`, `page`, `pageSize`. Sort keys:
+`scheduledFor` (default, newest first), `createdAt`, `sentAt`, `status`,
+`clientName`. Statuses: `queued`, `sent`, `failed`, `skipped`, `cancelled`.
+
+**`retry_notification`** puts a failed, skipped or cancelled row back in the
+queue with its attempt count reset. **`cancel_notification`** stops a queued one.
+Either returns `conflict` when the row is not in a state that allows it.
+
+**`set_smtp_password`** writes the mail password to the OS keychain, or clears
+it when given nothing. **It is never stored in the database**, so it does not
+travel inside an export or a backup copied to a cloud folder. It requires an
+unlocked session, and there is no command that reads it back.
+
+**`send_test_email`** opens a connection, verifies it and sends one message, so
+a wrong password is found here rather than through a queue full of failures.
+Errors: `validation` (not an email address), `mail` (no server configured, or
+the server refused).
+
+The backend emits `reminders:swept` after a scheduled sweep; the interface
+listens for it and refetches.
+
 ## Settings and maintenance
 
 | Command | Arguments | Returns |
@@ -362,15 +500,16 @@ returns the path of the local copy.
 | `desktop_alerts` | `true` | Desktop notification of the day's expiries |
 | `backup_dir` | empty | Extra folder each backup is copied to |
 | `backup_retention` | `14` | Local backups kept |
-| `reminders_enabled` | `false` | Reserved — reminder sending is not built |
-| `reminder_send_time` | `09:00` | Reserved |
-| `daily_send_cap` | `400` | Reserved |
-| `digest_enabled` | `true` | Reserved |
-| `dry_run` | `true` | Reserved |
-| `smtp_host` / `smtp_port` / `smtp_username` / `smtp_from_name` / `smtp_from_email` / `smtp_encryption` | empty, `587`, `starttls` | Reserved |
+| `reminders_enabled` | `false` | Whether the scheduler runs the daily sweep |
+| `reminder_send_time` | `09:00` | Local time the sweep runs |
+| `daily_send_cap` | `400` | Messages sent per day; the rest stay queued |
+| `digest_enabled` | `true` | Send the agency one summary of the day's expiries |
+| `dry_run` | `true` | Sweeps work everything out and send nothing |
+| `last_sweep_at` | unset | RFC 3339 stamp of the last live sweep; written by the sweep, not by hand |
+| `smtp_host` / `smtp_port` / `smtp_username` / `smtp_from_name` / `smtp_from_email` / `smtp_encryption` | empty, `587`, `starttls` | The mail server. `smtp_encryption` is `starttls`, `tls` or `none` |
 
-Keys marked reserved are stored and editable but nothing reads them yet; see
-[DESIGN.md](DESIGN.md).
+The mail password is not a setting — it lives in the OS keychain and is written
+through `set_smtp_password`.
 
 ## Enumerations
 
@@ -381,6 +520,10 @@ Keys marked reserved are stored and editable but nothing reads them yet; see
 | Relationship | `self`, `spouse`, `son`, `daughter`, `father`, `mother`, `other` |
 | Premium frequency | `annual`, `half_yearly`, `quarterly`, `monthly`, `single` |
 | Gender | `male`, `female`, `other` |
+| Template trigger | `expiry_reminder`, `post_expiry`, `welcome`, `renewal_confirmation`, `annual_summary`, `provider_digest`, `custom` |
+| Reminder audience | `client`, `provider` |
+| Reminder channel | `email`, `desktop`, `both` |
+| Notification status | `queued`, `sent`, `failed`, `skipped`, `cancelled` |
 
 ## Adding a command
 

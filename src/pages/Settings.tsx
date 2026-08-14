@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isEnabled, enable, disable } from "@tauri-apps/plugin-autostart";
-import { DatabaseBackup, FolderOpen, KeyRound, Save, ShieldCheck } from "lucide-react";
+import { DatabaseBackup, FolderOpen, KeyRound, MailCheck, Save, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { api, ApiError } from "../lib/api";
@@ -18,9 +18,19 @@ export function SettingsPage() {
   const [current, setCurrent] = useState("");
   const [replacement, setReplacement] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [smtpPassword, setSmtpPassword] = useState("");
+  const [testAddress, setTestAddress] = useState("");
+
+  // The mail password lives in the keychain rather than in settings, so the
+  // form only learns whether one is stored, never what it is.
+  const reminders = useQuery({ queryKey: ["reminderOverview"], queryFn: api.reminderOverview });
+  const smtpPasswordSet = reminders.data?.smtpPasswordSet ?? false;
 
   useEffect(() => {
-    if (settings.data) setDraft(settings.data);
+    if (settings.data) {
+      setDraft(settings.data);
+      setTestAddress((address) => address || settings.data.provider_email || "");
+    }
   }, [settings.data]);
 
   useEffect(() => {
@@ -31,10 +41,31 @@ export function SettingsPage() {
     setDraft((currentDraft) => ({ ...currentDraft, [key]: value }));
 
   const saveSettings = useMutation({
-    mutationFn: () => api.saveSettings(draft),
+    mutationFn: async () => {
+      await api.saveSettings(draft);
+      if (smtpPassword) await api.setSmtpPassword(smtpPassword);
+    },
     onSuccess: () => {
+      setSmtpPassword("");
       queryClient.invalidateQueries({ queryKey: ["settings"] });
+      queryClient.invalidateQueries({ queryKey: ["reminderOverview"] });
       toast.success("Settings saved");
+    },
+    onError: (err: ApiError) => toast.error(err.message),
+  });
+
+  /// Saves first, so the test uses what is on screen rather than what was
+  /// stored the last time the button was pressed.
+  const sendTest = useMutation({
+    mutationFn: async () => {
+      await api.saveSettings(draft);
+      if (smtpPassword) await api.setSmtpPassword(smtpPassword);
+      await api.sendTestEmail(testAddress);
+    },
+    onSuccess: () => {
+      setSmtpPassword("");
+      queryClient.invalidateQueries({ queryKey: ["reminderOverview"] });
+      toast.success(`Test sent to ${testAddress}. Check it arrived before switching reminders on.`);
     },
     onError: (err: ApiError) => toast.error(err.message),
   });
@@ -240,10 +271,12 @@ export function SettingsPage() {
 
         <Card title="Reminders">
           <div className="space-y-4">
-            <p className="rounded-lg bg-brand-50 px-3.5 py-3 text-xs text-brand-900">
-              Automated email reminders are the next phase. These settings are stored now so the
-              scheduler has what it needs when it is switched on.
-            </p>
+            <Checkbox
+              label="Send reminders automatically"
+              hint="The daily run happens even with the window closed, as long as the app is in the menu bar."
+              checked={draft.reminders_enabled === "true"}
+              onChange={(value) => set("reminders_enabled", String(value))}
+            />
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Send reminders at">
                 <Input
@@ -261,6 +294,12 @@ export function SettingsPage() {
               </Field>
             </div>
             <Checkbox
+              label="Practice mode: work everything out but send nothing"
+              hint="Leave this on until the wording and the timing look right."
+              checked={draft.dry_run === "true"}
+              onChange={(value) => set("dry_run", String(value))}
+            />
+            <Checkbox
               label="Start StayInsured at login"
               hint="Needed for reminders to fire when the window is closed"
               checked={autostart ?? false}
@@ -271,6 +310,109 @@ export function SettingsPage() {
               checked={draft.desktop_alerts === "true"}
               onChange={(value) => set("desktop_alerts", String(value))}
             />
+            <Checkbox
+              label="Email me a daily digest of what is expiring"
+              hint={`Sent to ${draft.provider_email || "your contact email"}.`}
+              checked={draft.digest_enabled === "true"}
+              onChange={(value) => set("digest_enabled", String(value))}
+            />
+          </div>
+        </Card>
+
+        <Card title="Sending email">
+          <div className="space-y-4">
+            <p className="rounded-lg bg-slate-50 px-3.5 py-3 text-xs text-slate-600">
+              Reminders go out through your own mailbox, so replies come back to you and no third
+              party holds your client list. Most providers want the app password from your mail
+              account here rather than the one you type into a browser.
+            </p>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Server" className="sm:col-span-2">
+                <Input
+                  value={draft.smtp_host ?? ""}
+                  onChange={(event) => set("smtp_host", event.target.value)}
+                  placeholder="smtp.gmail.com"
+                />
+              </Field>
+              <Field label="Port">
+                <Input
+                  type="number"
+                  value={draft.smtp_port ?? "587"}
+                  onChange={(event) => set("smtp_port", event.target.value)}
+                />
+              </Field>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Username">
+                <Input
+                  value={draft.smtp_username ?? ""}
+                  onChange={(event) => set("smtp_username", event.target.value)}
+                  placeholder="you@youragency.in"
+                />
+              </Field>
+              <Field
+                label="Password"
+                hint={
+                  smtpPasswordSet && !smtpPassword
+                    ? "Saved in the system keychain. Type a new one to replace it."
+                    : "Kept in the system keychain, never in the database."
+                }
+              >
+                <Input
+                  type="password"
+                  value={smtpPassword}
+                  onChange={(event) => setSmtpPassword(event.target.value)}
+                  placeholder={smtpPasswordSet ? "••••••••" : ""}
+                />
+              </Field>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Send as" hint="The address clients will see and reply to">
+                <Input
+                  value={draft.smtp_from_email ?? ""}
+                  onChange={(event) => set("smtp_from_email", event.target.value)}
+                  placeholder="renewals@youragency.in"
+                />
+              </Field>
+              <Field label="Shown as">
+                <Input
+                  value={draft.smtp_from_name ?? ""}
+                  onChange={(event) => set("smtp_from_name", event.target.value)}
+                  placeholder={draft.provider_name ?? "Your agency"}
+                />
+              </Field>
+            </div>
+
+            <Field label="Security">
+              <Select
+                value={draft.smtp_encryption ?? "starttls"}
+                onChange={(event) => set("smtp_encryption", event.target.value)}
+              >
+                <option value="starttls">STARTTLS — usual, port 587</option>
+                <option value="tls">TLS — port 465</option>
+                <option value="none">None — only for a local test server</option>
+              </Select>
+            </Field>
+
+            <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+              <Button
+                icon={<MailCheck className="size-4" />}
+                loading={sendTest.isPending}
+                disabled={!draft.smtp_host || !testAddress}
+                onClick={() => sendTest.mutate()}
+              >
+                Send test
+              </Button>
+              <Input
+                value={testAddress}
+                onChange={(event) => setTestAddress(event.target.value)}
+                placeholder="Where to send it"
+                className="w-56"
+              />
+            </div>
           </div>
         </Card>
       </div>

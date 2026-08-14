@@ -13,8 +13,9 @@ choice below.
 - **The data is confidential and the machine is not a server.** A laptop gets
   lost. The book is therefore encrypted at rest, and the key exists only while
   the app is unlocked.
-- **There is no network.** No account, no sync, no backend to keep running. The
-  app is useful on a train.
+- **There is no backend.** No account, no sync, nothing to keep running. The
+  app is useful on a train. The single outbound connection it makes is to the
+  agent's own mail server, to send the agent's own reminders.
 - **History is the product.** An agent needs to know what a client paid three
   years ago and when cover actually ran. Nothing that represents a policy year
   is ever overwritten.
@@ -37,13 +38,19 @@ flowchart TB
         cmds["commands.rs — the command surface"]
         repo["repo/ — one module per entity, owns the SQL"]
         io["importer.rs · exporter.rs · vault.rs"]
+        rem["reminders.rs · templating.rs · mail.rs"]
+        sched["scheduler.rs — the daily tick"]
         db["db/ — SQLCipher connection + migrations"]
         cmds --> repo
         cmds --> io
+        cmds --> rem
+        sched --> rem
+        rem --> repo
         repo --> db
         io --> db
     end
     db --> file[("stayinsured.db — encrypted")]
+    rem --> smtp[["Your SMTP server"]]
 ```
 
 The rules that keep this honest:
@@ -70,7 +77,8 @@ The app is a tray-resident background application, not a document window.
 - Launched with `--background` (how the autostart plugin starts it at login) the
   window stays hidden and the app goes straight to the tray.
 - Startup order in `run()`: tracing, plugins, resolve `AppPaths` and create the
-  data directories, register `AppState`, build the tray, register commands.
+  data directories, register `AppState`, build the tray, start the reminder
+  scheduler, register commands.
 
 Everything the app writes lives under one directory, so a backup or a move to a
 new machine is a single folder copy.
@@ -116,6 +124,10 @@ flowchart LR
 - **"Remember on this device" is opt-in and reversible.** The derived key goes to
   the OS keychain under service `com.stayinsured.app`, account `database-key`.
   `forget_device` deletes it.
+- **The mail password lives beside it, under account `smtp-password`, and not in
+  the database.** A backup is copied to a cloud folder and an export is emailed
+  around; neither should carry a working credential for the agent's mailbox.
+  `set_smtp_password` writes it and no command reads it back.
 - **Changing the password re-keys the database and can be rolled back.**
   `change_password` verifies the current password, runs `PRAGMA rekey`, then
   writes the new `vault.json`. If that write fails the database is re-keyed back
@@ -276,6 +288,75 @@ Export mirrors it: one column table paired with value extractors drives both
 numbers so totals and sorting work in Excel, and an unsupported extension is
 refused with a clear message.
 
+## Reminders
+
+Chasing renewals is the work the app exists to remove, and it is the one place
+where a bug is visible to the agent's clients rather than to the agent. Two
+failures matter: a client who hears nothing, and a client who hears the same
+thing five times. The design is arranged around the second, because the first is
+recoverable and the second is not.
+
+```mermaid
+flowchart LR
+    tick["scheduler.rs<br/>ticks every minute"] --> due{"enabled, past<br/>send time, not<br/>swept today?"}
+    due -->|yes| plan["Match active rules<br/>against today"]
+    plan --> outbox[("notification_log<br/>UNIQUE rule+policy+period")]
+    outbox --> send["Dispatch up to<br/>the daily cap"]
+    send --> smtp[["SMTP"]]
+    send --> outbox
+```
+
+**The sweep is two halves that meet at a table.** Planning decides what should
+go out and writes it to `notification_log`; dispatch takes what is in the table
+and tries to deliver it. Keeping them apart is what lets a send fail — a lid
+closing mid-run, a mail server having a bad morning — without either losing the
+reminder or sending it twice.
+
+- **`UNIQUE (rule_id, policy_id, policy_period)` is the guarantee, not the
+  bookkeeping.** The row is written with `INSERT OR IGNORE` before anything is
+  sent, so a reminder fires once per policy year however often the sweep runs,
+  and a crash mid-send costs at most one duplicate instead of a mailshot.
+- **A rule fires on an exact date, not within a window.** "30 days before" means
+  expiry is exactly 30 days from today. A window would re-match tomorrow and
+  lean on the deduplication to stay quiet; an exact match means the ladder is
+  legible from the rules table alone. Negative offsets chase after expiry and
+  match only `expired` or `lapsed` policies with no successor.
+- **A blocked reminder is recorded, once, as `skipped`.** An opted-out client or
+  a missing address is a fact about the book, not a transient error. Writing it
+  down means the operator can see who is unreachable and the same client is not
+  re-raised every morning.
+- **A failed send stays queued for three attempts.** Only then is it parked as
+  `failed` for a human. Most mail failures are a server being briefly unwell and
+  should not need the operator.
+- **The cap limits sending, not queueing.** Mailbox providers throttle bulk
+  sending, so what is over `daily_send_cap` stays in the outbox and goes
+  tomorrow, in order.
+- **Renewing cancels what is still queued** for the year that was renewed. A
+  reminder written yesterday must not chase a client who has since renewed.
+- **Practice mode is the default.** `dry_run` starts `true`, so a fresh install
+  works everything out and sends nothing until the agent has read what it would
+  have said.
+
+**The scheduler asks a question rather than setting an alarm.** A thread ticks
+once a minute and asks whether today's sweep has already run — reminders on, the
+send time passed, `last_sweep_at` not today. Phrased that way, a missed slot is
+harmless: a laptop asleep at nine sweeps as soon as it opens, and one left open
+all day still sweeps exactly once. It emits `reminders:swept` so the screen
+shows today's numbers rather than yesterday's.
+
+**The engine does not know what Tauri or SMTP are.** `sweep` takes a `Sender`
+and an `Alerter` trait object, which is why the whole of it — due matching,
+deduplication, the cap, the retry ladder — is exercised in tests against a
+recording fake, with no mail server and no window.
+
+**Templates escape by default.** `{{name}}` HTML-escapes; `{{{name}}}` does not
+and is reserved for values the app builds itself, such as the digest table. A
+client called "Sharma & Sons" therefore cannot break the message. A name the
+catalogue does not hold renders as empty rather than shipping `{{clint_name}}`
+to a client's inbox, and the editor lists it as unknown so the typo is caught
+before it goes out. Every message is sent as HTML with a plain-text part derived
+from it, so the two cannot say different things.
+
 ## Interface architecture
 
 - **React 18 + Vite + Tailwind 4**, one file per screen under `src/pages/`,
@@ -312,6 +393,7 @@ for a log file.
 | `validation` | The input is wrong and the message says how. |
 | `not_found` | The named entity does not exist. |
 | `conflict` | A uniqueness or in-use rule refuses the change. |
+| `mail` | The mail server is unconfigured, unreachable or refused the message. |
 | `internal` | Database, file, serialisation or spreadsheet failure. |
 
 Constraint violations are translated at the repository boundary, so a duplicate
@@ -340,6 +422,15 @@ database in a temporary directory, with no window:
 - export writes both formats and refuses a third
 - a backup reopens with the same key
 - Indian date and money formats parse
+- a rule fires on its day and not before, and once however often the sweep runs
+- a dry run writes nothing and sends nothing
+- an opt-out and a missing address are recorded rather than retried
+- a failed send stays queued until it gives up, and the daily cap holds the rest
+  back for tomorrow
+- renewing cancels the reminder still waiting to go out
+- a template fills in the policy, refuses unknown names, and cannot be broken by
+  a client name containing an ampersand
+- the plain-text part keeps the shape of the HTML it was derived from
 
 Run them with `cd src-tauri && cargo test --lib`. CI runs the same command on
 macOS before building any installer, so a release is never cut on a failing data
@@ -363,21 +454,13 @@ first launch.
 
 Working today: clients and insured members, policies with renewal chains, the
 renewals desk, the dashboard, insurers and plans, spreadsheet import with a dry
-run, export, settings, encrypted backups, lock and unlock.
+run, export, reminders — rules, templates, the outbox and the daily sweep over
+the agent's own SMTP server — settings, encrypted backups, lock and unlock.
 
-The schema already carries tables that no screen writes to yet:
-`premium_payments`, `commissions`, `claims`, `documents`, `email_templates`,
-`reminder_rules`, `notification_log`, `audit_log` and `saved_views`. They exist
-because their shape affects the design of what is built — `notification_log`'s
-`UNIQUE (rule_id, policy_id, policy_period)` is what will make a reminder fire
-exactly once per policy year no matter how often the scheduler sweeps or the app
-restarts, and the tray-resident lifecycle exists so that sweep has somewhere to
-run.
+The schema still carries tables that no screen writes to: `premium_payments`,
+`commissions`, `claims`, `documents`, `audit_log` and `saved_views`. They exist
+because their shape affects the design of what is built.
 
-Reminder sending is the notable gap. The SMTP settings are editable in Settings,
-and two templates and the 60/30/15/7/1 rule ladder are seeded, but no command
-reads or writes `email_templates` or `reminder_rules`, so nothing in the app can
-change them and nothing sends mail. The renewals screen
-with **Copy emails** is the working substitute. Reports, document storage, claims
-tracking and multi-user logins are the other unbuilt pieces named in the
-[README](../README.md).
+Unbuilt, in the order they are worth building: the reporting pack, document
+storage against a policy, premium and commission tracking, claims, and multi-user
+logins. The [README](../README.md) is the running list.

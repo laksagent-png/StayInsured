@@ -157,6 +157,34 @@ const shots = [
     },
   },
   {
+    name: "reminders",
+    caption: "Reminders: what goes out today, and how the last run went",
+    route: "/reminders",
+  },
+  {
+    name: "reminder-rules",
+    caption: "The ladder: each rule sends one message, once, per policy year",
+    route: "/reminders",
+    prepare: click("Rules"),
+  },
+  {
+    name: "reminder-message",
+    caption: "Writing a message, with the preview filled in from a real policy",
+    route: "/reminders",
+    prepare: async (page) => {
+      await page.getByRole("button", { name: "Messages" }).click();
+      await page.waitForTimeout(400);
+      await page.getByRole("button", { name: "Edit" }).first().click();
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "reminder-history",
+    caption: "History: every message, why one was skipped, and what to retry",
+    route: "/reminders",
+    prepare: click("History"),
+  },
+  {
     name: "import-mapping",
     caption: "Import: the app guesses your column headings, and you correct the guesses",
     route: "/import",
@@ -188,7 +216,7 @@ const shots = [
   },
   {
     name: "settings",
-    caption: "Settings: agency details, password, backups and reminder preferences",
+    caption: "Settings: agency details, password, backups, reminders and your mail server",
     route: "/settings",
   },
 ];
