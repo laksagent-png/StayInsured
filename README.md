@@ -1,135 +1,232 @@
 # StayInsured
 
-A desktop client-and-policy manager for an insurance agency. Everything lives on
-your machine in an encrypted database; nothing is sent anywhere.
+StayInsured keeps your client book, every policy you have placed, and every
+renewal date in one place on your own computer. It tells you what is about to
+lapse, holds the full history of each policy year after year, and hands you a
+list of who to contact this week.
 
-Runs on macOS, Windows and Linux from the same codebase (Tauri 2: a Rust core
-with a React user interface).
+Nothing is uploaded anywhere. There is no account, no subscription and no
+internet connection required. Your book sits in an encrypted file on your
+machine that only opens with your password.
 
-**This file is for developers.** If you want to install and use the app, read the
-[user guide](USER-GUIDE.md) and download an installer from the
-[releases page](https://github.com/laksagent-png/StayInsured/releases).
+Runs on macOS and Windows. Building from source, or working on the app itself, is
+covered in [DEVELOPER.md](DEVELOPER.md).
 
-## What it does today
+---
 
-- **Clients** — contact details, addresses, insured family members, archive
-  instead of delete, full-text search.
-- **Policies** — one client can hold any number of policies (health, life,
-  motor, travel, and so on). Each year of a policy is its own record linked into
-  a renewal chain, so history is preserved rather than overwritten.
-- **Renewals desk** — policies grouped by how soon they lapse: overdue, 7, 30,
-  60 and 90 days. Renewing pre-fills from last year and starts the next link in
-  the chain.
-- **Dashboard** — book size, premium under management, commission, what expires
-  when, and the split by category.
-- **Import** — load an Excel or CSV file, map the columns (the app guesses),
-  validate with a dry run that changes nothing, then commit. Re-importing the
-  same file does not create duplicates.
-- **Export** — any filtered list to `.xlsx` or `.csv`.
-- **Insurers and products** — a catalogue that keeps naming consistent.
+## Installing
 
-Reminder emails, reports and document storage are the next phases; the schema
-and settings for them are already in place.
+Go to the [releases page](https://github.com/laksagent-png/StayInsured/releases)
+and download the file for your computer.
 
-## Security
+**On a Mac** — open the `.dmg` and drag StayInsured into your Applications
+folder. The first time you open it, **right-click the app and choose Open**, then
+confirm. Do not double-click it the first time: macOS blocks apps it has not seen
+before and a double-click gives you a warning with no way past it. Right-clicking
+gives you an Open button. You only do this once.
 
-- The database is SQLCipher-encrypted at rest.
-- The key is derived from your app password with Argon2id; the password itself
-  is never stored.
-- Optionally the derived key is kept in the OS keychain (macOS Keychain, Windows
-  Credential Manager, Linux Secret Service) so daily unlocking is one click.
-  Turning that off means typing the password every time.
-- Lose the password with no keychain entry and the data is unrecoverable. That
-  is the point of encryption; keep a copy of the password somewhere safe.
+**On Windows** — run the `.exe` installer. Windows will say the publisher is
+unknown. Choose **More info**, then **Run anyway**.
 
-## Requirements
+Both warnings appear because the app is not registered with Apple and Microsoft,
+which costs money each year. They are not a sign that anything is wrong.
 
-- Node.js 18 or newer
-- Rust 1.82 or newer (`https://rustup.rs`)
-- Platform build tools: Xcode Command Line Tools on macOS, Microsoft C++ Build
-  Tools on Windows, `webkit2gtk` and `libayatana-appindicator` on Linux
+## Setting up, the first time
 
-## Running it
+The app asks for two things:
 
-```bash
-npm install
-npm run app          # development, with hot reload
-```
+1. **Your agency name** — appears in the app and, later, in the emails you send.
+2. **A password** — this creates your encrypted book.
 
-To produce an installer for the machine you are on:
+**Read this before choosing the password.** The password is the only key to your
+data. It is not stored anywhere, not by us and not on your computer, so nobody
+can look it up or reset it for you. If you forget it and you have not ticked the
+option below, your client book cannot be recovered. Write it down and keep it
+somewhere safe, the same way you would treat the keys to a filing cabinet.
 
-```bash
-npm run app:build    # output in src-tauri/target/release/bundle
-```
+You will be offered **Remember on this device**. Ticking it lets your computer's
+own password manager (Keychain on Mac, Credential Manager on Windows) hold the
+key, so opening the app is a single click. Leave it unticked if the machine is
+shared, and you will type your password each time.
 
-Other scripts: `npm run dev` (web only), `npm run build` (typecheck and bundle
-the frontend), `npm run icons` (regenerate app and tray icons).
+## Opening it day to day
 
-Rust tests cover the data layer end to end — migrations, renewal chains, status
-rules, import idempotency, export, backup:
+Launch the app, unlock, and you land on the dashboard.
 
-```bash
-cd src-tauri && cargo test --lib
-```
+Closing the window does **not** quit the app. It keeps running in the menu bar
+(Mac) or system tray (Windows), so scheduled work carries on. To quit properly,
+click the tray icon and choose Quit.
 
-## Cutting a release
+---
 
-GitHub Actions builds both installers. Bump the version in the three places
-that carry it, then tag:
+## The seven screens
 
-```bash
-# src-tauri/tauri.conf.json, src-tauri/Cargo.toml, package.json
-git commit -am "Release 0.2.0"
-git tag v0.2.0
-git push origin main --tags
-```
+**Dashboard** — the state of your book at a glance: how many clients, how many
+live policies, what expires in the next stretch, the premium you manage, your
+commission, and the split across health, life, motor and the rest. Every number
+is clickable and takes you to the list behind it.
 
-The workflow refuses to build if the tag and the app version disagree, so the
-installers can never ship under the wrong number. It publishes a release with a
-universal macOS `.dmg` and a Windows `.exe` and `.msi`.
+**Renewals** — your working list, and the screen you will live in. See below.
 
-To test a build without announcing a version, run the **Build installers**
-workflow by hand from the Actions tab; it attaches the installers to the run
-instead of creating a release.
+**Clients** — everybody in your book. Search by name, phone, email, client code
+or PAN. Narrow by city, by the kind of cover they hold, by who has no email
+address on file, or show archived clients.
 
-Releases are unsigned, so macOS and Windows both warn on first launch. The
-workflow attaches instructions to every release, and the
-[user guide](USER-GUIDE.md) covers it too. Signing needs a paid Apple Developer
-account and a Windows certificate.
+**Client page** — one client in full: contact details, the family members covered
+under their policies, and every policy they hold, past and present.
 
-## Where the app keeps its data
+**Policies** — every policy you have placed, searchable by policy number, client
+name or vehicle number, filterable by category, status and expiry window.
 
-| Platform | Location |
-| --- | --- |
-| macOS | `~/Library/Application Support/com.stayinsured.app` |
-| Windows | `%APPDATA%\com.stayinsured.app` |
-| Linux | `~/.local/share/com.stayinsured.app` |
+**Import** — bring an existing spreadsheet in. See below.
 
-Inside: `stayinsured.db` (encrypted), `vault.json` (key derivation parameters —
-not the key), `documents/`, `backups/`, `logs/`. **Settings → Reveal data
-folder** opens it.
+**Insurers** — the list of insurance companies and their plans. Keeping this tidy
+means "HDFC Ergo" does not end up recorded three different ways.
 
-Backups are encrypted copies of the database. Point the backup folder at a
-Google Drive or Dropbox directory if you want them off the machine.
+**Settings** — your agency details, your password, backups, and where your data
+lives.
 
-## How the code is laid out
+---
 
-```
-src/                    React + TypeScript interface
-  lib/api.ts            typed wrapper over every Rust command
-  lib/types.ts          mirrors the Rust models
-  pages/                one file per screen
-  components/           shared widgets and forms
-src-tauri/src/
-  commands.rs           the whole API surface exposed to the interface
-  db/                   connection, migrations, SQL schema
-  repo/                 queries, one module per entity
-  importer.rs           spreadsheet reading, mapping, validation
-  exporter.rs           xlsx and csv writing
-  vault.rs              password hashing, key derivation, keychain
-  tests.rs              data-layer tests
-```
+## Getting your existing book in
 
-The interface never writes SQL. It calls commands; commands call repositories;
-repositories own the queries. Adding a screen means adding a command and a page,
-not touching the database layer.
+If you already track clients in Excel, you do not need to retype anything.
+
+1. Open **Import** and click **Download template**. You get a spreadsheet with
+   every column the app understands, so you can see the shape it expects.
+2. Either fill in the template, or just point the app at the spreadsheet you
+   already keep — it does not have to match the template. Click **Choose file**
+   and pick your `.xlsx`, `.xls` or `.csv`.
+3. The app reads your column headings and guesses which is which. Check its
+   guesses on the **Match your columns to fields** panel and correct any it got
+   wrong. Four fields must be matched before it will run: **client name**,
+   **policy number**, **insurer** and **expiry date**. Everything else is
+   optional.
+4. Click **Check without saving**. This reads the whole file and reports exactly
+   what it would do, listing every row it cannot make sense of and why, without
+   changing anything at all. Fix your spreadsheet and check again as many times
+   as you like.
+5. When the report looks right, click **Import for real**.
+
+Things worth knowing about how it reads a file:
+
+- **It will not create duplicates.** Clients are matched on client code first,
+  then email, then phone, then name. Import the same file twice and the second
+  run changes nothing.
+- **A policy is identified by its insurer plus policy number.** Tick *update
+  existing* if you want a re-import to refresh policies already recorded.
+- **Blank fields get filled in, filled fields are left alone.** A second import
+  can add the phone numbers you were missing without overwriting anything.
+- **Dates can be written the usual ways** — `31/03/2026`, `2026-03-31`, or a real
+  Excel date. Money can carry symbols and commas: `₹10,00,000` and
+  `Rs. 24,500.50` both read correctly.
+- **The kind of cover is worked out from your wording.** "Mediclaim" and "family
+  floater" become Health, "term plan" becomes Life, "two wheeler" becomes Motor,
+  "overseas" and "student" become Travel. Correct anything it gets wrong
+  afterwards.
+- **A row that fails is skipped whole.** It never leaves a half-created client
+  behind.
+
+---
+
+## Working the renewals
+
+The **Renewals** screen groups policies by how soon cover stops: **Overdue**,
+then the next **7**, **30**, **60** and **90 days**. Work down from the top.
+
+Three buttons at the top right:
+
+- **Recalculate** — rechecks every policy against today's date. Statuses move on
+  their own, but this forces it, which is handy first thing in the morning.
+- **Copy emails** — copies the email addresses of everyone in the list you are
+  looking at, ready to paste into your mail program. Clients who have asked not
+  to be contacted are left out automatically.
+- **Export** — saves the list as Excel or CSV.
+
+To renew a policy, click **Renew** on its row. Last year's details are filled in
+for you; change the premium, dates or sum insured as needed and save.
+
+**This is the important part:** renewing does not overwrite last year. It creates
+the new policy year and links it to the old one, so you keep the full history —
+what they paid in each year, when cover ran, what changed. Click **History** on
+any policy to see the whole chain.
+
+## Several policies for one person
+
+One client holds as many policies as they need — health, life, motor, travel, all
+under the same name, each with its own number, insurer, premium and expiry date.
+Their client page lists all of them together, and the renewals list treats each
+separately, because each falls due at its own time.
+
+Family members covered under a policy are recorded on the client too, so you know
+who is on the family floater without opening the paperwork.
+
+---
+
+## Reminders, and what works today
+
+Automatic reminder emails are being built and are not switched on yet. What you
+have today is the **Renewals** screen plus its **Copy emails** button, which gets
+you a ready-made recipient list in a few seconds.
+
+The settings for the automatic version are already there under
+**Settings → Reminders** — what time of day to send, how many to send per day,
+whether to start the app at login — and what you save now will be used when
+sending is switched on. Filling them in early does no harm.
+
+## Backups
+
+Your data lives in one encrypted file, so backing up means copying that file.
+
+Under **Settings → Data & backups** you can **Back up now** at any time, and set
+**Copy backups to** — a folder of your choosing. Point it at your Google Drive or
+Dropbox folder and every backup is carried off the machine automatically, which
+covers you if the computer is lost or stolen. Backups are encrypted with the same
+password, so they are safe to keep in cloud storage.
+
+**Reveal data folder** opens the folder holding everything, which is what you
+copy to move to a new computer.
+
+## Settings worth knowing
+
+- **Agency name, contact email, phone, address** — used in the app and in client
+  emails later.
+- **Expiring soon window** — how many days ahead counts as "expiring soon" on the
+  dashboard. Set it to how far ahead you actually start chasing renewals.
+- **Currency** — Indian rupees by default.
+- **Change password** — needs your current one. Do this away from month-end;
+  the book is re-encrypted as part of it.
+- **Show desktop alerts** — a notification about the day's expiries.
+
+---
+
+## Questions
+
+**Can I use this on two computers?** Not at the same time, sharing one book. Each
+installation keeps its own data. Copying the data folder across moves the book,
+which works well for replacing a machine.
+
+**Can my assistant have their own login?** Not yet. The app is built for one
+person today, and multiple logins are planned.
+
+**Is my data on the internet?** No. It never leaves your computer unless you
+point backups at a cloud folder yourself.
+
+**What if I forget my password?** If you ticked "remember on this device", that
+computer can still open the book, and you should change the password to something
+you will keep. If you did not, the data cannot be recovered by anyone. This is
+the unavoidable other side of it being properly encrypted.
+
+**Will updating lose my data?** No. Installing a newer version replaces the app,
+not your book.
+
+**Something looks wrong.** Please open an issue at
+https://github.com/laksagent-png/StayInsured/issues describing what you did and
+what happened. If it involves a spreadsheet import, say which column upset it,
+but do not attach a file containing real client details.
+
+## Still to come
+
+Being honest about what is not built yet: automatic reminder emails with editable
+templates, the printable report pack, storing scanned policy documents against a
+client, claims tracking, and logins for more than one person.
