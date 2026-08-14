@@ -38,9 +38,12 @@ pub trait Alerter {
     fn alert(&self, title: &str, body: &str);
 }
 
-/// Used when the caller has nowhere to show an alert, such as during a dry run.
+/// Stands in for an alerter where there is no desktop to alert, which today is
+/// only the tests. Every caller in the app itself passes `DesktopAlerts`.
+#[cfg(test)]
 pub struct NoAlerts;
 
+#[cfg(test)]
 impl Alerter for NoAlerts {
     fn alert(&self, _title: &str, _body: &str) {}
 }
