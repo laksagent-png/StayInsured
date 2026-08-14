@@ -60,6 +60,48 @@ jobs:
             exit 1
           fi
 
+      # The notes come from CHANGELOG.md rather than being written at the
+      # release, so what is announced is what was reviewed with the code.
+      - name: Take the release notes from the changelog
+        if: github.ref_type == 'tag'
+        id: notes
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          notes=$(awk -v v="$version" '
+            $0 ~ "^## " v "([^0-9].*)?$" { capturing = 1; next }
+            capturing && /^## / { exit }
+            capturing { print }
+          ' CHANGELOG.md)
+
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            echo "CHANGELOG.md has no section for $version." >&2
+            echo "Add '## $version — <date>' describing what changed, then retag." >&2
+            echo "A release with no notes tells nobody what they are installing." >&2
+            exit 1
+          fi
+
+          # Each line is passed as its own argument, so the indentation this file
+          # needs never reaches the markdown.
+          {
+            echo "body<<STAYINSURED_NOTES"
+            printf '%s\n' "$notes"
+            printf '%s\n' \
+              "---" \
+              "" \
+              "## Installing" \
+              "" \
+              "**macOS**: open the \`.dmg\` and drag StayInsured to Applications. The app is not signed with an Apple certificate, so the first launch needs a right-click on the app and then Open, rather than a double-click. macOS remembers the choice." \
+              "" \
+              "**Windows**: run the \`.exe\` installer. Windows SmartScreen will warn about an unknown publisher, since the app is not signed; choose More info and then Run anyway." \
+              "" \
+              "Your data stays on your machine in an encrypted database. Upgrading keeps it: the installer replaces the app, not the data folder." \
+              "" \
+              "How to use it, one page per operation, with screenshots:" \
+              "https://github.com/laksagent-png/StayInsured/blob/main/docs/guide/index.md"
+            echo "STAYINSURED_NOTES"
+          } >> "$GITHUB_OUTPUT"
+
       # The encrypted database vendors OpenSSL, and building it needs Perl and
       # NASM. The runner image ships both today; this is here so a change to the
       # image fails as a clear message rather than a wall of C errors.
@@ -95,23 +137,7 @@ jobs:
           releaseName: StayInsured ${{ github.ref_name }}
           releaseDraft: false
           prerelease: false
-          releaseBody: |
-            Download the installer for your machine below.
-
-            **macOS**: open the `.dmg` and drag StayInsured to Applications. The
-            app is not signed with an Apple certificate, so the first launch
-            needs a right-click on the app and then Open, rather than a
-            double-click. macOS remembers the choice.
-
-            **Windows**: run the `.exe` installer. Windows SmartScreen will warn
-            about an unknown publisher, since the app is not signed; choose More
-            info and then Run anyway.
-
-            Your data stays on your machine in an encrypted database. Upgrading
-            keeps it: the installer replaces the app, not the data folder.
-
-            How to use it, one page per operation, with screenshots:
-            https://github.com/laksagent-png/StayInsured/blob/main/docs/guide/index.md
+          releaseBody: ${{ steps.notes.outputs.body }}
 
       - name: Keep the installers when there is no release to attach them to
         if: github.ref_type != 'tag'

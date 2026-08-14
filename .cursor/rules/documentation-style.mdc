@@ -20,6 +20,11 @@ must not have to reconstruct the present from a history of changes.
 - Do not narrate the work: no "added", "updated", "improved", "refactored". That
   belongs in the commit message.
 
+`CHANGELOG.md` is the single exception: it exists to record change, so it is
+written in version order and may say what is new. Even there, describe the
+result for the person using the app — "statuses follow the calendar" — rather
+than the work done to the code.
+
 ## Be assertive and concrete
 
 - Commit to a statement. Prefer "Backups are encrypted with the same key" over

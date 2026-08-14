@@ -107,19 +107,29 @@ cd src-tauri && cargo test --lib
 
 ## Cutting a release
 
-GitHub Actions builds both installers. Bump the version in the three places
-that carry it, then tag:
+GitHub Actions builds both installers. Rename the **Unreleased** heading in
+[CHANGELOG.md](CHANGELOG.md) to the version and its date, open a fresh
+Unreleased section above it, bump the version in the three places that carry it,
+then tag:
 
 ```bash
-# src-tauri/tauri.conf.json, src-tauri/Cargo.toml, package.json
+# CHANGELOG.md, src-tauri/tauri.conf.json, src-tauri/Cargo.toml, package.json
 git commit -am "Release 0.2.0"
 git tag v0.2.0
 git push origin main --tags
 ```
 
-The workflow refuses to build if the tag and the app version disagree, so the
-installers can never ship under the wrong number. It publishes a release with a
-universal macOS `.dmg` and a Windows `.exe` and `.msi`.
+The workflow refuses to build if the tag and the app version disagree, or if the
+changelog has no section for that version, so the installers can never ship
+under the wrong number or with nothing to say for themselves. The release body
+is the changelog section plus the standing install instructions, and it carries
+a universal macOS `.dmg` with a Windows `.exe` and `.msi`.
+
+Every user-visible change adds a line under **Unreleased** as it is made, not at
+release time — the person who made the change is the one who knows what it means
+for an agent. The same file is published at
+https://laksagent-png.github.io/StayInsured/release-notes.html, included from the
+site rather than copied into it.
 
 To test a build without announcing a version, run the **Build installers**
 workflow by hand from the Actions tab; it attaches the installers to the run

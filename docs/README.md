@@ -31,6 +31,7 @@ is building the app.
 | Document | Audience | Covers |
 | --- | --- | --- |
 | [README](../README.md) | Anyone | What the app is, installing it, the short version of using it |
+| [CHANGELOG](../CHANGELOG.md) | Anyone | What changed in each version. A user-visible change adds a line here as it is made |
 | [DEVELOPER](../DEVELOPER.md) | Anyone building it | Requirements, running, testing, cutting a release, code layout |
 | [DESIGN](technical/DESIGN.md) | Anyone changing it | Architecture, security model, renewal-chain and status design, import pipeline, error model, what is deliberately unbuilt |
 | [API](technical/API.md) | Anyone calling the core | All 50 Tauri commands, arguments, return types, error kinds, settings keys |
