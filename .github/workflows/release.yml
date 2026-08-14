@@ -91,7 +91,7 @@ jobs:
               "" \
               "## Installing" \
               "" \
-              "**macOS**: open the \`.dmg\` and drag StayInsured to Applications. The app is not signed with an Apple certificate, so the first launch needs a right-click on the app and then Open, rather than a double-click. macOS remembers the choice." \
+              "**macOS**: open the \`.dmg\` and drag StayInsured to Applications. The app is not signed with an Apple certificate, so the first launch is refused. Open System Settings, then Privacy & Security, and press Open Anyway on the line saying StayInsured was blocked. On macOS 14 and earlier, right-click the app and choose Open instead. Either way, macOS remembers the choice." \
               "" \
               "**Windows**: run the \`.exe\` installer. Windows SmartScreen will warn about an unknown publisher, since the app is not signed; choose More info and then Run anyway." \
               "" \

@@ -18,13 +18,20 @@ Download the file for your computer from the
 
 | System | File | What to do |
 | --- | --- | --- |
-| macOS | `.dmg` | Open it, drag StayInsured into Applications, then **right-click the app and choose Open** the first time |
+| macOS | `.dmg` | Open it, drag StayInsured into Applications, then allow the first launch from **System Settings → Privacy & Security** |
 | Windows | `.exe` | Run it. When Windows says the publisher is unknown, choose **More info**, then **Run anyway** |
 
-On macOS a double-click gives you a warning with no way past it; right-clicking
-gives you an Open button. You do this once. Both warnings appear because the app
-is not registered with Apple and Microsoft, and neither is a sign that anything
-is wrong.
+On a Mac the first launch is refused, and the warning has no Open button on it.
+Open **System Settings → Privacy & Security** and scroll to the bottom: a line
+says StayInsured was blocked, with **Open Anyway** beside it. Press that, confirm
+with your Mac password, and the app opens. You do this once.
+
+On macOS 14 and earlier, right-click the app and choose **Open** instead, which
+gives you an Open button there and then. Apple removed that shortcut in macOS 15.
+
+Both warnings appear because the app is not registered with Apple and Microsoft,
+and neither is a sign that anything is wrong. They only ever appear on the first
+install — [updates](#get-new-versions) replace the app without either of them.
 
 The app needs no other software. It carries its own database.
 

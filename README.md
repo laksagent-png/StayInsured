@@ -24,10 +24,14 @@ Go to the [releases page](https://github.com/laksagent-png/StayInsured/releases)
 and download the file for your computer.
 
 **On a Mac** — open the `.dmg` and drag StayInsured into your Applications
-folder. The first time you open it, **right-click the app and choose Open**, then
-confirm. Do not double-click it the first time: macOS blocks apps it has not seen
-before and a double-click gives you a warning with no way past it. Right-clicking
-gives you an Open button. You only do this once.
+folder. Opening it the first time is refused: macOS blocks apps it has not seen
+before, and the warning it shows has no Open button on it. Getting past it takes
+one trip to **System Settings → Privacy & Security**, where a line saying
+StayInsured was blocked sits near the bottom with an **Open Anyway** button
+beside it. Press that, confirm, and the app opens. You do this once.
+
+On macOS 14 and earlier, **right-click the app and choose Open** instead, which
+gives you an Open button there and then. Apple removed that shortcut in macOS 15.
 
 **On Windows** — run the `.exe` installer. Windows will say the publisher is
 unknown. Choose **More info**, then **Run anyway**.
