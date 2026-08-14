@@ -5,6 +5,8 @@ settings survive every version below.
 
 ## Upcoming
 
+## 0.3.0 — 15 August 2026
+
 ### Documents
 
 - **Keep the paperwork with the client.** Every client page has a Documents
