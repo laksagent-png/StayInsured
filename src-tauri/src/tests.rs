@@ -8,7 +8,7 @@ use crate::db::Database;
 use crate::importer::{self, ImportOptions};
 use crate::mail::{self, Outgoing};
 use crate::models::{
-    ClientFilter, ClientInput, DocumentInput, PolicyFilter, PolicyInput, RenewalInput,
+    ClientFilter, ClientInput, DocumentInput, MemberInput, PolicyFilter, PolicyInput, RenewalInput,
 };
 use crate::reminders::{self, NoAlerts, SweepOptions};
 use crate::repo::{clients, dashboard, documents, insurers, members, policies, products, settings};
@@ -149,6 +149,305 @@ fn client_codes_increment_and_dedupe_matching() {
             )?;
             assert_eq!(page.total, 1);
             assert_eq!(page.rows[0].full_name, "Rohit Sharma");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn matching_prefers_the_code_then_the_email_then_the_phone() {
+    let temp = TempDb::new("matching");
+    temp.db
+        .with(|conn| {
+            // Each client answers to exactly one of the four, so whichever comes
+            // back names the step of the order that decided it.
+            let by_code = clients::create(
+                conn,
+                &ClientInput {
+                    client_code: Some("CL-09000".into()),
+                    phone: Some("90000 00001".into()),
+                    ..sample_client("Asha Pillai")
+                },
+            )?;
+            let by_email = clients::create(
+                conn,
+                &ClientInput {
+                    phone: Some("90000 00002".into()),
+                    ..sample_client("Bharat Rao")
+                },
+            )?;
+            let by_phone = clients::create(
+                conn,
+                &ClientInput {
+                    email: None,
+                    phone: Some("+91 90000 00003".into()),
+                    ..sample_client("Chitra Sen")
+                },
+            )?;
+            let by_name = clients::create(
+                conn,
+                &ClientInput {
+                    email: None,
+                    phone: None,
+                    ..sample_client("Zara Khan")
+                },
+            )?;
+
+            assert_eq!(
+                clients::find_match(
+                    conn,
+                    Some("CL-09000"),
+                    Some("bharat.rao@example.com"),
+                    Some("+919000000003"),
+                    "Zara Khan",
+                )?,
+                Some(by_code)
+            );
+            assert_eq!(
+                clients::find_match(
+                    conn,
+                    None,
+                    Some("bharat.rao@example.com"),
+                    Some("+919000000003"),
+                    "Zara Khan",
+                )?,
+                Some(by_email)
+            );
+            assert_eq!(
+                clients::find_match(conn, None, None, Some("+919000000003"), "Zara Khan")?,
+                Some(by_phone)
+            );
+            assert_eq!(
+                clients::find_match(conn, None, None, None, "zara khan")?,
+                Some(by_name)
+            );
+
+            // A code the book has never seen falls through to the next step
+            // rather than deciding there is no such client.
+            assert_eq!(
+                clients::find_match(
+                    conn,
+                    Some("CL-99999"),
+                    Some("BHARAT.RAO@EXAMPLE.COM"),
+                    None,
+                    "Nobody At All",
+                )?,
+                Some(by_email),
+                "an unknown code keeps looking, and email ignores case"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn archiving_puts_a_client_away_without_losing_them() {
+    let temp = TempDb::new("archive");
+    temp.db
+        .with(|conn| {
+            let id = clients::create(conn, &sample_client("Meera Iyer"))?;
+            let insurer = insurers::find_or_create(conn, "Star Health")?;
+            policies::create(
+                conn,
+                &sample_policy(id, insurer, "SH/2026/55", "2027-03-31"),
+            )?;
+
+            clients::set_archived(conn, id, true)?;
+            assert_eq!(
+                clients::list(conn, &ClientFilter::default())?.total,
+                0,
+                "the everyday list leaves archived clients out"
+            );
+
+            let including = clients::list(
+                conn,
+                &ClientFilter {
+                    include_archived: Some(true),
+                    ..Default::default()
+                },
+            )?;
+            assert_eq!(including.total, 1);
+            assert!(including.rows[0].is_archived);
+
+            // Archiving is the gentler option offered next to delete, so the
+            // client and their policies have to survive it intact.
+            assert_eq!(clients::get(conn, id)?.full_name, "Meera Iyer");
+            let kept: i64 =
+                conn.query_row("SELECT COUNT(*) FROM policies", [], |row| row.get(0))?;
+            assert_eq!(kept, 1);
+
+            clients::set_archived(conn, id, false)?;
+            assert_eq!(clients::list(conn, &ClientFilter::default())?.total, 1);
+
+            assert!(
+                matches!(
+                    clients::set_archived(conn, 9_999, true),
+                    Err(crate::error::AppError::NotFound("Client"))
+                ),
+                "archiving a client who is not there is an error, not a silent pass"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn deleting_a_client_takes_their_policies_and_members_with_them() {
+    let temp = TempDb::new("client-cascade");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Neha Kulkarni"))?;
+            let insurer = insurers::find_or_create(conn, "Star Health")?;
+            let policy = policies::create(
+                conn,
+                &sample_policy(client, insurer, "SH/2026/77", "2027-03-31"),
+            )?;
+            let member = members::create(
+                conn,
+                &MemberInput {
+                    client_id: client,
+                    full_name: "Aarav Kulkarni".into(),
+                    relationship: Some("son".into()),
+                    date_of_birth: None,
+                    gender: None,
+                    notes: None,
+                },
+            )?;
+            policies::set_members(conn, policy, &[member])?;
+
+            // A second client proves the delete reaches for one book, not the table.
+            let bystander = clients::create(conn, &sample_client("Sanjay Gupta"))?;
+            policies::create(
+                conn,
+                &sample_policy(bystander, insurer, "SH/2026/78", "2027-03-31"),
+            )?;
+
+            clients::delete(conn, client)?;
+
+            let policies_left: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM policies WHERE client_id = ?1",
+                [client],
+                |row| row.get(0),
+            )?;
+            let members_left: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM insured_members WHERE client_id = ?1",
+                [client],
+                |row| row.get(0),
+            )?;
+            let links_left: i64 =
+                conn.query_row("SELECT COUNT(*) FROM policy_members", [], |row| row.get(0))?;
+            assert_eq!(
+                (policies_left, members_left, links_left),
+                (0, 0, 0),
+                "policies, members and the links between them all go"
+            );
+
+            let survivors: i64 =
+                conn.query_row("SELECT COUNT(*) FROM policies", [], |row| row.get(0))?;
+            assert_eq!(survivors, 1, "the other client keeps their policy");
+            assert!(matches!(
+                clients::get(conn, client),
+                Err(crate::error::AppError::NotFound("Client"))
+            ));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_client_code_belongs_to_one_client() {
+    let temp = TempDb::new("client-codes");
+    temp.db
+        .with(|conn| {
+            let first = clients::create(
+                conn,
+                &ClientInput {
+                    client_code: Some("CL-00042".into()),
+                    ..sample_client("Priya Menon")
+                },
+            )?;
+
+            let clash = clients::create(
+                conn,
+                &ClientInput {
+                    client_code: Some("CL-00042".into()),
+                    ..sample_client("Priya Nair")
+                },
+            );
+            assert!(
+                matches!(clash, Err(crate::error::AppError::Conflict(_))),
+                "a code already in use is refused rather than silently duplicated"
+            );
+
+            // The counter reads the highest code in the book, so one typed by
+            // hand moves the automatic ones past it instead of colliding.
+            let next = clients::create(conn, &sample_client("Vikas Rao"))?;
+            assert_eq!(clients::get(conn, next)?.client_code, "CL-00043");
+
+            // Editing a client without restating the code keeps it.
+            clients::update(
+                conn,
+                first,
+                &ClientInput {
+                    client_code: None,
+                    ..sample_client("Priya Menon Iyer")
+                },
+            )?;
+            let saved = clients::get(conn, first)?;
+            assert_eq!(saved.client_code, "CL-00042");
+            assert_eq!(saved.full_name, "Priya Menon Iyer");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_blank_field_is_stored_as_nothing_rather_than_as_empty_text() {
+    let temp = TempDb::new("blanks");
+    temp.db
+        .with(|conn| {
+            let id = clients::create(
+                conn,
+                &ClientInput {
+                    full_name: "  ramesh IYER ".into(),
+                    email: Some("   ".into()),
+                    phone: Some("".into()),
+                    city: Some("  Nashik  ".into()),
+                    pan: Some("abcde1234f".into()),
+                    notes: Some("\n\t".into()),
+                    ..Default::default()
+                },
+            )?;
+
+            let saved = clients::get(conn, id)?;
+            assert_eq!(saved.email, None, "an untouched box is not an empty string");
+            assert_eq!(saved.phone, None);
+            assert_eq!(saved.notes, None);
+            assert_eq!(
+                saved.city.as_deref(),
+                Some("Nashik"),
+                "space is trimmed off"
+            );
+            assert_eq!(
+                saved.pan.as_deref(),
+                Some("ABCDE1234F"),
+                "tax identifiers are stored upper case"
+            );
+            assert_eq!(
+                saved.full_name, "Ramesh Iyer",
+                "names are tidied on the way in"
+            );
+
+            // The screen that finds clients with no address to write to depends
+            // on blank and missing being the same thing.
+            let missing = clients::list(
+                conn,
+                &ClientFilter {
+                    missing_email: Some(true),
+                    ..Default::default()
+                },
+            )?;
+            assert_eq!(missing.total, 1);
             Ok(())
         })
         .unwrap();

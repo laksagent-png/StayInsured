@@ -439,6 +439,13 @@ database in a temporary directory, with no window:
 - migrations and seed apply, and the 60/30/15/7/1 reminder ladder is active
 - a wrong key is reported as `bad_password`
 - client codes increment and deduplication resolves in the documented order
+- matching falls from code to email to phone to name, and an unknown code keeps
+  looking rather than deciding there is no such client
+- a code already in use is refused, and a code typed by hand moves the counter
+  past it
+- archiving puts a client away without touching their policies
+- deleting a client takes their policies, members and the links between them
+- a blank field is stored as nothing rather than as empty text
 - renewal builds a chain, carries values forward and preserves last year's
   premium
 - statuses follow the calendar and the dashboard agrees with them
