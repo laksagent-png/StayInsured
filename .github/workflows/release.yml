@@ -110,6 +110,9 @@ jobs:
             Your data stays on your machine in an encrypted database. Upgrading
             keeps it: the installer replaces the app, not the data folder.
 
+            How to use it, start to finish:
+            https://github.com/laksagent-png/StayInsured/blob/main/USER-GUIDE.md
+
       - name: Keep the installers when there is no release to attach them to
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v4

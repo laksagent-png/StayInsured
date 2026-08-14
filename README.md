@@ -6,21 +6,9 @@ your machine in an encrypted database; nothing is sent anywhere.
 Runs on macOS, Windows and Linux from the same codebase (Tauri 2: a Rust core
 with a React user interface).
 
-## Download
-
-Installers for macOS and Windows are attached to each release:
-https://github.com/laksagent-png/StayInsured/releases
-
-Neither is code-signed, so both operating systems will object the first time:
-
-- **macOS** — right-click the app and choose Open instead of double-clicking.
-  Double-clicking an unsigned app gives a dead end; right-click gives an Open
-  button. Only needed once.
-- **Windows** — SmartScreen warns about an unknown publisher. Choose More info,
-  then Run anyway.
-
-Signing removes both warnings but needs a paid Apple Developer account and a
-Windows code-signing certificate.
+**This file is for developers.** If you want to install and use the app, read the
+[user guide](USER-GUIDE.md) and download an installer from the
+[releases page](https://github.com/laksagent-png/StayInsured/releases).
 
 ## What it does today
 
@@ -104,13 +92,12 @@ To test a build without announcing a version, run the **Build installers**
 workflow by hand from the Actions tab; it attaches the installers to the run
 instead of creating a release.
 
-## First run
+Releases are unsigned, so macOS and Windows both warn on first launch. The
+workflow attaches instructions to every release, and the
+[user guide](USER-GUIDE.md) covers it too. Signing needs a paid Apple Developer
+account and a Windows certificate.
 
-The app asks you to set an owner name and an app password, then creates the
-encrypted database. From there, either add clients by hand or go to **Import**,
-download the template, fill it in, and load it.
-
-## Where your data lives
+## Where the app keeps its data
 
 | Platform | Location |
 | --- | --- |
