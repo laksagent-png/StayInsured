@@ -1,0 +1,6 @@
+Client name,Client code,Email,Mobile,City,Policy number,Insurer,Premium,Expiry date,Notes
+Rohit S Sharma,,rohit.sharma@example.com,,Mumbai,SH/2026/0091823,Star Health and Allied Insurance,25900,2026-08-24,Matched on email. City must stay Pune — filling gaps never overwrites.
+Vikram Patel,,vikram.patel@example.com,99250 44556,Ahmedabad,NIA/MOT/330912,The New India Assurance Company,9600,2026-07-15,Matched on phone. The client gains the email he was missing.
+meera iyer,,,,Bengaluru,NB/RA2/119006,Niva Bupa Health Insurance,28400,2026-10-14,"Matched on name alone, ignoring case and spacing."
+Someone Else Entirely,CL-00003,someone.else@example.com,90000 11111,Surat,SH/2025/0088410,Star Health and Allied Insurance,21500,2026-07-16,"Client code wins over every other match, so this lands on Vikram Patel."
+Ajay Kumar,CL-00020,ajay.kumar@example.com,90909 09090,Mumbai,DG/TRV/117744,Go Digit General Insurance,850,2026-09-04,"Adds the missing email, so the no-email count drops by one."

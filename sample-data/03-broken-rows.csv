@@ -1,0 +1,18 @@
+Client name,Client code,Email,Mobile,Policy number,Insurer,Plan,Category,Start date,Expiry date,Sum insured,Premium,GST,Notes
+,,,,BRK/2026/0001,Star Health and Allied Insurance,,Health,20/08/2025,29/09/2026,500000,12000,2160,No client name — the row must fail.
+Test Client,,,,,Star Health and Allied Insurance,,Health,20/08/2025,29/09/2026,500000,12000,2160,No policy number — the row must fail. The client it would have created is rolled back with it.
+Test Client,,,,BRK/2026/0003,,,Health,20/08/2025,29/09/2026,500000,12000,2160,No insurer — the row must fail.
+Test Client,,,,BRK/2026/0004,Star Health and Allied Insurance,,Health,20/08/2025,N/A,500000,12000,2160,Expiry is not a date — the row must fail.
+Test Client,,,,BRK/2026/0005,Star Health and Allied Insurance,,Health,20/08/2025,31/02/2027,500000,12000,2160,31 February does not exist — the row must fail.
+Rahul Bhatt,,rahul[at]example.com,,BRK/2026/0006,Star Health and Allied Insurance,,Health,20/08/2025,29/09/2026,500000,12000,2160,Bad address: the row imports and the email is dropped.
+Rohit Sharma,,rohit.sharma@example.com,,SH/2026/0091823,Star Health and Allied Insurance,,Health,20/08/2025,29/09/2026,500000,26900,2160,"Already in the clean book: updated, or skipped with updates off."
+Twice Over,,,,BRK/2026/0008,Star Health and Allied Insurance,,Health,20/08/2025,29/09/2026,500000,12000,2160,First of two rows carrying the same number.
+Twice Over,,,,BRK/2026/0008,Star Health and Allied Insurance,,Health,20/08/2025,29/09/2026,500000,13500,2160,Second row updates the first inside the same import.
+"O'Brien, Sean & Co. ""The Agency""",,,,BRK/2026/0010,Star Health and Allied Insurance,,Health,20/08/2025,29/09/2026,500000,12000,2160,"Quotes, a comma and an ampersand in one name."
+अनुज शर्मा,,anuj.sharma@example.com,,BRK/2026/0011,Star Health and Allied Insurance,,Health,20/08/2025,29/09/2026,500000,12000,2160,Devanagari name — search should still find it.
+No Phone Person,,,not on file,BRK/2026/0012,Star Health and Allied Insurance,,Health,20/08/2025,29/09/2026,500000,12000,2160,Phone with no digits is stored as nothing.
+Long Notes Person,,,,BRK/2026/0013,Star Health and Allied Insurance,,Health,20/08/2025,29/09/2026,500000,12000,2160,Very long remark. The client asked for a call before renewal and wants the floater reviewed. The client asked for a call before renewal and wants the floater reviewed. The client asked for a call before renewal and wants the floater reviewed. The client asked for a call before renewal and wants the floater reviewed. The client asked for a call before renewal and wants the floater reviewed. The client asked for a call before renewal and wants the floater reviewed. The client asked for a call before renewal and wants the floater reviewed. The client asked for a call before renewal and wants the floater reviewed. 
+,,,,,,,,,,,,,
+Gadget Guy,,,,BRK/2026/0015,Star Health and Allied Insurance,,Gadget cover,20/08/2025,29/09/2026,500000,12000,2160,Unknown category falls back to Other.
+Bad Numbers,,,,BRK/2026/0016,Star Health and Allied Insurance,,Health,20/08/2025,29/09/2026,not known,TBD,2160,Unreadable amounts are stored as nothing; the row still imports.
+Shared Number,,,,SH/2026/0091823,Care Health Insurance,,Health,20/08/2025,29/09/2026,500000,12000,2160,Same number as the clean book but a different insurer — allowed.
