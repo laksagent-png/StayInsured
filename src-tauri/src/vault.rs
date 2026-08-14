@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, AppResult};
 
 const KEYCHAIN_SERVICE: &str = "com.stayinsured.app";
-const KEYCHAIN_ACCOUNT: &str = "database-key";
+const KEY_ACCOUNT: &str = "database-key";
+/// The mail password is kept beside the database key rather than in `settings`,
+/// so it never travels inside an export or a backup copied to a cloud folder.
+const SMTP_ACCOUNT: &str = "smtp-password";
 
 /// Sits next to the database in clear text. It holds no secret — only the
 /// parameters needed to turn the password back into the key, which is why it can
@@ -91,24 +94,48 @@ pub fn verify_password(password: &str, phc: &str) -> bool {
 }
 
 pub fn remember_key(key_hex: &str) -> AppResult<()> {
-    entry()?
-        .set_password(key_hex)
-        .map_err(|e| AppError::other(format!("could not save to the OS keychain: {e}")))
+    remember(KEY_ACCOUNT, key_hex)
 }
 
 pub fn recall_key() -> Option<String> {
-    entry().ok()?.get_password().ok()
+    recall(KEY_ACCOUNT)
 }
 
 pub fn forget_key() -> AppResult<()> {
-    match entry()?.delete_credential() {
+    forget(KEY_ACCOUNT)
+}
+
+pub fn remember_smtp_password(password: &str) -> AppResult<()> {
+    remember(SMTP_ACCOUNT, password)
+}
+
+pub fn recall_smtp_password() -> Option<String> {
+    recall(SMTP_ACCOUNT)
+}
+
+pub fn forget_smtp_password() -> AppResult<()> {
+    forget(SMTP_ACCOUNT)
+}
+
+fn remember(account: &str, secret: &str) -> AppResult<()> {
+    entry(account)?
+        .set_password(secret)
+        .map_err(|e| AppError::other(format!("could not save to the OS keychain: {e}")))
+}
+
+fn recall(account: &str) -> Option<String> {
+    entry(account).ok()?.get_password().ok()
+}
+
+fn forget(account: &str) -> AppResult<()> {
+    match entry(account)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(AppError::other(format!("could not clear the keychain: {e}"))),
     }
 }
 
-fn entry() -> AppResult<keyring::Entry> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+fn entry(account: &str) -> AppResult<keyring::Entry> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, account)
         .map_err(|e| AppError::other(format!("keychain unavailable: {e}")))
 }
 

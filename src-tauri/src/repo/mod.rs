@@ -2,9 +2,12 @@ pub mod clients;
 pub mod dashboard;
 pub mod insurers;
 pub mod members;
+pub mod notifications;
 pub mod policies;
 pub mod products;
+pub mod rules;
 pub mod settings;
+pub mod templates;
 
 use rusqlite::Connection;
 

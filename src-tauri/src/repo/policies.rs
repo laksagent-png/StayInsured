@@ -349,6 +349,10 @@ pub fn renew(conn: &Connection, input: &RenewalInput) -> AppResult<i64> {
         params![previous.id],
     )?;
 
+    // A client who has just renewed should not receive this morning's queued
+    // "your policy is about to expire" message this evening.
+    super::notifications::cancel_for_policy(conn, previous.id)?;
+
     Ok(new_id)
 }
 

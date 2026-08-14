@@ -84,6 +84,77 @@ pub fn parse_number(raw: &str) -> Option<f64> {
         .map(|value| if negative { -value } else { value })
 }
 
+/// Renders an ISO date the way the agency writes it, following the
+/// `date_format` setting. Anything unrecognised falls back to day-first, which
+/// is what the seeded default uses.
+pub fn format_date(iso_date: &str, pattern: &str) -> String {
+    let Ok(date) = NaiveDate::parse_from_str(iso_date, "%Y-%m-%d") else {
+        return iso_date.to_string();
+    };
+    let strftime = match pattern.trim() {
+        "yyyy-MM-dd" => "%Y-%m-%d",
+        "MM/dd/yyyy" => "%m/%d/%Y",
+        "dd-MM-yyyy" => "%d-%m-%Y",
+        "dd MMM yyyy" => "%d %b %Y",
+        _ => "%d/%m/%Y",
+    };
+    date.format(strftime).to_string()
+}
+
+/// Money in the Indian convention: a group of three, then groups of two, so
+/// 1000000 reads as 10,00,000 rather than 1,000,000.
+pub fn format_money(amount: f64, currency: &str) -> String {
+    let symbol = match currency.trim().to_ascii_uppercase().as_str() {
+        "INR" | "" => "₹",
+        "USD" => "$",
+        "EUR" => "€",
+        "GBP" => "£",
+        other => return format!("{other} {}", group_indian(amount)),
+    };
+    format!("{symbol}{}", group_indian(amount))
+}
+
+fn group_indian(amount: f64) -> String {
+    let negative = amount < 0.0;
+    let rounded = (amount.abs() * 100.0).round() / 100.0;
+    let whole = rounded.trunc() as i64;
+    let paise = ((rounded - rounded.trunc()) * 100.0).round() as i64;
+
+    let digits = whole.to_string();
+    let grouped = if digits.len() <= 3 {
+        digits
+    } else {
+        let (head, tail) = digits.split_at(digits.len() - 3);
+        let mut parts: Vec<String> = Vec::new();
+        let head_chars: Vec<char> = head.chars().collect();
+        let mut index = head_chars.len();
+        while index > 2 {
+            parts.push(head_chars[index - 2..index].iter().collect());
+            index -= 2;
+        }
+        parts.push(head_chars[..index].iter().collect());
+        parts.reverse();
+        format!("{},{tail}", parts.join(","))
+    };
+
+    let body = if paise > 0 {
+        format!("{grouped}.{paise:02}")
+    } else {
+        grouped
+    };
+    if negative {
+        format!("-{body}")
+    } else {
+        body
+    }
+}
+
+/// Whole days from today until the date, negative once it is in the past.
+pub fn days_until(iso_date: &str) -> Option<i64> {
+    let date = NaiveDate::parse_from_str(iso_date, "%Y-%m-%d").ok()?;
+    Some((date - today()).num_days())
+}
+
 /// Adds a year (minus a day) to a start date, the usual annual policy term.
 pub fn default_expiry(start: &str) -> Option<String> {
     let d = NaiveDate::parse_from_str(start, "%Y-%m-%d").ok()?;

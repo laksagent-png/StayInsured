@@ -32,6 +32,9 @@ pub enum AppError {
     #[error("Spreadsheet error: {0}")]
     Spreadsheet(String),
 
+    #[error("Mail error: {0}")]
+    Mail(String),
+
     #[error("{0}")]
     Other(String),
 }
@@ -45,6 +48,10 @@ impl AppError {
         Self::Other(msg.into())
     }
 
+    pub fn mail(msg: impl Into<String>) -> Self {
+        Self::Mail(msg.into())
+    }
+
     /// Short machine-readable tag so the UI can react to a class of failure
     /// without string matching the message.
     pub fn kind(&self) -> &'static str {
@@ -55,6 +62,7 @@ impl AppError {
             Self::Validation(_) => "validation",
             Self::NotFound(_) => "not_found",
             Self::Conflict(_) => "conflict",
+            Self::Mail(_) => "mail",
             _ => "internal",
         }
     }

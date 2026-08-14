@@ -366,7 +366,7 @@ pub struct PolicyInput {
 
 /// Creating the next year of an existing policy. Anything left out is carried
 /// forward from the policy being renewed.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenewalInput {
     pub policy_id: i64,
@@ -440,6 +440,250 @@ pub struct Dashboard {
     pub by_category: Vec<CategoryBreakdown>,
     pub upcoming: Vec<Policy>,
     pub recently_lapsed: Vec<Policy>,
+}
+
+// ---------------------------------------------------------------- reminders
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailTemplate {
+    pub id: i64,
+    pub name: String,
+    pub trigger: String,
+    pub subject: String,
+    pub body_html: String,
+    pub is_active: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    /// How many reminder rules send this template; a template in use cannot be
+    /// deleted out from under them.
+    pub used_by_rules: i64,
+}
+
+pub const TEMPLATE_COLUMNS: &str = "t.id, t.name, t.trigger, t.subject, t.body_html, t.is_active, \
+     t.created_at, t.updated_at, \
+     (SELECT COUNT(*) FROM reminder_rules r WHERE r.template_id = t.id) AS used_by_rules";
+
+impl EmailTemplate {
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            trigger: row.get(2)?,
+            subject: row.get(3)?,
+            body_html: row.get(4)?,
+            is_active: row.get::<_, i64>(5)? != 0,
+            created_at: row.get(6)?,
+            updated_at: row.get(7)?,
+            used_by_rules: row.get(8).unwrap_or(0),
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailTemplateInput {
+    pub name: String,
+    pub trigger: String,
+    pub subject: String,
+    pub body_html: String,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Placeholder {
+    pub name: String,
+    pub description: String,
+}
+
+/// A rendered template, as it would arrive.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplatePreview {
+    pub subject: String,
+    pub html: String,
+    pub text: String,
+    /// Names in the template that no value will ever fill — almost always a typo.
+    pub unknown_placeholders: Vec<String>,
+    /// The policy the sample values came from, or none when the book is empty.
+    pub sample_policy: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReminderRule {
+    pub id: i64,
+    pub name: String,
+    /// Days before expiry; negative means after it.
+    pub offset_days: i64,
+    pub category: Option<String>,
+    pub audience: String,
+    pub channel: String,
+    pub template_id: Option<i64>,
+    pub template_name: Option<String>,
+    pub is_active: bool,
+    pub sort_order: i64,
+}
+
+pub const RULE_COLUMNS: &str = "r.id, r.name, r.offset_days, r.category, r.audience, r.channel, \
+     r.template_id, (SELECT t.name FROM email_templates t WHERE t.id = r.template_id) AS template_name, \
+     r.is_active, r.sort_order";
+
+impl ReminderRule {
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            offset_days: row.get(2)?,
+            category: row.get(3)?,
+            audience: row.get(4)?,
+            channel: row.get(5)?,
+            template_id: row.get(6)?,
+            template_name: row.get(7)?,
+            is_active: row.get::<_, i64>(8)? != 0,
+            sort_order: row.get(9)?,
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReminderRuleInput {
+    pub name: String,
+    pub offset_days: i64,
+    pub category: Option<String>,
+    pub audience: String,
+    pub channel: String,
+    pub template_id: Option<i64>,
+    pub is_active: Option<bool>,
+    pub sort_order: Option<i64>,
+}
+
+/// One row of the outbox.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Notification {
+    pub id: i64,
+    pub rule_id: Option<i64>,
+    pub rule_name: Option<String>,
+    pub policy_id: Option<i64>,
+    pub policy_number: Option<String>,
+    pub client_id: Option<i64>,
+    pub client_name: Option<String>,
+    pub policy_period: String,
+    pub audience: String,
+    pub channel: String,
+    pub to_address: Option<String>,
+    pub subject: Option<String>,
+    pub status: String,
+    pub attempts: i64,
+    pub last_error: Option<String>,
+    pub scheduled_for: String,
+    pub sent_at: Option<String>,
+    pub created_at: String,
+}
+
+pub const NOTIFICATION_COLUMNS: &str = "n.id, n.rule_id, \
+     (SELECT r.name FROM reminder_rules r WHERE r.id = n.rule_id) AS rule_name, \
+     n.policy_id, (SELECT p.policy_number FROM policies p WHERE p.id = n.policy_id) AS policy_number, \
+     n.client_id, (SELECT c.full_name FROM clients c WHERE c.id = n.client_id) AS client_name, \
+     n.policy_period, n.audience, n.channel, n.to_address, n.subject, n.status, n.attempts, \
+     n.last_error, n.scheduled_for, n.sent_at, n.created_at";
+
+impl Notification {
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            rule_id: row.get(1)?,
+            rule_name: row.get(2)?,
+            policy_id: row.get(3)?,
+            policy_number: row.get(4)?,
+            client_id: row.get(5)?,
+            client_name: row.get(6)?,
+            policy_period: row.get(7)?,
+            audience: row.get(8)?,
+            channel: row.get(9)?,
+            to_address: row.get(10)?,
+            subject: row.get(11)?,
+            status: row.get(12)?,
+            attempts: row.get(13)?,
+            last_error: row.get(14)?,
+            scheduled_for: row.get(15)?,
+            sent_at: row.get(16)?,
+            created_at: row.get(17)?,
+        })
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationFilter {
+    pub statuses: Option<Vec<String>>,
+    pub client_id: Option<i64>,
+    pub policy_id: Option<i64>,
+    pub search: Option<String>,
+    pub sort: Option<String>,
+    pub descending: Option<bool>,
+    pub page: Option<u32>,
+    pub page_size: Option<u32>,
+}
+
+/// A reminder the sweep would queue, shown before anything is written.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlannedReminder {
+    pub rule_id: i64,
+    pub rule_name: String,
+    pub policy_id: i64,
+    pub policy_number: String,
+    pub client_id: i64,
+    pub client_name: String,
+    pub to_address: Option<String>,
+    pub expiry_date: String,
+    pub days_to_expiry: i64,
+    pub channel: String,
+    pub subject: String,
+    /// Set when the reminder will not go out, saying why.
+    pub blocked_reason: Option<String>,
+}
+
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReminderRun {
+    pub dry_run: bool,
+    pub queued: usize,
+    pub sent: usize,
+    pub failed: usize,
+    pub skipped: usize,
+    /// Reminders left queued because the daily cap was reached.
+    pub held_by_cap: usize,
+    pub desktop_alerts: usize,
+    pub digest_sent: bool,
+    pub issues: Vec<String>,
+}
+
+/// What the reminders screen needs to describe the current state in a sentence.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReminderOverview {
+    pub enabled: bool,
+    pub dry_run: bool,
+    pub smtp_configured: bool,
+    pub smtp_password_set: bool,
+    pub from_email: String,
+    pub send_time: String,
+    pub daily_cap: i64,
+    pub digest_enabled: bool,
+    pub desktop_alerts: bool,
+    pub active_rules: i64,
+    pub due_today: i64,
+    pub queued: i64,
+    pub failed: i64,
+    pub sent_today: i64,
+    pub last_sweep: Option<String>,
+    pub clients_opted_out: i64,
+    pub expiring_without_email: i64,
 }
 
 // ---------------------------------------------------------------- misc

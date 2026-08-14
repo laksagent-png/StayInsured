@@ -3,13 +3,19 @@ use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, State};
 
+use crate::alerts::DesktopAlerts;
 use crate::db::{migrations, Database};
 use crate::error::{AppError, AppResult};
 use crate::importer::{self, FieldInfo, ImportOptions, ImportPreview, ImportReport};
+use crate::mail::{Mailer, SmtpConfig};
 use crate::models::*;
-use crate::repo::{clients, dashboard, insurers, members, policies, products, settings};
+use crate::reminders::SweepOptions;
+use crate::repo::{
+    clients, dashboard, insurers, members, notifications, policies, products, rules, settings,
+    templates,
+};
 use crate::state::AppState;
-use crate::{exporter, util, vault};
+use crate::{exporter, mail, reminders, templating, util, vault};
 
 // ------------------------------------------------------------------ session
 
@@ -502,6 +508,221 @@ fn prune_backups(dir: &Path, keep: usize) -> AppResult<()> {
         }
     }
     Ok(())
+}
+
+// ------------------------------------------------------------------ templates
+
+#[tauri::command]
+pub fn list_templates(state: State<AppState>) -> AppResult<Vec<EmailTemplate>> {
+    state.db()?.with(templates::list)
+}
+
+#[tauri::command]
+pub fn create_template(state: State<AppState>, input: EmailTemplateInput) -> AppResult<i64> {
+    state.db()?.with_tx(|tx| templates::create(tx, &input))
+}
+
+#[tauri::command]
+pub fn update_template(
+    state: State<AppState>,
+    id: i64,
+    input: EmailTemplateInput,
+) -> AppResult<()> {
+    state.db()?.with_tx(|tx| templates::update(tx, id, &input))
+}
+
+#[tauri::command]
+pub fn delete_template(state: State<AppState>, id: i64) -> AppResult<()> {
+    state.db()?.with_tx(|tx| templates::delete(tx, id))
+}
+
+/// The placeholders a template may use, for the list beside the editor.
+#[tauri::command]
+pub fn template_placeholders() -> Vec<Placeholder> {
+    templating::CATALOGUE
+        .iter()
+        .map(|(name, description)| Placeholder {
+            name: (*name).to_string(),
+            description: (*description).to_string(),
+        })
+        .collect()
+}
+
+/// Renders unsaved editor content against a real policy where the book has one,
+/// so the operator sees the message a client would receive.
+#[tauri::command]
+pub fn preview_template(
+    state: State<AppState>,
+    subject: String,
+    body_html: String,
+) -> AppResult<TemplatePreview> {
+    state.db()?.with(|conn| {
+        let provider = reminders::provider_context(conn)?;
+        let sample = reminders::sample_policy(conn)?;
+        let (context, sample_policy) = match &sample {
+            Some((id, label)) => (
+                reminders::policy_context(conn, *id, &provider)?,
+                Some(label.clone()),
+            ),
+            None => (reminders::example_context(&provider), None),
+        };
+
+        let html = templating::render(&body_html, &context);
+        let mut unknown = templating::unknown_placeholders(&subject);
+        for name in templating::unknown_placeholders(&body_html) {
+            if !unknown.contains(&name) {
+                unknown.push(name);
+            }
+        }
+
+        Ok(TemplatePreview {
+            subject: templating::render(&subject, &context),
+            text: mail::to_plain_text(&html),
+            html,
+            unknown_placeholders: unknown,
+            sample_policy,
+        })
+    })
+}
+
+// ------------------------------------------------------------------ reminder rules
+
+#[tauri::command]
+pub fn list_rules(state: State<AppState>) -> AppResult<Vec<ReminderRule>> {
+    state.db()?.with(rules::list)
+}
+
+#[tauri::command]
+pub fn create_rule(state: State<AppState>, input: ReminderRuleInput) -> AppResult<i64> {
+    state.db()?.with_tx(|tx| rules::create(tx, &input))
+}
+
+#[tauri::command]
+pub fn update_rule(state: State<AppState>, id: i64, input: ReminderRuleInput) -> AppResult<()> {
+    state.db()?.with_tx(|tx| rules::update(tx, id, &input))
+}
+
+#[tauri::command]
+pub fn delete_rule(state: State<AppState>, id: i64) -> AppResult<()> {
+    state.db()?.with_tx(|tx| rules::delete(tx, id))
+}
+
+// ------------------------------------------------------------------ reminders
+
+#[tauri::command]
+pub fn reminder_overview(state: State<AppState>) -> AppResult<ReminderOverview> {
+    state.db()?.with(reminders::overview)
+}
+
+/// What the next sweep would do, without writing or sending anything.
+#[tauri::command]
+pub fn plan_reminders(state: State<AppState>) -> AppResult<Vec<PlannedReminder>> {
+    state
+        .db()?
+        .with(|conn| reminders::plan(conn, util::today()))
+}
+
+/// Runs the sweep now. `dryRun` overrides the setting for this run only, which
+/// is how the operator tries it out before switching sending on.
+#[tauri::command]
+pub fn run_reminders(
+    app: AppHandle,
+    state: State<AppState>,
+    dry_run: Option<bool>,
+) -> AppResult<ReminderRun> {
+    let db = state.db()?;
+    let stored_dry_run = db.with(|conn| Ok(settings::get_or(conn, "dry_run", "true") == "true"))?;
+    let options = SweepOptions {
+        today: util::today(),
+        dry_run: dry_run.unwrap_or(stored_dry_run),
+    };
+
+    let mailer = if options.dry_run {
+        None
+    } else {
+        let config = db.with(SmtpConfig::load)?;
+        if !config.is_usable() {
+            return Err(AppError::mail(
+                "Add your mail server details in Settings before sending.",
+            ));
+        }
+        Some(Mailer::connect(&config)?)
+    };
+
+    let alerter = DesktopAlerts::new(app);
+    db.with_tx(|tx| {
+        reminders::sweep(
+            tx,
+            mailer.as_ref().map(|m| m as &dyn reminders::Sender),
+            &alerter,
+            &options,
+        )
+    })
+}
+
+#[tauri::command]
+pub fn list_notifications(
+    state: State<AppState>,
+    filter: NotificationFilter,
+) -> AppResult<Page<Notification>> {
+    state.db()?.with(|conn| notifications::list(conn, &filter))
+}
+
+#[tauri::command]
+pub fn retry_notification(state: State<AppState>, id: i64) -> AppResult<()> {
+    state.db()?.with_tx(|tx| notifications::requeue(tx, id))
+}
+
+#[tauri::command]
+pub fn cancel_notification(state: State<AppState>, id: i64) -> AppResult<()> {
+    state.db()?.with_tx(|tx| notifications::cancel(tx, id))
+}
+
+/// Stores the mail password in the OS keychain, or clears it when given nothing.
+#[tauri::command]
+pub fn set_smtp_password(state: State<AppState>, password: Option<String>) -> AppResult<()> {
+    // Reading state proves the app is unlocked before touching the keychain.
+    let _ = state.db()?;
+    match password.filter(|p| !p.is_empty()) {
+        Some(secret) => vault::remember_smtp_password(&secret),
+        None => vault::forget_smtp_password(),
+    }
+}
+
+/// Opens a connection and sends one message, so the operator finds out about a
+/// wrong password here rather than through a queue full of failures.
+#[tauri::command]
+pub fn send_test_email(state: State<AppState>, to: String) -> AppResult<()> {
+    let address = to.trim().to_string();
+    if !util::looks_like_email(&address) {
+        return Err(AppError::validation("Enter an email address to test with"));
+    }
+
+    let db = state.db()?;
+    let config = db.with(SmtpConfig::load)?;
+    if !config.is_usable() {
+        return Err(AppError::mail(
+            "Add the mail server and the address to send from first.",
+        ));
+    }
+    let provider = db.with(reminders::provider_context)?;
+    let mailer = Mailer::connect(&config)?;
+    mailer.check()?;
+
+    mailer.send(&mail::Outgoing {
+        to_name: provider.name.clone(),
+        to_email: address,
+        subject: "StayInsured test message".into(),
+        html: format!(
+            "<div style=\"font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:15px\">\
+             <p>This is a test from StayInsured.</p>\
+             <p>Mail is going out through <strong>{}</strong> as <strong>{}</strong>, \
+             so reminders will reach your clients.</p><p>— {}</p></div>",
+            templating::escape_html(&config.host),
+            templating::escape_html(&config.from_email),
+            templating::escape_html(&provider.name),
+        ),
+    })
 }
 
 #[tauri::command]

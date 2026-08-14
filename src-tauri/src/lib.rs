@@ -1,13 +1,18 @@
+mod alerts;
 mod commands;
 mod db;
 mod error;
 mod exporter;
 mod importer;
+mod mail;
 mod models;
 mod paths;
 mod query;
+mod reminders;
 mod repo;
+mod scheduler;
 mod state;
+mod templating;
 #[cfg(test)]
 mod tests;
 mod tray;
@@ -43,6 +48,7 @@ pub fn run() {
             tracing::info!(dir = %paths.root.display(), "data directory ready");
             app.manage(AppState::new(paths));
             tray::init(app.handle())?;
+            scheduler::start(app.handle().clone());
 
             // Launched by the OS at login: stay in the tray rather than popping up.
             if std::env::args().any(|arg| arg == "--background") {
@@ -110,6 +116,24 @@ pub fn run() {
             commands::get_settings,
             commands::save_settings,
             commands::backup_now,
+            commands::list_templates,
+            commands::create_template,
+            commands::update_template,
+            commands::delete_template,
+            commands::template_placeholders,
+            commands::preview_template,
+            commands::list_rules,
+            commands::create_rule,
+            commands::update_rule,
+            commands::delete_rule,
+            commands::reminder_overview,
+            commands::plan_reminders,
+            commands::run_reminders,
+            commands::list_notifications,
+            commands::retry_notification,
+            commands::cancel_notification,
+            commands::set_smtp_password,
+            commands::send_test_email,
             commands::reveal_data_dir,
         ])
         .run(tauri::generate_context!())
