@@ -9,8 +9,12 @@ Nothing is uploaded anywhere. There is no account, no subscription and no
 internet connection required. Your book sits in an encrypted file on your
 machine that only opens with your password.
 
+Every operation, screen by screen and with pictures, is in the
+[how-to guide](docs/HOW-TO.md). This page is the short version.
+
 Runs on macOS and Windows. Building from source, or working on the app itself, is
-covered in [DEVELOPER.md](DEVELOPER.md).
+covered in [DEVELOPER.md](DEVELOPER.md), with the architecture and command
+reference in [docs/](docs/README.md).
 
 ---
 

@@ -1,0 +1,44 @@
+---
+description: How StayInsured documentation is written — current state, assertively, in the present tense
+globs: *.md,docs/*.md
+alwaysApply: false
+---
+
+# Documentation style
+
+Every document describes the system **as it is now**. A reader arriving today
+must not have to reconstruct the present from a history of changes.
+
+## Write the current state
+
+- Present tense, active voice, stated as fact: "Renewing inserts a new policy
+  year", not "we changed renewal so that it now inserts".
+- No changelogs, no version history, no "recently", "now", "previously", "as of
+  v0.2", "the old approach", "we used to".
+- Edit in place. When behaviour changes, replace the paragraph that described the
+  old behaviour rather than appending a correction next to it.
+- Do not narrate the work: no "added", "updated", "improved", "refactored". That
+  belongs in the commit message.
+
+## Be assertive and concrete
+
+- Commit to a statement. Prefer "Backups are encrypted with the same key" over
+  "backups should generally be encrypted".
+- Quote real values — 30 days, 300 issues, 64 MiB, `CL-00001` — not "a
+  configurable threshold". Take them from the code.
+- Name the file or symbol a reader would open next.
+- Explain the reasoning behind a design decision, not just the mechanics. Why a
+  policy year is never mutated matters more than which columns it has.
+
+## Be honest about what is not built
+
+Unbuilt features are stated plainly in the present tense: "Reminder sending is
+not built; the settings and templates are seeded and editable." Never imply that
+scaffolding works, and never hedge it into vagueness either.
+
+## Structure
+
+- Lead with the answer, then the detail.
+- Tables for enumerable facts; prose for reasoning.
+- Reference code with backticked paths (`src-tauri/src/repo/policies.rs`).
+- Mermaid for diagrams, so they render on GitHub and stay editable.

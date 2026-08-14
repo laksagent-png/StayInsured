@@ -10,6 +10,10 @@ with a React user interface).
 [README](README.md) and download an installer from the
 [releases page](https://github.com/laksagent-png/StayInsured/releases).
 
+Deeper reference lives in [docs/](docs/README.md): [DESIGN](docs/DESIGN.md) for
+the architecture and the reasoning behind it, [API](docs/API.md) for the command
+contract, [DATA-MODEL](docs/DATA-MODEL.md) for the schema.
+
 ## What it does today
 
 - **Clients** — contact details, addresses, insured family members, archive
@@ -133,3 +137,8 @@ src-tauri/src/
 The interface never writes SQL. It calls commands; commands call repositories;
 repositories own the queries. Adding a screen means adding a command and a page,
 not touching the database layer.
+
+[DESIGN](docs/DESIGN.md) explains why each layer is shaped the way it is,
+[API](docs/API.md) lists every command with its arguments and error kinds, and
+[DATA-MODEL](docs/DATA-MODEL.md) documents the tables and the invariants they
+hold.

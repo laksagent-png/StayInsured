@@ -1,0 +1,43 @@
+---
+description: Keep the Tauri command contract in sync across Rust, TypeScript and the API spec
+globs: src-tauri/src/commands.rs,src-tauri/src/lib.rs,src-tauri/src/models.rs,src/lib/api.ts,src/lib/types.ts
+alwaysApply: false
+---
+
+# Command contract
+
+The bridge between the interface and the Rust core is defined in five places.
+Changing one without the others produces a command that compiles and fails at
+runtime.
+
+1. `src-tauri/src/commands.rs` — the implementation
+2. `src-tauri/src/lib.rs` — the `generate_handler!` list; **an unregistered
+   command does not exist**
+3. `src-tauri/src/models.rs` — request and response types, every one carrying
+   `#[serde(rename_all = "camelCase")]`
+4. `src/lib/types.ts` — the TypeScript mirror of those types
+5. `src/lib/api.ts` — the wrapper, and the only place that calls `invoke`
+
+Document the result in `docs/API.md` in the matching group, with arguments,
+return type and error kinds.
+
+## Rules
+
+- Commands stay thin: resolve the database with `state.db()?`, then delegate to
+  `repo/`. Business rules belong in the repository, where the tests reach them.
+- Writes use `with_tx`; reads use `with`.
+- Return errors as `AppError` variants so the interface receives a usable `kind`.
+  Never let a raw `rusqlite` constraint message reach the user — translate it at
+  the repository boundary.
+- No screen calls `invoke` directly; add a wrapper to the `api` object instead.
+- Adding a column to a `Policy` or `Client` response means updating the
+  `POLICY_COLUMNS` / `CLIENT_COLUMNS` constant, the `from_row` index order, the
+  TypeScript interface and `docs/API.md` together.
+
+```rust
+// The whole shape of a write command.
+#[tauri::command]
+pub fn update_client(state: State<AppState>, id: i64, input: ClientInput) -> AppResult<()> {
+    state.db()?.with_tx(|tx| clients::update(tx, id, &input))
+}
+```
