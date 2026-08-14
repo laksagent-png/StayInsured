@@ -1,0 +1,96 @@
+{
+  "generatedFrom": "npm run docs:screenshots",
+  "book": "demo data frozen at 2026-08-14",
+  "shots": [
+    {
+      "name": "first-run",
+      "caption": "First run: name the agency and set the password that encrypts the book",
+      "route": "/"
+    },
+    {
+      "name": "unlock",
+      "caption": "Daily unlock",
+      "route": "/"
+    },
+    {
+      "name": "dashboard-empty",
+      "caption": "An empty book offers the two ways to fill it",
+      "route": "/"
+    },
+    {
+      "name": "dashboard",
+      "caption": "Dashboard: the state of the book, with every number linking to the list behind it",
+      "route": "/"
+    },
+    {
+      "name": "renewals",
+      "caption": "Renewals desk: tabs by urgency, with recalculate, copy emails and export",
+      "route": "/renewals"
+    },
+    {
+      "name": "renew-policy",
+      "caption": "Renewing writes next year and keeps the expiring year on record",
+      "route": "/renewals"
+    },
+    {
+      "name": "clients",
+      "caption": "Clients: search, filter and act on the whole book",
+      "route": "/clients"
+    },
+    {
+      "name": "client-new",
+      "caption": "New client: only the full name is required",
+      "route": "/clients"
+    },
+    {
+      "name": "client-detail",
+      "caption": "Client page: contact details, members covered and every policy held",
+      "route": "/clients/1"
+    },
+    {
+      "name": "client-member",
+      "caption": "Adding a family member to attach to health and travel policies",
+      "route": "/clients/1"
+    },
+    {
+      "name": "policies",
+      "caption": "Policies: every policy year, filtered by category, status, insurer and expiry window",
+      "route": "/policies"
+    },
+    {
+      "name": "policy-new",
+      "caption": "New policy: client, insurer, dates and money in one form",
+      "route": "/policies"
+    },
+    {
+      "name": "policy-history",
+      "caption": "History: one row per policy year of the same cover",
+      "route": "/policies"
+    },
+    {
+      "name": "import-mapping",
+      "caption": "Import: the app guesses your column headings, and you correct the guesses",
+      "route": "/import"
+    },
+    {
+      "name": "import-check",
+      "caption": "The check reads every row and reports what it would do without saving anything",
+      "route": "/import"
+    },
+    {
+      "name": "insurers",
+      "caption": "Insurers and plans, kept tidy so one company is recorded one way",
+      "route": "/insurers"
+    },
+    {
+      "name": "insurer-new",
+      "caption": "Adding an insurer",
+      "route": "/insurers"
+    },
+    {
+      "name": "settings",
+      "caption": "Settings: agency details, password, backups and reminder preferences",
+      "route": "/settings"
+    }
+  ]
+}

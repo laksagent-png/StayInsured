@@ -12,7 +12,9 @@
     "app": "tauri dev",
     "app:build": "tauri build",
     "typecheck": "tsc --noEmit",
-    "icons": "node scripts/make-icon.mjs && tauri icon scripts/app-icon.png"
+    "icons": "node scripts/make-icon.mjs && tauri icon scripts/app-icon.png",
+    "docs:screenshots": "node scripts/docs/capture.mjs",
+    "docs:check": "node scripts/docs/check-guide.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.7",
@@ -37,6 +39,7 @@
     "@types/react": "^18.3.14",
     "@types/react-dom": "^18.3.2",
     "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.3"

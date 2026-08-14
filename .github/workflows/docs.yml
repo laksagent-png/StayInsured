@@ -1,0 +1,40 @@
+name: Documentation
+
+# The how-to guide is only useful while it matches the app. This re-photographs
+# every screen against the current interface and fails if a route, a control or
+# a screenshot has drifted out of the guide.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  guide:
+    name: How-to guide
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      # Driving every screen and dialog proves the guide points at controls that
+      # still exist: a renamed button fails here, not in a user's hands.
+      - name: Re-photograph the app
+        run: npm run docs:screenshots
+
+      - name: Check the guide covers the app
+        run: npm run docs:check
+
+      # Text rendering differs between machines, so the images themselves are
+      # not compared. Gaining or losing one means the guide needs a new section.
+      - name: Check the screenshot set is unchanged
+        run: git diff --exit-code --stat -- docs/screenshots/manifest.json

@@ -69,6 +69,19 @@ npm run app:build    # output in src-tauri/target/release/bundle
 Other scripts: `npm run dev` (web only), `npm run build` (typecheck and bundle
 the frontend), `npm run icons` (regenerate app and tray icons).
 
+The user-facing [how-to guide](docs/HOW-TO.md) is illustrated from the running
+app, so a change to any screen means re-photographing it:
+
+```bash
+npm run docs:screenshots   # drives every route and dialog, writes docs/screenshots
+npm run docs:check         # fails on a route, control or screenshot the guide misses
+```
+
+`scripts/docs/` holds the capture: `fixtures.mjs` is the fictional demo book,
+`mock-tauri.mjs` answers the Rust commands in the browser, and `capture.mjs`
+takes the pictures with a frozen clock so only real changes show up in a diff.
+The **Documentation** workflow runs both commands on every pull request.
+
 Rust tests cover the data layer end to end — migrations, renewal chains, status
 rules, import idempotency, export, backup:
 
