@@ -432,9 +432,23 @@ database in a temporary directory, with no window:
   a client name containing an ampersand
 - the plain-text part keeps the shape of the HTML it was derived from
 
-Run them with `cd src-tauri && cargo test --lib`. CI runs the same command on
-macOS before building any installer, so a release is never cut on a failing data
-layer. The frontend is covered by `tsc --noEmit`; there is no UI test suite.
+Run them with `cd src-tauri && cargo test --lib`. The frontend is covered by
+`tsc --noEmit`; there is no UI test suite.
+
+`npm run check` is the whole gate in one command: the typecheck, then
+`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and the tests.
+It takes about twelve seconds. Clippy warnings fail rather than accumulate,
+which is only sustainable because the codebase carries none.
+
+Work reaches `main` by a direct push rather than a pull request, so the gate has
+to sit before the push: `.githooks/pre-push` runs `npm run check`, enabled once
+per clone with `npm run hooks`. The **Checks** workflow runs the same commands
+on every push to `main`, catching the push that used `--no-verify` or came from
+a clone where the hook was never enabled. It also re-photographs the app and
+fails when the screenshot set has gained or lost an image, since **Site**
+re-photographs before publishing but never compares. The release workflow
+repeats the tests on macOS before building any installer, so a release is never
+cut on a failing data layer.
 
 ## Build and release
 

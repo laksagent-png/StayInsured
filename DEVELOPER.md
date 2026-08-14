@@ -114,13 +114,41 @@ contents page; `docs:check` fails when the two disagree.
 takes the pictures with a frozen clock so only real changes show up in a diff.
 The **Documentation** workflow runs both commands on every pull request.
 
+## Checks
+
+One command runs everything that guards the code, in about twelve seconds:
+
+```bash
+npm run check          # typecheck, then rustfmt, clippy and the Rust tests
+```
+
 Rust tests cover the data layer end to end — migrations, renewal chains, status
 rules, import idempotency, export, backup, and the reminder engine against a
-recording fake mailer:
+recording fake mailer. To run them alone:
 
 ```bash
 cd src-tauri && cargo test --lib
 ```
+
+Clippy runs with `-D warnings`, so a warning fails the run. Formatting is
+rustfmt's default; `cargo fmt` fixes what `cargo fmt --check` reports. Both need
+components rustup does not install by default:
+
+```bash
+rustup component add rustfmt clippy
+```
+
+Commits go straight to `main`, so the checks run before the push rather than on
+a pull request. Enable the hook once per clone:
+
+```bash
+npm run hooks          # points git at .githooks
+```
+
+`.githooks/pre-push` then runs `npm run check` on every push, and
+`git push --no-verify` skips it when something has to go out regardless. The
+**Checks** workflow runs the same commands on every push to `main`, so a push
+that skipped the hook is still caught.
 
 ## Cutting a release
 

@@ -1,0 +1,93 @@
+name: Checks
+
+# Commits land on main directly, so nothing stands between a change and the
+# trunk except the pre-push hook in .githooks. This is the backstop for the
+# push that skipped it, or came from a machine where it was never enabled.
+#
+# It runs the same commands as `npm run check`. A failure here means main is
+# already broken: fix it forward rather than waiting for the next release to
+# find out, which is when `cargo test` would otherwise run for the first time.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  rust:
+    name: Data layer
+    # The lib pulls in Tauri, which on Linux would need the GTK and WebKit
+    # development packages installed before anything compiles. macOS needs
+    # none of that, and it is the platform the release tests already use.
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Check the formatting
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      # Warnings fail the run. The codebase has none today, and the way it
+      # stays that way is refusing to let the first one through.
+      - name: Check the lints
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      # The money and the renewal dates live here.
+      - name: Test the data layer
+        working-directory: src-tauri
+        run: cargo test --lib
+
+  interface:
+    name: Interface
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # There is no UI test suite; the types are what catches a screen calling a
+      # command that no longer takes those arguments.
+      - name: Typecheck the interface
+        run: npm run typecheck
+
+  guide:
+    name: Guide screenshots
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Re-photograph the app
+        run: npm run docs:screenshots
+
+      # Text rendering differs between machines, so the images themselves are
+      # not compared. Gaining or losing one means a screen arrived or left
+      # without the guide following it. The Site workflow re-photographs before
+      # it publishes, but it does not compare, so this is the only place the
+      # count is checked on main.
+      - name: Check the screenshot set is unchanged
+        run: git diff --exit-code --stat -- docs/guide/screenshots/manifest.json

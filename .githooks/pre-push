@@ -1,0 +1,16 @@
+#!/bin/sh
+# Work here goes straight to main, so there is no review and no pull request
+# between a mistake and the trunk. This is the last point at which a broken
+# commit is still only on this machine.
+#
+# Enable it once with `npm run hooks`. To push past it in an emergency:
+# `git push --no-verify`, then fix what it would have caught.
+
+set -e
+
+echo "Checking before push. Skip with --no-verify."
+
+# Formatting, lints and the data-layer tests, plus the frontend typecheck.
+npm run check
+
+echo "Checks passed."
