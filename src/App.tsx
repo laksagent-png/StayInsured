@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { api } from "./lib/api";
+import { offerUpdate } from "./lib/updates";
 import { AppShell } from "./components/AppShell";
 import { Spinner } from "./components/ui";
 import { LockScreen } from "./pages/LockScreen";
@@ -21,6 +23,13 @@ export default function App() {
     queryFn: api.sessionState,
     staleTime: 0,
   });
+
+  // Waiting for the book to be open means the offer reaches someone who is
+  // sitting at the machine, rather than a locked screen.
+  const unlocked = session.data?.unlocked ?? false;
+  useEffect(() => {
+    if (unlocked) void offerUpdate();
+  }, [unlocked]);
 
   if (session.isLoading) {
     return (

@@ -35,6 +35,18 @@ unknown. Choose **More info**, then **Run anyway**.
 Both warnings appear because the app is not registered with Apple and Microsoft,
 which costs money each year. They are not a sign that anything is wrong.
 
+## Staying up to date
+
+The app looks for a new version when you open it, and tells you only when there
+is one. Choose **Install now** and it downloads the update, replaces itself and
+offers to restart — no going back to the releases page, and no warnings to click
+through the way the first install had. Choosing **Later** simply asks again next
+time.
+
+Version 0.1.0 came out before this existed, so if that is what you are running,
+install a newer version by hand once from the releases page. Every version after
+it updates itself.
+
 ## Setting up, the first time
 
 The app asks for two things:
@@ -250,8 +262,8 @@ computer can still open the book, and you should change the password to somethin
 you will keep. If you did not, the data cannot be recovered by anyone. This is
 the unavoidable other side of it being properly encrypted.
 
-**Will updating lose my data?** No. Installing a newer version replaces the app,
-not your book.
+**Will updating lose my data?** No. An update replaces the app, not your book.
+Your clients, policies, settings and password are untouched.
 
 **Something looks wrong.** Please open an issue at
 https://github.com/laksagent-png/StayInsured/issues describing what you did and

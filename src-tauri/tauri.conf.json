@@ -32,6 +32,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -44,5 +45,12 @@
     "shortDescription": "Insurance client and policy management",
     "longDescription": "Track clients, policies and renewals, send expiry reminders, and report on your book of business. All data stays on this machine in an encrypted database."
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/laksagent-png/StayInsured/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVFNUY5RjRDQjI1NkI5MDAKUldRQXVWYXlUSjlmWGlpMHMwUGk0Y3JaYUZPVTF3bkIrd0loMENCQmYyNExQSXM0dXFPQ0JmMHoK"
+    }
+  }
 }

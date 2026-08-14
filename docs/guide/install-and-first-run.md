@@ -9,6 +9,7 @@ and closing it safely every day.
 - [Create your book](#create-your-book)
 - [Unlock it each day](#unlock-it-each-day)
 - [Lock, close and quit](#lock-close-and-quit)
+- [Get new versions](#get-new-versions)
 
 ## Install the app
 
@@ -74,6 +75,28 @@ counts you see are the counts as of this morning.
 
 Lock the app whenever you leave your desk. It takes one click and one password
 to come back.
+
+## Get new versions
+
+StayInsured looks for a new version each time you open it and unlock your book.
+When there is one, it says so:
+
+| Choice | What happens |
+| --- | --- |
+| **Install now** | Downloads the new version, replaces the app, then offers to restart |
+| **Later** | Nothing changes. You are asked again next time you open the app |
+| **Restart now**, after installing | Closes and reopens the app on the new version |
+| **Later**, after installing | The new version starts the next time you open the app yourself |
+
+You see nothing at all when you are already on the latest version, or when the
+machine is offline. There is no button to check by hand — opening the app is the
+check.
+
+Updating never touches your book. Clients, policies, settings, templates and
+your password all carry over, and the warning you clicked through when you first
+installed does not come back.
+
+The version you are running is at the foot of the [Settings](settings.md) screen.
 
 ---
 

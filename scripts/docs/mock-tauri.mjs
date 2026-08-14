@@ -355,6 +355,12 @@ export function installTauriMock({ fixtures, scenario = {} }) {
     "plugin:opener|open_url": () => null,
     "plugin:opener|open_path": () => null,
     "plugin:opener|reveal_item_in_dir": () => null,
+
+    // The demo book reports a fixed version so the pictures do not have to be
+    // retaken every release, and hides the window so the launch update check
+    // stops before it can put a dialog in front of a screenshot.
+    "plugin:app|version": () => fixtures.appVersion,
+    "plugin:window|is_visible": () => false,
   };
 
   window.__DOCS_PENDING__ = 0;

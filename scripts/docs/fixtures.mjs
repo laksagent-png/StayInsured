@@ -528,6 +528,9 @@ const reminderOverview = {
 export const fixtures = {
   today: TODAY,
   frozenNow: FROZEN_NOW,
+  // Deliberately not the version in package.json: the pictures should not all
+  // change because a release went out.
+  appVersion: "0.1.0",
   session: {
     initialised: true,
     unlocked: true,

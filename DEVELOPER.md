@@ -156,6 +156,32 @@ workflow attaches instructions to every release, and the [README](README.md)
 covers it too. Signing needs a paid Apple Developer account and a Windows
 certificate.
 
+### The updater signing key
+
+Every release also carries `latest.json` and a signed archive per platform, and
+an installed app offers the update on its next launch. Two repository secrets
+under **Settings → Secrets and variables → Actions** make that happen:
+
+| Secret | Value |
+| --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | The whole contents of the private key file |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The key's password, or an empty secret if it has none |
+
+The keypair is made once with `npm run tauri signer generate -w <path>`. Its
+public half is `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`; its
+private half never enters the repository. This is a minisign key and has nothing
+to do with Apple or Windows code signing — it is what stops an installed app
+accepting a build this repository did not publish.
+
+Losing the private key means no copy already out there can be updated again,
+because every install only trusts the public key it shipped with. Changing the
+key has the same effect. Keep a copy somewhere a lost laptop does not take with
+it.
+
+Without the secrets the build still succeeds and still produces installers; it
+simply publishes no update anyone can take. A release worth announcing is one
+where `latest.json` is among the assets.
+
 ## Where the app keeps its data
 
 | Platform | Location |

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getVersion } from "@tauri-apps/api/app";
 import { isEnabled, enable, disable } from "@tauri-apps/plugin-autostart";
 import { DatabaseBackup, FolderOpen, KeyRound, MailCheck, Save, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -35,6 +36,11 @@ export function SettingsPage() {
 
   useEffect(() => {
     isEnabled().then(setAutostart).catch(() => setAutostart(false));
+  }, []);
+
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => setVersion(""));
   }, []);
 
   const set = (key: string, value: string) =>
@@ -421,8 +427,8 @@ export function SettingsPage() {
         <div className="flex items-center gap-3 text-sm text-slate-500">
           <ShieldCheck className="size-5 text-brand-600" />
           <span>
-            StayInsured 0.1.0 · schema v{session.data?.schemaVersion} · closing the window keeps the
-            app running in the menu bar so scheduled work can continue.
+            StayInsured {version} · schema v{session.data?.schemaVersion} · closing the window keeps
+            the app running in the menu bar so scheduled work can continue.
           </span>
         </div>
       </Card>

@@ -33,6 +33,21 @@ settings survive every version below.
   silence, renewing a policy calls off the reminders queued for it, and what is
   over your daily limit waits for tomorrow.
 
+### Updates
+
+- **The app keeps itself up to date.** It looks for a new version when you open
+  your book, and says so only when there is one. **Install now** fetches it,
+  replaces the app and offers to restart; **Later** asks again next time.
+- No trip back to the downloads page, and none of the unknown-publisher warnings
+  you clicked through when you first installed. Your book, your backups and your
+  settings are untouched.
+- Nothing appears when you are already up to date or the machine is offline.
+- The version you are running is at the foot of Settings, and is now the real
+  one rather than a number written into the screen.
+
+If you are on 0.1.0, install this version by hand from the releases page once.
+Every version after it arrives on its own.
+
 ## 0.1.0 — 15 August 2026
 
 The first release. Everything below is new.
