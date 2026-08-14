@@ -374,8 +374,10 @@ exactly once per policy year no matter how often the scheduler sweeps or the app
 restarts, and the tray-resident lifecycle exists so that sweep has somewhere to
 run.
 
-Reminder sending is the notable gap: the settings, templates and the 60/30/15/7/1
-rule ladder are seeded and editable, but nothing sends mail. The renewals screen
+Reminder sending is the notable gap. The SMTP settings are editable in Settings,
+and two templates and the 60/30/15/7/1 rule ladder are seeded, but no command
+reads or writes `email_templates` or `reminder_rules`, so nothing in the app can
+change them and nothing sends mail. The renewals screen
 with **Copy emails** is the working substitute. Reports, document storage, claims
 tracking and multi-user logins are the other unbuilt pieces named in the
 [README](../README.md).
