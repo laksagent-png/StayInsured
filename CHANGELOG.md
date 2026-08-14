@@ -1,14 +1,7 @@
 # Release notes
 
-What changed in each version of StayInsured, written for the person using it.
-
 Upgrading replaces the app and never the data: your book, your backups and your
 settings survive every version below.
-
-## Unreleased
-
-- The published guide fills the window and reads at a larger size, so the
-  screenshots of each screen are legible rather than shrunk to half width.
 
 ## 0.1.0 — 15 August 2026
 
@@ -60,7 +53,7 @@ The first release. Everything below is new.
 ### Documentation
 
 - An illustrated guide covering every operation, one page each, published at
-  https://laksagent-png.github.io/StayInsured/.
+  https://laksagent-png.github.io/StayInsured/guide.
 
 ### Still to come
 
