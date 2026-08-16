@@ -5,6 +5,14 @@ settings survive every version below.
 
 ## Upcoming
 
+### Fixed
+
+- **A policy comes back to the renewals desk when you delete its renewal.**
+  Removing a renewal you had entered by mistake used to leave the year before it
+  marked as renewed, so a policy that was still running disappeared from the
+  desk and from the active count. It is now picked up again on the next
+  recalculation, as active, expiring or lapsed according to its dates.
+
 ## 0.3.0 — 15 August 2026
 
 ### Documents

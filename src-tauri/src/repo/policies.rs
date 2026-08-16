@@ -435,6 +435,16 @@ pub fn sync_statuses(conn: &Connection) -> AppResult<usize> {
         [],
     )?;
 
+    // And one without a successor is not, however it came to say so: deleting
+    // the year that replaced it puts it back at the head of its chain, where
+    // the statements below read the calendar for it like any other open year.
+    touched += conn.execute(
+        "UPDATE policies SET status = 'active' \
+         WHERE status = 'renewed' \
+           AND NOT EXISTS (SELECT 1 FROM policies s WHERE s.previous_policy_id = policies.id)",
+        [],
+    )?;
+
     touched += conn.execute(
         "UPDATE policies SET status = 'expired' \
          WHERE status = 'active' AND expiry_date < date('now', 'localtime') \

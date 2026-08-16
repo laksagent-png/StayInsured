@@ -209,15 +209,19 @@ fresh one; leaving it unchanged returns a `conflict`.
 
 ### Status is derived from the calendar, not typed in
 
-`sync_statuses` reconciles every policy against today in four passes, in order:
+`sync_statuses` reconciles every policy against today in five passes, in order:
 
 1. Anything with a successor becomes `renewed`, whatever it said before.
-2. `active` past its expiry date becomes `expired`.
-3. `expired` for more than 30 days (`LAPSE_GRACE_DAYS`) becomes `lapsed`.
-4. `expired` or `lapsed` with an expiry date in the future returns to `active`.
+2. Anything `renewed` without a successor becomes `active`, to be read by the
+   passes below like any other open year.
+3. `active` past its expiry date becomes `expired`.
+4. `expired` for more than 30 days (`LAPSE_GRACE_DAYS`) becomes `lapsed`.
+5. `expired` or `lapsed` with an expiry date in the future returns to `active`.
 
-Passes 1 and 4 are the correction paths: they mean a mistyped date or a
-back-dated edit heals itself instead of leaving a wrong status behind.
+Passes 1, 2 and 5 are the correction paths: they mean a mistyped date, a
+back-dated edit or a deleted renewal heals itself instead of leaving a wrong
+status behind. Pass 2 is what stops a policy whose renewal was deleted sitting
+at `renewed` for ever, off the renewals desk while its cover is still running.
 `cancelled` is only ever set by hand and is never overwritten.
 
 It runs on every unlock, after every real import, and on demand from

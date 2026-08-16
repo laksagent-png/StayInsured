@@ -1100,6 +1100,41 @@ fn deleting_a_year_leaves_the_earlier_ones_standing() {
                 policies::delete(conn, second),
                 Err(crate::error::AppError::NotFound("Policy"))
             ));
+
+            // Losing its successor puts the year back at the head of the chain,
+            // so the sweep has to stop calling it renewed and read the calendar
+            // for it again. Otherwise a live policy sits off the renewals desk.
+            policies::sync_statuses(conn)?;
+            assert_eq!(policies::get(conn, first)?.status, "active");
+
+            // Which open state it lands in is the calendar's decision, not the
+            // deletion's.
+            let mut lapsing = sample_policy(
+                client,
+                insurer,
+                "D-3",
+                &util::iso(util::today() - chrono::Duration::days(10)),
+            );
+            lapsing.start_date = util::iso(util::today() - chrono::Duration::days(375));
+            let older = policies::create(conn, &lapsing)?;
+            let replacement = policies::renew(
+                conn,
+                &RenewalInput {
+                    policy_id: older,
+                    policy_number: Some("D-4".into()),
+                    start_date: None,
+                    expiry_date: None,
+                    sum_insured: None,
+                    premium_amount: None,
+                    gst_amount: None,
+                    commission_rate: None,
+                    commission_expected: None,
+                    notes: None,
+                },
+            )?;
+            policies::delete(conn, replacement)?;
+            policies::sync_statuses(conn)?;
+            assert_eq!(policies::get(conn, older)?.status, "expired");
             Ok(())
         })
         .unwrap();
