@@ -9,7 +9,7 @@ use crate::importer::{self, ImportOptions};
 use crate::mail::{self, Outgoing};
 use crate::models::{
     ClientFilter, ClientInput, DocumentInput, EmailTemplateInput, InsurerInput, MemberInput,
-    PolicyFilter, PolicyInput, ProductInput, ReminderRuleInput, RenewalInput,
+    NotificationFilter, PolicyFilter, PolicyInput, ProductInput, ReminderRuleInput, RenewalInput,
 };
 use crate::reminders::{self, NoAlerts, SweepOptions};
 use crate::repo::{
@@ -1930,6 +1930,251 @@ fn deleting_a_client_takes_their_documents() {
                     row.get(0)
                 })?;
             assert_eq!((rows, blobs), (0, 0));
+            Ok(())
+        })
+        .unwrap();
+}
+
+fn queue_reminder(
+    conn: &rusqlite::Connection,
+    rule_id: i64,
+    client_id: i64,
+    policy_id: i64,
+    period: &str,
+    scheduled_for: &str,
+) -> crate::error::AppResult<Option<i64>> {
+    notifications::queue(
+        conn,
+        &notifications::NewNotification {
+            rule_id,
+            policy_id,
+            client_id,
+            policy_period: period.into(),
+            audience: "client".into(),
+            channel: "email".into(),
+            to_address: Some("ananya@example.com".into()),
+            subject: "Your policy expires soon".into(),
+            body: "<p>Hello</p>".into(),
+            scheduled_for: scheduled_for.into(),
+        },
+    )
+}
+
+#[test]
+fn a_reminder_is_recorded_once_per_policy_year() {
+    let temp = TempDb::new("outbox-once");
+    let (client, policy) = book_expiring_in(&temp, 30, Some("ananya@example.com"));
+
+    temp.db
+        .with(|conn| {
+            let rule = rules::active(conn)?[0].id;
+            let today = util::today_iso();
+
+            let first = queue_reminder(conn, rule, client, policy, "2027-03-31", &today)?
+                .expect("the first write lands");
+            assert!(notifications::already_logged(
+                conn,
+                rule,
+                policy,
+                "2027-03-31"
+            )?);
+
+            assert_eq!(
+                queue_reminder(conn, rule, client, policy, "2027-03-31", &today)?,
+                None,
+                "one rule writes to one policy year once, however often the sweep runs"
+            );
+            assert_eq!(notifications::count_by_status(conn, "queued")?, 1);
+
+            // Next year is a different period, so the ladder starts again.
+            assert!(queue_reminder(conn, rule, client, policy, "2028-03-31", &today)?.is_some());
+            assert_eq!(notifications::count_by_status(conn, "queued")?, 2);
+
+            // The record is what holds the reminder back, so cancelling one does
+            // not free the slot for a second attempt at the same year.
+            notifications::cancel(conn, first)?;
+            assert_eq!(
+                queue_reminder(conn, rule, client, policy, "2027-03-31", &today)?,
+                None
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn the_outbox_only_moves_the_way_the_screen_allows() {
+    let temp = TempDb::new("outbox-moves");
+    let (client, policy) = book_expiring_in(&temp, 30, Some("ananya@example.com"));
+
+    temp.db
+        .with(|conn| {
+            let ladder = rules::active(conn)?;
+            let today = util::today_iso();
+            let id = queue_reminder(conn, ladder[0].id, client, policy, "2027-03-31", &today)?
+                .expect("queued");
+
+            assert!(
+                matches!(
+                    notifications::requeue(conn, id),
+                    Err(crate::error::AppError::Conflict(_))
+                ),
+                "something already waiting cannot be sent again"
+            );
+
+            notifications::cancel(conn, id)?;
+            assert!(matches!(
+                notifications::cancel(conn, id),
+                Err(crate::error::AppError::Conflict(_))
+            ));
+
+            notifications::requeue(conn, id)?;
+            assert_eq!(notifications::count_by_status(conn, "queued")?, 1);
+
+            notifications::mark_sent(conn, id)?;
+            assert!(
+                matches!(
+                    notifications::requeue(conn, id),
+                    Err(crate::error::AppError::Conflict(_))
+                ),
+                "what has gone to a client is not offered again by mistake"
+            );
+            assert!(matches!(
+                notifications::cancel(conn, id),
+                Err(crate::error::AppError::Conflict(_))
+            ));
+
+            // A skip is a fact about the book that may be corrected, and a
+            // failure is worth another try, so both can go back in the queue.
+            let second = queue_reminder(conn, ladder[1].id, client, policy, "2027-03-31", &today)?
+                .expect("queued");
+            notifications::mark_skipped(conn, second, "No email address")?;
+            notifications::requeue(conn, second)?;
+
+            notifications::mark_attempt_failed(conn, second, "Server refused", 1)?;
+            assert_eq!(notifications::count_by_status(conn, "failed")?, 1);
+            notifications::requeue(conn, second)?;
+            let (attempts, error): (i64, Option<String>) = conn.query_row(
+                "SELECT attempts, last_error FROM notification_log WHERE id = ?1",
+                [second],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            assert_eq!(
+                (attempts, error),
+                (0, None),
+                "trying again starts the attempt count over"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn only_what_is_due_leaves_the_outbox() {
+    let temp = TempDb::new("outbox-due");
+    let (client, policy) = book_expiring_in(&temp, 30, Some("ananya@example.com"));
+
+    temp.db
+        .with(|conn| {
+            let ladder = rules::active(conn)?;
+            let today = util::today_iso();
+            let yesterday = util::iso(util::today() - chrono::Duration::days(1));
+            let tomorrow = util::iso(util::today() + chrono::Duration::days(1));
+
+            let waiting =
+                queue_reminder(conn, ladder[0].id, client, policy, "2027-03-31", &tomorrow)?
+                    .expect("queued");
+            let now = queue_reminder(conn, ladder[1].id, client, policy, "2027-03-31", &today)?
+                .expect("queued");
+            let overdue =
+                queue_reminder(conn, ladder[2].id, client, policy, "2027-03-31", &yesterday)?
+                    .expect("queued");
+
+            let ids: Vec<i64> = notifications::due(conn, &today, 10)?
+                .iter()
+                .map(|p| p.id)
+                .collect();
+            assert_eq!(
+                ids,
+                vec![overdue, now],
+                "a backlog drains oldest first, and nothing goes before its date"
+            );
+            assert!(!ids.contains(&waiting));
+
+            assert_eq!(
+                notifications::due(conn, &today, 1)?.len(),
+                1,
+                "the daily cap is a limit on what is taken out"
+            );
+
+            notifications::cancel(conn, overdue)?;
+            let after: Vec<i64> = notifications::due(conn, &today, 10)?
+                .iter()
+                .map(|p| p.id)
+                .collect();
+            assert_eq!(after, vec![now], "only what is still queued is due");
+
+            let payload = notifications::due(conn, &today, 10)?.remove(0);
+            assert_eq!(payload.client_name, "Ananya Sharma");
+            assert_eq!(payload.to_address.as_deref(), Some("ananya@example.com"));
+            assert_eq!(payload.subject, "Your policy expires soon");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn renewing_clears_only_the_reminders_still_waiting() {
+    let temp = TempDb::new("outbox-clear");
+    let (client, policy) = book_expiring_in(&temp, 30, Some("ananya@example.com"));
+
+    temp.db
+        .with(|conn| {
+            let ladder = rules::active(conn)?;
+            let today = util::today_iso();
+            let waiting = queue_reminder(conn, ladder[0].id, client, policy, "2027-03-31", &today)?
+                .expect("queued");
+            let gone = queue_reminder(conn, ladder[1].id, client, policy, "2027-03-31", &today)?
+                .expect("queued");
+            notifications::mark_sent(conn, gone)?;
+
+            let day: String = conn.query_row(
+                "SELECT date(sent_at) FROM notification_log WHERE id = ?1",
+                [gone],
+                |row| row.get(0),
+            )?;
+            assert_eq!(
+                notifications::sent_on(conn, &day)?,
+                1,
+                "the daily count reads the day a message actually went"
+            );
+
+            assert_eq!(notifications::cancel_for_policy(conn, policy)?, 1);
+            assert_eq!(notifications::count_by_status(conn, "cancelled")?, 1);
+            assert_eq!(
+                notifications::count_by_status(conn, "sent")?,
+                1,
+                "a message already with the client cannot be recalled"
+            );
+
+            let reason: Option<String> = conn.query_row(
+                "SELECT last_error FROM notification_log WHERE id = ?1",
+                [waiting],
+                |row| row.get(0),
+            )?;
+            assert_eq!(reason.as_deref(), Some("The policy was renewed"));
+
+            // The outbox filter drops a status the app does not know rather than
+            // matching on it.
+            let sent_only = notifications::list(
+                conn,
+                &NotificationFilter {
+                    statuses: Some(vec!["sent".into(), "teapot".into()]),
+                    ..Default::default()
+                },
+            )?;
+            assert_eq!(sent_only.total, 1);
+            assert_eq!(sent_only.rows[0].id, gone);
             Ok(())
         })
         .unwrap();

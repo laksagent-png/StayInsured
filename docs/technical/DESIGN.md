@@ -477,6 +477,12 @@ database in a temporary directory, with no window:
 - Indian date and money formats parse
 - a rule fires on its day and not before, and once however often the sweep runs
 - a dry run writes nothing and sends nothing
+- one rule writes to one policy year once, and cancelling does not free the slot
+- the outbox moves only the ways the screen allows: what is queued can be
+  cancelled but not resent, what has gone can be neither, and a skip or a
+  failure can be tried again with the attempt count reset
+- only queued rows past their date leave the outbox, oldest first, capped
+- renewing cancels what is still waiting and leaves what has gone
 - an opt-out and a missing address are recorded rather than retried
 - a failed send stays queued until it gives up, and the daily cap holds the rest
   back for tomorrow
