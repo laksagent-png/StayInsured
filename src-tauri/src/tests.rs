@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use crate::db::Database;
+use crate::exporter;
 use crate::importer::{self, ImportOptions};
 use crate::mail::{self, Outgoing};
 use crate::models::{
@@ -2129,6 +2130,169 @@ fn deleting_a_client_takes_their_documents() {
             Ok(())
         })
         .unwrap();
+}
+
+#[test]
+fn an_export_carries_every_column_and_reads_like_the_screen() {
+    let temp = TempDb::new("export-clients");
+    temp.db
+        .with(|conn| {
+            let mut input = sample_client("Ananya Sharma");
+            input.email = Some("ananya@example.com".into());
+            input.city = Some("Pune".into());
+            clients::create(conn, &input)?;
+
+            let rows = clients::list(conn, &ClientFilter::default())?.rows;
+            let path = temp.dir.join("clients.csv");
+            assert_eq!(exporter::export_clients(&rows, &path)?, 1);
+
+            let text = std::fs::read_to_string(&path).unwrap();
+            let mut lines = text.lines();
+            let headers: Vec<&str> = lines.next().unwrap().split(',').collect();
+            assert_eq!(headers.first(), Some(&"Client code"));
+            assert_eq!(headers.last(), Some(&"Notes"));
+            assert_eq!(
+                headers.len(),
+                18,
+                "a column added to the export needs a line in the guide too"
+            );
+
+            let row = lines.next().unwrap();
+            assert!(row.contains("Ananya Sharma"));
+            assert!(row.contains("ananya@example.com"));
+            assert!(row.contains("Pune"));
+            assert!(
+                row.contains(",On"),
+                "an opt-out reads as words, not as 0 or 1"
+            );
+            assert!(lines.next().is_none(), "one client, one row");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn an_export_refuses_a_format_it_cannot_write() {
+    let temp = TempDb::new("export-format");
+    temp.db
+        .with(|conn| {
+            let rows = clients::list(conn, &ClientFilter::default())?.rows;
+
+            let refused = exporter::export_clients(&rows, &temp.dir.join("book.pdf"));
+            match refused {
+                Err(crate::error::AppError::Validation(message)) => {
+                    assert!(
+                        message.contains(".xlsx") && message.contains(".csv"),
+                        "the refusal says what would work instead: {message}"
+                    );
+                }
+                other => panic!("expected a refusal, got {other:?}"),
+            }
+
+            // A spreadsheet is the default, including when the name carries no
+            // extension at all.
+            let workbook = temp.dir.join("book.xlsx");
+            exporter::export_clients(&rows, &workbook)?;
+            assert!(std::fs::metadata(&workbook).unwrap().len() > 0);
+            exporter::export_clients(&rows, &temp.dir.join("book"))?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_header_finds_its_field_by_name_and_then_by_resemblance() {
+    let headers: Vec<String> = [
+        "Client Name",
+        "Policy No",
+        "Policy Expiry Date (DD/MM/YYYY)",
+        "Something we do not have a field for",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
+    let mapping = importer::suggest_mapping(&headers);
+
+    assert_eq!(
+        mapping.get("fullName").map(String::as_str),
+        Some("Client Name")
+    );
+    assert_eq!(
+        mapping.get("policyNumber").map(String::as_str),
+        Some("Policy No")
+    );
+    assert_eq!(
+        mapping.get("expiryDate").map(String::as_str),
+        Some("Policy Expiry Date (DD/MM/YYYY)"),
+        "a header nobody would spell the same way twice still lands, on resemblance"
+    );
+    assert!(
+        !mapping
+            .values()
+            .any(|v| v == "Something we do not have a field for"),
+        "a column with no field is left for the operator rather than guessed at"
+    );
+
+    // Every column is claimed by at most one field, or a mapping would quietly
+    // read one column into two.
+    let mut claimed: Vec<&String> = mapping.values().collect();
+    claimed.sort();
+    let before = claimed.len();
+    claimed.dedup();
+    assert_eq!(claimed.len(), before);
+}
+
+#[test]
+fn the_blank_template_is_a_file_the_importer_can_read() {
+    let temp = TempDb::new("template");
+    let path = temp.dir.join("template.xlsx");
+    importer::write_template(&path).unwrap();
+
+    let sheet = importer::read_sheet(&path, None).unwrap();
+    assert_eq!(sheet.sheet, "Policies");
+    assert_eq!(
+        sheet.rows.len(),
+        1,
+        "one filled-in example, showing the shape of a row"
+    );
+
+    // The point of handing someone this file is that filling it in and sending
+    // it back needs no mapping work, so its own headers must map themselves.
+    let mapping = importer::suggest_mapping(&sheet.headers);
+    for field in ["fullName", "policyNumber", "insurerName", "expiryDate"] {
+        assert!(
+            mapping.contains_key(field),
+            "the template's own headers do not offer {field}"
+        );
+    }
+
+    // And the example row has to survive the importer, or the file teaches a
+    // format the app then refuses.
+    let report = temp
+        .db
+        .with(|conn| {
+            importer::run(
+                conn,
+                &ImportOptions {
+                    path: path.to_string_lossy().to_string(),
+                    sheet: None,
+                    mapping,
+                    default_category: None,
+                    update_existing: Some(true),
+                    dry_run: Some(true),
+                },
+            )
+        })
+        .unwrap();
+    assert_eq!(report.policies_inserted, 1);
+    assert_eq!(report.clients_created, 1);
+    assert_eq!(report.failed, 0);
+    assert!(
+        report.issues.is_empty(),
+        "the example row was not read cleanly: {:?}",
+        report.issues
+    );
 }
 
 #[test]

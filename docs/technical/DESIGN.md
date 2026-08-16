@@ -73,7 +73,9 @@ The app is a tray-resident background application, not a document window.
   cancels the close and hides the webview, so the process survives to do
   scheduled work. Quitting is deliberate, from the tray menu.
 - The tray menu offers Open, **Lock now** and Quit. Locking from the tray drops
-  the database handle without quitting.
+  the database handle without quitting, emits `session:locked` so the webview
+  moves to the lock screen rather than showing a book it can no longer read, and
+  brings the window up on it.
 - Launched with `--background` (how the autostart plugin starts it at login) the
   window stays hidden and the app goes straight to the tray.
 - Startup order in `run()`: tracing, plugins, resolve `AppPaths` and create the
@@ -399,6 +401,16 @@ from it, so the two cannot say different things.
 - **`App.tsx` is the session gate.** It queries `session_state` and renders
   either `LockScreen` or the routed shell. Lock state is therefore driven by the
   backend, not by frontend routing.
+- **Locking removes every query except the session, and writes the new session
+  in.** `App.tsx` owns that in one `onLocked`, used both by **Lock app** and by
+  the `session:locked` event. Emptying the whole cache instead would take the
+  session query with it, and since `refetchOnWindowFocus` is off nothing would
+  fetch it again: the shell would keep rendering an unlocked book against a
+  database handle that no longer exists, with no way back to the lock screen.
+- **The keychain unlocks the app as it starts, not whenever the lock screen
+  appears.** `LockScreen` takes `autoUnlock`, which `App.tsx` turns off once the
+  book has been open, so locking a trusted device by hand asks for the password
+  instead of letting itself straight back in.
 - **`src/lib/types.ts` mirrors `src-tauri/src/models.rs`.** Rust serialises with
   `#[serde(rename_all = "camelCase")]`, so the two files are the same shape in
   two languages and must be edited together.
@@ -491,6 +503,12 @@ database in a temporary directory, with no window:
   nothing is dropped whole
 - a rule fires on its day and not before, and once however often the sweep runs
 - a dry run writes nothing and sends nothing
+- an export carries every column and reads like the screen, and a format that
+  cannot be written is refused with the ones that can
+- a header maps by name and then by resemblance, no column is claimed twice,
+  and one with no field is left alone
+- the blank template's own headers map themselves, and its example row survives
+  the importer
 - one rule writes to one policy year once, and cancelling does not free the slot
 - the outbox moves only the ways the screen allows: what is queued can be
   cancelled but not resent, what has gone can be neither, and a skip or a
