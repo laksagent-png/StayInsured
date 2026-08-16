@@ -469,12 +469,16 @@ impl ImportReport {
 
     /// Keeps the issue list bounded; a broken file should not produce a report
     /// with fifty thousand lines in it.
-    fn note(&mut self, row: usize, message: String) {
+    fn note(&mut self, row: usize, message: String, blame: Option<Blame>) {
         if self.issues.len() < 300 {
+            let (column, value) = match blame {
+                Some(cell) => (Some(cell.column), cell.value),
+                None => (None, None),
+            };
             self.issues.push(ImportIssue {
                 row,
-                column: None,
-                value: None,
+                column,
+                value,
                 message,
             });
         }
@@ -673,7 +677,15 @@ pub fn preview(path: &Path, sheet: Option<&str>) -> AppResult<ImportPreview> {
 /// Reads a mapped value out of a row.
 struct RowReader<'a> {
     row: &'a [String],
+    headers: &'a [String],
     indexes: &'a HashMap<String, usize>,
+}
+
+/// The cell a row failed on, so the report can point at it rather than at the
+/// row: "row 4, Expiry Date, `31-02-2026`" is fixable, "row 4" is a hunt.
+struct Blame {
+    column: String,
+    value: Option<String>,
 }
 
 impl<'a> RowReader<'a> {
@@ -683,6 +695,20 @@ impl<'a> RowReader<'a> {
             .get(*index)
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())
+    }
+
+    /// Which column a field was read from, and what it held. A field that was
+    /// never mapped has no column to blame, and a blank cell has no value.
+    fn blame(&self, field: &str) -> Option<Blame> {
+        let index = *self.indexes.get(field)?;
+        Some(Blame {
+            column: self.headers.get(index)?.clone(),
+            value: self
+                .row
+                .get(index)
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty()),
+        })
     }
 }
 
@@ -760,25 +786,43 @@ fn import_rows(
     for (offset, row) in data.rows.iter().enumerate() {
         // +2 because row 1 is the header and spreadsheets are 1-indexed.
         let row_number = offset + 2;
-        let reader = RowReader { row, indexes };
+        let reader = RowReader {
+            row,
+            headers: &data.headers,
+            indexes,
+        };
 
         // Each row is its own savepoint. Without this, a row that creates a client
         // and then fails on the policy would leave the half-built client behind.
         let counters = report.counters();
         conn.execute_batch("SAVEPOINT import_row")?;
 
-        match import_row(conn, &reader, &default_category, update_existing, report) {
+        // The cell to blame, when the failure is about one in particular.
+        let mut blamed: Option<&'static str> = None;
+
+        match import_row(
+            conn,
+            &reader,
+            &default_category,
+            update_existing,
+            report,
+            &mut blamed,
+        ) {
             Ok(RowOutcome::Skipped(reason)) => {
                 conn.execute_batch("RELEASE import_row")?;
                 report.skipped += 1;
-                report.note(row_number, reason);
+                report.note(row_number, reason, blamed.and_then(|f| reader.blame(f)));
             }
             Ok(_) => conn.execute_batch("RELEASE import_row")?,
             Err(err) => {
                 conn.execute_batch("ROLLBACK TO import_row; RELEASE import_row")?;
                 report.restore(counters);
                 report.failed += 1;
-                report.note(row_number, err.to_string());
+                report.note(
+                    row_number,
+                    err.to_string(),
+                    blamed.and_then(|f| reader.blame(f)),
+                );
             }
         }
     }
@@ -798,10 +842,12 @@ fn import_row(
     default_category: &str,
     update_existing: bool,
     report: &mut ImportReport,
+    blamed: &mut Option<&'static str>,
 ) -> AppResult<RowOutcome> {
-    let name = reader
-        .get("fullName")
-        .ok_or_else(|| AppError::validation("Client name is blank"))?;
+    let name = reader.get("fullName").ok_or_else(|| {
+        *blamed = Some("fullName");
+        AppError::validation("Client name is blank")
+    })?;
 
     let email = reader.get("email").filter(|e| {
         // A malformed address should not sink the row; it is reported and dropped.
@@ -858,12 +904,14 @@ fn import_row(
         }
     };
 
-    let policy_number = reader
-        .get("policyNumber")
-        .ok_or_else(|| AppError::validation("Policy number is blank"))?;
-    let insurer_name = reader
-        .get("insurerName")
-        .ok_or_else(|| AppError::validation("Insurer is blank"))?;
+    let policy_number = reader.get("policyNumber").ok_or_else(|| {
+        *blamed = Some("policyNumber");
+        AppError::validation("Policy number is blank")
+    })?;
+    let insurer_name = reader.get("insurerName").ok_or_else(|| {
+        *blamed = Some("insurerName");
+        AppError::validation("Insurer is blank")
+    })?;
 
     let insurer_count_before: i64 =
         conn.query_row("SELECT COUNT(*) FROM insurers", [], |r| r.get(0))?;
@@ -889,7 +937,10 @@ fn import_row(
     let expiry = reader
         .get("expiryDate")
         .and_then(|d| util::parse_date(&d))
-        .ok_or_else(|| AppError::validation("Expiry date is missing or unreadable"))?;
+        .ok_or_else(|| {
+            *blamed = Some("expiryDate");
+            AppError::validation("Expiry date is missing or unreadable")
+        })?;
     let start = reader
         .get("startDate")
         .and_then(|d| util::parse_date(&d))
@@ -949,9 +1000,10 @@ fn import_row(
             id
         }
         Some(_) => {
+            *blamed = Some("policyNumber");
             return Ok(RowOutcome::Skipped(format!(
                 "Policy {policy_number} already exists and updates are switched off"
-            )))
+            )));
         }
         None => {
             let id = policies::create(conn, &input)?;

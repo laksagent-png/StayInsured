@@ -25,6 +25,16 @@ pub fn active(conn: &Connection) -> AppResult<Vec<ReminderRule>> {
 
 pub fn create(conn: &Connection, input: &ReminderRuleInput) -> AppResult<i64> {
     validate(conn, input)?;
+    // A rule the form does not place goes last. Defaulting to 0 put every new
+    // rule above the seeded ones, so the list reordered itself on each save.
+    let sort_order = match input.sort_order {
+        Some(order) => order,
+        None => conn.query_row(
+            "SELECT IFNULL(MAX(sort_order), 0) + 1 FROM reminder_rules",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?,
+    };
     conn.execute(
         "INSERT INTO reminder_rules (name, offset_days, category, audience, channel, template_id, \
              is_active, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -36,7 +46,7 @@ pub fn create(conn: &Connection, input: &ReminderRuleInput) -> AppResult<i64> {
             input.channel.trim(),
             input.template_id,
             input.is_active.unwrap_or(true) as i64,
-            input.sort_order.unwrap_or(0),
+            sort_order,
         ],
     )
     .map_err(duplicate_name)?;
@@ -48,7 +58,8 @@ pub fn update(conn: &Connection, id: i64, input: &ReminderRuleInput) -> AppResul
     let changed = conn
         .execute(
             "UPDATE reminder_rules SET name = ?2, offset_days = ?3, category = ?4, audience = ?5, \
-                 channel = ?6, template_id = ?7, is_active = ?8, sort_order = ?9, \
+                 channel = ?6, template_id = ?7, is_active = ?8, \
+                 sort_order = COALESCE(?9, sort_order), \
                  updated_at = datetime('now') WHERE id = ?1",
             params![
                 id,
@@ -59,7 +70,8 @@ pub fn update(conn: &Connection, id: i64, input: &ReminderRuleInput) -> AppResul
                 input.channel.trim(),
                 input.template_id,
                 input.is_active.unwrap_or(true) as i64,
-                input.sort_order.unwrap_or(0),
+                // Left out, the rule keeps the place it already had.
+                input.sort_order,
             ],
         )
         .map_err(duplicate_name)?;

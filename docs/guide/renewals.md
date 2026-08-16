@@ -29,16 +29,32 @@ the shape of the week is visible before you click anything.
 | **Next 60 days** | Active policies expiring within two months |
 | **Next 90 days** | Active policies expiring within three months |
 
-Each list is ordered by urgency, so work down from the top. Sort by any column
-heading when you would rather group by insurer or by premium.
+A [cancelled](policies.md#what-the-statuses-mean) policy is on none of these
+tabs, whatever its expiry date. It can still be renewed, from its row on the
+**Policies** screen.
+
+Each list is ordered by urgency, so work down from the top. The **Client**,
+**Policy**, **Type**, **Expiry** and **Premium** headings re-order it when you
+would rather work by client or by what the renewal is worth; a second press
+turns the order around. Long lists page twenty-five at a time.
 
 The badge on the sidebar counts the 30-day tab, which is the number to clear.
+
+A window with nothing in it says **Nothing expires in this window**, and a clear
+**Overdue** tab says **Nothing has lapsed** — neither is left as a blank table.
+A desk the book could not read says so and offers **Try again**, so an empty
+morning is never a hidden failure.
 
 ## Recalculate
 
 **Recalculate** rechecks every policy against today's date and moves statuses
 on: active to expired, expired to lapsed, and back to active if you have
 corrected an expiry date.
+
+It then tells you what it did — *Statuses recalculated against today's date,
+moving 3 policies on*, or *and nothing moved on* when the desk was already
+current. A quiet desk and a stale desk look the same until something says which
+one you are looking at.
 
 This happens on its own every time you unlock the app. Press it when you have
 left the app open overnight and want the counts to mean today.
@@ -55,6 +71,7 @@ you how many were copied.
 | Clients with **Do not send reminders** ticked | Left out, always |
 | The same client on two expiring policies | Copied once |
 | Very long lists | Up to 500 addresses in one go |
+| A tab with nobody left to email | Says so, and copies nothing |
 
 This is the manual route, for a batch you want to write yourself. To have the
 app write to them on a schedule instead, see [Send the
@@ -70,10 +87,22 @@ for handing the week's chase list to someone else.
 
 Press **Renew** on the row.
 
+The button sits on every row here and on every row of the
+[Policies](policies.md) screen, including a cancelled year: a client who
+cancelled and then came back is renewed from there, since the desk never lists
+them. It goes only once a year has been renewed, because the next year is
+already on record — and a year cannot be renewed twice, so if you are looking
+for **Renew** on an old year, it is on the latest year of that policy.
+
 ![Renew a policy](screenshots/renew-policy.png)
 
 Last year's details are already in the form and the dates run on from the
 expiring year. Change what the insurer changed.
+
+Across the top sit the two years side by side: the expiring one with its number,
+insurer, dates and premium, and next to it the year you are about to write. The
+right-hand side follows what you type, so the new number and the new dates are
+visible before anything is recorded.
 
 | Field | Pre-filled with | Notes |
 | --- | --- | --- |
@@ -83,14 +112,23 @@ expiring year. Change what the insurer changed.
 | **Expiry date** | One year less a day after the new start date | |
 | **Premium** | Last year's premium | Tells you how far you have moved from last year as you type |
 | **GST** | Last year's GST | |
+| **Commission %** | Last year's rate | |
+| **Commission amount** | Empty | What the rate comes to on the new premium, unless you type your own |
 | **Notes for this renewal** | Empty | What changed, and why |
 
-Press **Record renewal**. The dialog closes, the row leaves the tab, and the new
-year takes its place on the list.
+A policy that has run more than a year lists its earlier years under **History**
+at the foot of the dialog, so last year's premium is in front of you while you
+type this year's.
+
+Press **Record renewal**, or press Enter from any box. The dialog closes, the row
+leaves the tab, and the new year takes its place on the list. An expiry date that falls before the start
+date is refused in the dialog rather than written. **Cancel**, the corner cross
+and the Escape key all close it without recording anything, and it opens next
+time on the policy's own figures rather than on what you abandoned.
 
 **Renewing never overwrites last year.** It writes the new policy year, marks
-the expiring one **Renewed**, and links the two, so what the client paid each
-year stays on record. That is the difference between a book you can quote from
+the expiring one **Renewed** — unless that year was cancelled, which stands —
+and links the two, so what the client paid each year stays on record. That is the difference between a book you can quote from
 and a spreadsheet that only knows today.
 
 ## Read the history

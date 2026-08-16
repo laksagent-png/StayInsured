@@ -1,0 +1,803 @@
+/**
+ * The policy form: every field, the pickers that depend on each other, the
+ * rules it holds an agent to, and the payload it sends.
+ */
+
+import { useState } from "react";
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  backend,
+  renderWithProviders,
+  screen,
+  waitFor,
+  within,
+  type Rendered,
+} from "@/test";
+import { PolicyForm } from "@/components/PolicyForm";
+import type { Policy, PolicyInput } from "@/lib/types";
+
+type User = Rendered["user"];
+
+/** A policy straight from the book, the way the list hands one over. */
+function fromBook(id: number): Policy {
+  return backend().book.policies.find((row) => row.id === id)!;
+}
+
+/** The form, open, with a spy on the close. */
+function openForm(props: Partial<Parameters<typeof PolicyForm>[0]> = {}) {
+  const onClose = vi.fn();
+  const rendered = renderWithProviders(<PolicyForm open onClose={onClose} {...props} />);
+  return { ...rendered, onClose };
+}
+
+/** The form the way Policies mounts it: kept in place, opened and closed. */
+function Host({ policy }: { policy?: Policy }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button onClick={() => setOpen(true)}>Open the form</button>
+      <PolicyForm open={open} policy={policy} onClose={() => setOpen(false)} />
+    </>
+  );
+}
+
+/** The client picker's box; it is the only control the Client label wraps. */
+const clientBox = () => screen.getByPlaceholderText("Search by name, phone or code");
+
+/** The input the payload was built from. */
+function savedInput(command: "create_policy" | "update_policy"): PolicyInput {
+  return backend().lastCall(command)?.input as PolicyInput;
+}
+
+/** Picks a client out of the search list. */
+async function chooseClient(user: User, name: string | RegExp) {
+  await user.click(clientBox());
+  await user.click(await screen.findByRole("button", { name }));
+}
+
+/** Picks an insurer once the book has answered with the list. */
+async function chooseInsurer(user: User, id: number, name: string) {
+  await screen.findByRole("option", { name });
+  await user.selectOptions(screen.getByLabelText(/Insurer/), String(id));
+}
+
+/** Picks a plan once the insurer's plans have arrived. */
+async function choosePlan(user: User, id: number, name: string) {
+  await screen.findByRole("option", { name });
+  await user.selectOptions(screen.getByLabelText(/Plan/), String(id));
+}
+
+/** The least a new policy needs: a client, an insurer and a number. */
+async function fillMinimum(user: User, policyNumber = "SH/2026/0001") {
+  await chooseClient(user, /Anita Desai/);
+  await chooseInsurer(user, 2, "HDFC ERGO");
+  await user.type(screen.getByLabelText(/Policy number/), policyNumber);
+}
+
+const addPolicy = () => screen.getByRole("button", { name: "Add policy" });
+const saveChanges = () => screen.getByRole("button", { name: "Save changes" });
+
+describe("the policy form for a new policy", () => {
+  it("stays out of sight until it is opened", () => {
+    renderWithProviders(<PolicyForm open={false} onClose={vi.fn()} />);
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("offers every field the guide lists", async () => {
+    openForm();
+
+    expect(screen.getByRole("heading", { name: "New policy" })).toBeInTheDocument();
+    expect(clientBox()).toBeInTheDocument();
+    for (const label of [
+      /Policy number/,
+      /Insurer/,
+      /Plan/,
+      /Category/,
+      /Start date/,
+      /Expiry date/,
+      "Sum insured",
+      "Premium",
+      "GST",
+      "Frequency",
+      "Commission %",
+      /Commission amount/,
+      "Payment mode",
+      "Nominee",
+      "Nominee relation",
+      "Notes",
+    ]) {
+      expect(screen.getByLabelText(label)).toBeInTheDocument();
+    }
+    // Vehicle number belongs to motor policies only.
+    expect(screen.queryByLabelText("Vehicle number")).not.toBeInTheDocument();
+  });
+
+  it("starts today, with a year less a day of cover", () => {
+    openForm();
+
+    expect(screen.getByLabelText(/Start date/)).toHaveValue("2026-08-14");
+    expect(screen.getByLabelText(/Expiry date/)).toHaveValue("2027-08-13");
+  });
+
+  it("cannot pick a plan until an insurer is chosen", () => {
+    openForm();
+
+    expect(screen.getByLabelText(/Plan/)).toBeDisabled();
+    expect(screen.getByText("Pick an insurer first")).toBeInTheDocument();
+  });
+
+  it("takes the client from a client's page without asking again", async () => {
+    openForm({ fixedClientId: 1 });
+
+    expect(await screen.findByDisplayValue("Rohit Sharma")).toBeDisabled();
+    expect(screen.queryByPlaceholderText("Search by name, phone or code")).not.toBeInTheDocument();
+  });
+});
+
+describe("the policy form's client picker", () => {
+  it("searches the book, and takes the client that is clicked", async () => {
+    const { user } = openForm();
+
+    await user.click(clientBox());
+
+    await waitFor(() =>
+      expect(backend().lastCall("list_clients")?.filter).toMatchObject({
+        search: "",
+        pageSize: 8,
+        sort: "name",
+      }),
+    );
+    expect(await screen.findByRole("button", { name: /Rohit Sharma/ })).toBeInTheDocument();
+
+    await user.type(clientBox(), "Anita");
+    await waitFor(() =>
+      expect(backend().lastCall("list_clients")?.filter).toMatchObject({ search: "Anita" }),
+    );
+    expect(screen.queryByRole("button", { name: /Rohit Sharma/ })).not.toBeInTheDocument();
+
+    await user.click(await screen.findByRole("button", { name: /Anita Desai/ }));
+
+    expect(await screen.findByDisplayValue("Anita Desai")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /CL-00002/ })).not.toBeInTheDocument();
+  });
+
+  it("shows the members of the chosen client as chips", async () => {
+    const { user } = openForm();
+
+    await chooseClient(user, /Rohit Sharma/);
+
+    expect(await screen.findByText("Members covered")).toBeInTheDocument();
+    for (const name of ["Rohit Sharma", "Sneha Sharma", "Aarav Sharma"]) {
+      expect(screen.getByRole("button", { name: new RegExp(name) })).toBeInTheDocument();
+    }
+  });
+
+  it("closes the client list once the work moves on", async () => {
+    const { user } = openForm();
+
+    await user.click(clientBox());
+    await screen.findByRole("button", { name: /Rohit Sharma/ });
+
+    await user.click(screen.getByLabelText(/Policy number/));
+
+    expect(screen.queryByRole("button", { name: /Rohit Sharma/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps showing the chosen client when the box is focused again", async () => {
+    const { user } = openForm();
+
+    await chooseClient(user, /Anita Desai/);
+    await screen.findByDisplayValue("Anita Desai");
+
+    await user.click(clientBox());
+
+    expect(clientBox()).toHaveValue("Anita Desai");
+  });
+});
+
+describe("the policy form's insurer and plan pickers", () => {
+  it("narrows the plans to the chosen insurer", async () => {
+    const { user } = openForm();
+
+    await chooseInsurer(user, 1, "Star Health");
+
+    await waitFor(() => expect(backend().lastCall("list_products")?.insurerId).toBe(1));
+    const plan = screen.getByLabelText(/Plan/);
+    expect(plan).toBeEnabled();
+    await waitFor(() =>
+      expect(within(plan).getAllByRole("option").map((option) => option.textContent)).toEqual([
+        "Not recorded",
+        "Family Health Optima",
+      ]),
+    );
+
+    await chooseInsurer(user, 2, "HDFC ERGO");
+
+    await waitFor(() =>
+      expect(within(plan).getAllByRole("option").map((option) => option.textContent)).toEqual([
+        "Not recorded",
+        "Optima Restore",
+        "Personal Accident Shield",
+      ]),
+    );
+  });
+
+  it("forgets the plan when the insurer changes", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+
+    await chooseInsurer(user, 1, "Star Health");
+    await choosePlan(user, 1, "Family Health Optima");
+    expect(screen.getByLabelText(/Plan/)).toHaveValue("1");
+
+    await chooseInsurer(user, 2, "HDFC ERGO");
+
+    expect(screen.getByLabelText(/Plan/)).toHaveValue("");
+    await user.click(addPolicy());
+    await waitFor(() => expect(savedInput("create_policy")).toMatchObject({ productId: null }));
+  });
+
+  it("keeps the plan an existing policy already has", async () => {
+    openForm({ policy: fromBook(1) });
+
+    await waitFor(() => expect(screen.getByLabelText(/Plan/)).toHaveValue("1"));
+    expect(screen.getByLabelText(/Insurer/)).toHaveValue("1");
+  });
+});
+
+describe("what the policy form insists on", () => {
+  it("asks for the client first", async () => {
+    const { user } = openForm();
+
+    await user.click(addPolicy());
+
+    expect(
+      await screen.findByText("Choose the client this policy belongs to"),
+    ).toBeInTheDocument();
+    expect(backend().countOf("create_policy")).toBe(0);
+  });
+
+  it("asks for the insurer next", async () => {
+    const { user } = openForm();
+    await chooseClient(user, /Anita Desai/);
+
+    await user.click(addPolicy());
+
+    expect(await screen.findByText("Choose the insurer")).toBeInTheDocument();
+    expect(backend().countOf("create_policy")).toBe(0);
+  });
+
+  it("asks for the policy number", async () => {
+    const { user } = openForm();
+    await chooseClient(user, /Anita Desai/);
+    await chooseInsurer(user, 2, "HDFC ERGO");
+
+    await user.click(addPolicy());
+
+    expect(await screen.findByText("Policy number is required")).toBeInTheDocument();
+    expect(backend().countOf("create_policy")).toBe(0);
+  });
+
+  it("refuses a number that is only spaces", async () => {
+    const { user } = openForm();
+    await fillMinimum(user, "   ");
+
+    await user.click(addPolicy());
+
+    expect(await screen.findByText("Policy number is required")).toBeInTheDocument();
+    expect(backend().countOf("create_policy")).toBe(0);
+  });
+
+  it("asks for both dates", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+    await user.clear(screen.getByLabelText(/Start date/));
+
+    await user.click(addPolicy());
+
+    expect(await screen.findByText("Both start and expiry dates are needed")).toBeInTheDocument();
+    expect(backend().countOf("create_policy")).toBe(0);
+  });
+
+  it("swaps one complaint for the next as the form is put right", async () => {
+    const { user } = openForm();
+
+    await user.click(addPolicy());
+    await screen.findByText("Choose the client this policy belongs to");
+
+    await chooseClient(user, /Anita Desai/);
+    await user.click(addPolicy());
+
+    expect(await screen.findByText("Choose the insurer")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Choose the client this policy belongs to"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("the policy form's dates", () => {
+  it("moves the expiry with the start date until it is set by hand", async () => {
+    const { user } = openForm();
+
+    const start = screen.getByLabelText(/Start date/);
+    await user.clear(start);
+    await user.type(start, "2026-09-01");
+    expect(screen.getByLabelText(/Expiry date/)).toHaveValue("2027-08-31");
+
+    const expiry = screen.getByLabelText(/Expiry date/);
+    await user.clear(expiry);
+    await user.type(expiry, "2027-12-31");
+
+    await user.clear(start);
+    await user.type(start, "2026-10-01");
+    expect(screen.getByLabelText(/Expiry date/)).toHaveValue("2027-12-31");
+  });
+
+  it("passes on the core's complaint when the expiry equals the start", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+    const expiry = screen.getByLabelText(/Expiry date/);
+    await user.clear(expiry);
+    await user.type(expiry, "2026-08-14");
+
+    await user.click(addPolicy());
+
+    expect(
+      await screen.findByText("Expiry date must be after the start date"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("catches an expiry before the start without asking the core", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+    const expiry = screen.getByLabelText(/Expiry date/);
+    await user.clear(expiry);
+    await user.type(expiry, "2026-01-01");
+
+    await user.click(addPolicy());
+
+    await waitFor(() =>
+      expect(screen.getByText(/come after the start date/)).toBeInTheDocument(),
+    );
+    expect(backend().countOf("create_policy")).toBe(0);
+  });
+});
+
+describe("the policy form's numbers", () => {
+  it("ignores letters typed into an amount", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+
+    await user.type(screen.getByLabelText("Premium"), "abc");
+    expect(screen.getByLabelText("Premium")).toHaveValue(null);
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(savedInput("create_policy").premiumAmount).toBeNull());
+  });
+
+  it("sends nothing rather than zero when an amount is left blank", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(backend().countOf("create_policy")).toBe(1));
+    const input = savedInput("create_policy");
+    expect(input.sumInsured).toBeNull();
+    expect(input.premiumAmount).toBeNull();
+    expect(input.gstAmount).toBeNull();
+    expect(input.commissionRate).toBeNull();
+    expect(input.commissionExpected).toBeNull();
+  });
+
+  it("keeps a nil amount that was typed on purpose", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+
+    await user.type(screen.getByLabelText("Premium"), "0");
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(savedInput("create_policy").premiumAmount).toBe(0));
+  });
+
+  it("refuses a negative premium", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+
+    await user.type(screen.getByLabelText("Premium"), "-500");
+
+    await user.click(addPolicy());
+
+    expect(backend().countOf("create_policy")).toBe(0);
+  });
+
+  it("refuses a negative sum insured and an impossible commission rate", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+
+    await user.type(screen.getByLabelText("Sum insured"), "-100000");
+    await user.type(screen.getByLabelText("Commission %"), "500");
+
+    await user.click(addPolicy());
+
+    expect(backend().countOf("create_policy")).toBe(0);
+  });
+
+  it("works the commission out from the premium and the rate", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+
+    await user.type(screen.getByLabelText("Premium"), "24500");
+    await user.type(screen.getByLabelText("Commission %"), "12.5");
+
+    expect(await screen.findByText("₹3,063 from the rate")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Commission amount/)).toHaveValue(null);
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(savedInput("create_policy").commissionExpected).toBe(3063));
+  });
+
+  it("lets a typed commission stand", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+
+    await user.type(screen.getByLabelText("Premium"), "24500");
+    await user.type(screen.getByLabelText("Commission %"), "12.5");
+    await user.type(screen.getByLabelText(/Commission amount/), "2000");
+
+    expect(screen.queryByText("₹3,063 from the rate")).not.toBeInTheDocument();
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(savedInput("create_policy").commissionExpected).toBe(2000));
+  });
+
+  it("works the commission out again when an existing premium changes", async () => {
+    const { user } = openForm({ policy: fromBook(1) });
+    await waitFor(() => expect(screen.getByLabelText("Premium")).toHaveValue(24500));
+
+    await user.clear(screen.getByLabelText("Premium"));
+    await user.type(screen.getByLabelText("Premium"), "50000");
+
+    await user.click(saveChanges());
+
+    await waitFor(() => expect(savedInput("update_policy").commissionExpected).toBe(6250));
+  });
+});
+
+describe("the policy form's covered members", () => {
+  it("ticks the members an existing policy covers", async () => {
+    openForm({ policy: fromBook(1) });
+
+    expect(await screen.findByText("Members covered")).toBeInTheDocument();
+    expect(backend().lastCall("policy_member_ids")).toEqual({ id: 1 });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Sneha Sharma/ })).toHaveClass("bg-brand-50"),
+    );
+  });
+
+  it("saves the members that are ticked", async () => {
+    const { user } = openForm({ policy: fromBook(1) });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Sneha Sharma/ })).toHaveClass("bg-brand-50"),
+    );
+
+    await user.click(screen.getByRole("button", { name: /Sneha Sharma/ }));
+    await user.click(saveChanges());
+
+    await waitFor(() => expect(savedInput("update_policy").memberIds).toEqual([1, 3]));
+  });
+
+  it("adds a member to a new policy", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+    const chip = await screen.findByRole("button", { name: /Anita Desai/ });
+
+    await user.click(chip);
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(savedInput("create_policy").memberIds).toEqual([4]));
+  });
+
+  it("forgets the members when the client changes", async () => {
+    const { user } = openForm();
+    await chooseClient(user, /Rohit Sharma/);
+    await user.click(await screen.findByRole("button", { name: /Sneha Sharma/ }));
+
+    await user.click(clientBox());
+    await user.click(await screen.findByRole("button", { name: /Anita Desai/ }));
+    await chooseInsurer(user, 2, "HDFC ERGO");
+    await user.type(screen.getByLabelText(/Policy number/), "SH/2026/0002");
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(savedInput("create_policy").memberIds).toEqual([]));
+  });
+});
+
+describe("the policy form's vehicle number", () => {
+  it("appears for a motor policy, in capitals", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+
+    await user.selectOptions(screen.getByLabelText(/Category/), "motor");
+    await user.type(screen.getByLabelText("Vehicle number"), "mh12ab1234");
+
+    expect(screen.getByLabelText("Vehicle number")).toHaveValue("MH12AB1234");
+
+    await user.click(addPolicy());
+
+    await waitFor(() =>
+      expect(savedInput("create_policy")).toMatchObject({
+        category: "motor",
+        vehicleNumber: "MH12AB1234",
+      }),
+    );
+  });
+
+  it("shows the vehicle an existing motor policy carries", async () => {
+    openForm({ policy: fromBook(2) });
+
+    expect(await screen.findByLabelText("Vehicle number")).toHaveValue("MH12AB1234");
+  });
+
+  it("drops the vehicle number when the policy stops being motor", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+
+    await user.selectOptions(screen.getByLabelText(/Category/), "motor");
+    await user.type(screen.getByLabelText("Vehicle number"), "mh12ab1234");
+    await user.selectOptions(screen.getByLabelText(/Category/), "health");
+    expect(screen.queryByLabelText("Vehicle number")).not.toBeInTheDocument();
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(savedInput("create_policy").vehicleNumber).toBeFalsy());
+  });
+});
+
+describe("saving from the policy form", () => {
+  it("sends exactly what was filled in", async () => {
+    const { user, onClose } = openForm();
+
+    await chooseClient(user, /Anita Desai/);
+    await user.type(screen.getByLabelText(/Policy number/), "HE/2026/0001");
+    await chooseInsurer(user, 2, "HDFC ERGO");
+    await choosePlan(user, 2, "Optima Restore");
+    await user.selectOptions(screen.getByLabelText(/Category/), "health");
+    const start = screen.getByLabelText(/Start date/);
+    await user.clear(start);
+    await user.type(start, "2026-09-01");
+    await user.type(screen.getByLabelText("Sum insured"), "1500000");
+    await user.type(screen.getByLabelText("Premium"), "30000");
+    await user.type(screen.getByLabelText("GST"), "5400");
+    await user.selectOptions(screen.getByLabelText("Frequency"), "half_yearly");
+    await user.type(screen.getByLabelText("Commission %"), "15");
+    await user.type(screen.getByLabelText("Payment mode"), "UPI");
+    await user.type(screen.getByLabelText("Nominee"), "Rahul Desai");
+    await user.type(screen.getByLabelText("Nominee relation"), "Son");
+    await user.click(await screen.findByRole("button", { name: /Anita Desai/ }));
+    await user.type(screen.getByLabelText("Notes"), "Ported from last year");
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(backend().countOf("create_policy")).toBe(1));
+    expect(savedInput("create_policy")).toEqual({
+      policyNumber: "HE/2026/0001",
+      clientId: 2,
+      insurerId: 2,
+      productId: 2,
+      category: "health",
+      startDate: "2026-09-01",
+      expiryDate: "2027-08-31",
+      sumInsured: 1500000,
+      premiumAmount: 30000,
+      gstAmount: 5400,
+      premiumFrequency: "half_yearly",
+      paymentMode: "UPI",
+      commissionRate: 15,
+      commissionExpected: 4500,
+      nomineeName: "Rahul Desai",
+      nomineeRelation: "Son",
+      // A new policy takes its status from the calendar, so none is sent. Text
+      // fields that were never touched go as empty strings.
+      vehicleNumber: "",
+      notes: "Ported from last year",
+      memberIds: [4],
+    });
+    expect(await screen.findByText("Policy added")).toBeInTheDocument();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("updates the policy year that was opened, and no other", async () => {
+    const { user, onClose } = openForm({ policy: fromBook(1) });
+    await waitFor(() => expect(screen.getByLabelText("Premium")).toHaveValue(24500));
+
+    await user.clear(screen.getByLabelText("Premium"));
+    await user.type(screen.getByLabelText("Premium"), "26000");
+    await user.type(screen.getByLabelText("Notes"), " Premium revised.");
+
+    await user.click(saveChanges());
+
+    await waitFor(() => expect(backend().countOf("update_policy")).toBe(1));
+    expect(backend().lastCall("update_policy")?.id).toBe(1);
+    expect(savedInput("update_policy")).toMatchObject({
+      policyNumber: "SH/2025/0091823",
+      clientId: 1,
+      insurerId: 1,
+      productId: 1,
+      category: "health",
+      status: "active",
+      startDate: "2025-08-20",
+      expiryDate: "2026-08-21",
+      premiumAmount: 26000,
+      commissionRate: 12.5,
+      notes: "Floater covering three members. Premium revised.",
+    });
+    expect(await screen.findByText("Policy updated")).toBeInTheDocument();
+    expect(onClose).toHaveBeenCalled();
+    expect(backend().countOf("create_policy")).toBe(0);
+  });
+
+  it("shows a duplicate policy number on the form and stays open", async () => {
+    backend().fail("create_policy", {
+      kind: "conflict",
+      message: "That policy number is already in the book",
+    });
+    const { user, onClose } = openForm();
+    await fillMinimum(user, "SH/2025/0091823");
+
+    await user.click(addPolicy());
+
+    expect(
+      await screen.findByText("That policy number is already in the book"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/Policy number/)).toHaveValue("SH/2025/0091823");
+  });
+
+  it("lets a refused save be tried again", async () => {
+    backend().failOnce("create_policy", { kind: "conflict", message: "Already in the book" });
+    const { user, onClose } = openForm();
+    await fillMinimum(user);
+
+    await user.click(addPolicy());
+    await screen.findByText("Already in the book");
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(backend().countOf("create_policy")).toBe(2);
+  });
+
+  it("saves when Enter is pressed in a field", async () => {
+    const { user, onClose } = openForm();
+    await chooseClient(user, /Anita Desai/);
+    await chooseInsurer(user, 2, "HDFC ERGO");
+
+    await user.type(screen.getByLabelText(/Policy number/), "SH/2026/0001{Enter}");
+
+    await waitFor(() => expect(backend().countOf("create_policy")).toBe(1));
+    expect(savedInput("create_policy")).toMatchObject({ policyNumber: "SH/2026/0001" });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("takes the closest client on Enter in the search box, without saving", async () => {
+    const { user } = openForm();
+
+    await user.type(clientBox(), "Anita");
+    await screen.findByRole("button", { name: /Anita Desai/ });
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByDisplayValue("Anita Desai")).toBeInTheDocument();
+    // A policy with no insurer and no number was never sent, and never
+    // complained about either.
+    expect(screen.queryByText(/^Choose the/)).not.toBeInTheDocument();
+    expect(backend().countOf("create_policy")).toBe(0);
+  });
+
+  it("sends one policy when Enter is pressed again while the core writes", async () => {
+    const gate = backend().hold("create_policy");
+    const { user, onClose } = openForm();
+    await fillMinimum(user);
+
+    await user.type(screen.getByLabelText("Nominee"), "{Enter}");
+    await waitFor(() => expect(backend().countOf("create_policy")).toBe(1));
+    await user.type(screen.getByLabelText("Nominee"), "{Enter}");
+
+    expect(backend().countOf("create_policy")).toBe(1);
+    gate.release();
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it("waits with the button held while the core writes", async () => {
+    const gate = backend().hold("create_policy");
+    const { user, onClose } = openForm();
+    await fillMinimum(user);
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(addPolicy()).toBeDisabled());
+    await user.click(addPolicy());
+    expect(backend().countOf("create_policy")).toBe(1);
+
+    gate.release();
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(backend().countOf("create_policy")).toBe(1);
+  });
+});
+
+describe("leaving the policy form", () => {
+  it("closes on Cancel without writing anything", async () => {
+    const { user, onClose } = openForm();
+    await fillMinimum(user);
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(backend().countOf("create_policy")).toBe(0);
+  });
+
+  it("closes on Escape and on the corner cross", async () => {
+    const { user, onClose } = openForm();
+
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("forgets what was typed when it is opened again", async () => {
+    const { user } = renderWithProviders(<Host />);
+
+    await user.click(screen.getByRole("button", { name: "Open the form" }));
+    await user.type(screen.getByLabelText(/Policy number/), "SH/2026/0001");
+    await user.type(screen.getByLabelText("Premium"), "12345");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await user.click(screen.getByRole("button", { name: "Open the form" }));
+
+    expect(screen.getByLabelText(/Policy number/)).toHaveValue("");
+    expect(screen.getByLabelText("Premium")).toHaveValue(null);
+    expect(screen.getByLabelText(/Start date/)).toHaveValue("2026-08-14");
+  });
+
+  it("loads the policy again when an edit is reopened", async () => {
+    const { user } = renderWithProviders(<Host policy={fromBook(2)} />);
+
+    await user.click(screen.getByRole("button", { name: "Open the form" }));
+    await user.clear(screen.getByLabelText("Premium"));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await user.click(screen.getByRole("button", { name: "Open the form" }));
+
+    expect(screen.getByLabelText("Premium")).toHaveValue(12800);
+    expect(screen.getByLabelText(/Policy number/)).toHaveValue("IL/MOT/778211");
+  });
+});
+
+describe("what the policy form says about an existing policy", () => {
+  it("names the year and the day it was recorded", async () => {
+    openForm({ policy: fromBook(1) });
+
+    expect(
+      await screen.findByText("Policy year 2 · created 20 Aug 2025"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Editing changes this policy year only. Use Renew to add the next year."),
+    ).toBeInTheDocument();
+  });
+
+  it("can set the status by hand", async () => {
+    openForm({ policy: fromBook(1) });
+
+    expect(await screen.findByLabelText(/Status/)).toBeInTheDocument();
+  });
+});

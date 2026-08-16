@@ -116,10 +116,10 @@ The **Documentation** workflow runs both commands on every pull request.
 
 ## Checks
 
-One command runs everything that guards the code, in about twelve seconds:
+One command runs everything that guards the code:
 
 ```bash
-npm run check          # typecheck, then rustfmt, clippy and the Rust tests
+npm run check          # typecheck, the interface tests, then rustfmt, clippy and the Rust tests
 ```
 
 Rust tests cover the data layer end to end — migrations, renewal chains, status
@@ -129,6 +129,35 @@ against a recording fake mailer. To run them alone:
 ```bash
 cd src-tauri && cargo test --lib
 ```
+
+### The interface tests
+
+Vitest drives the React side in jsdom, one file per screen or component in
+`__tests__/` beside the code it covers:
+
+```bash
+npm test               # the whole suite
+npm run test:watch     # while you work
+npx vitest run src/pages/__tests__/Clients.test.tsx
+```
+
+The Rust core is replaced by a book held in memory. `src/test/backend.ts`
+answers every command the app can send, filtering, sorting, paginating and
+writing the way the repositories do — down to refusing what they refuse and
+tidying names, phones and blanks the way `util.rs` does — and records what it was
+asked so a test can prove a screen sent the filter it displayed.
+`src/test/fixtures.ts` is the same demo book the guide screenshots use, and the
+clock is frozen to 14 August 2026, so "expires in 7 days" means one particular
+policy in every test. `src/test/tauri.ts` stands in for the file picker, the tray
+events, autostart and the updater. `src/test/README.md` is the contract for
+writing a new test.
+
+When the core's behaviour changes, the fake has to change with it, or the tests
+go on proving the app works against a core that no longer exists.
+
+A test that proves the app misbehaves is marked `it.fails` with a comment naming
+the bug: the suite stays green, and fixing the bug turns the marker red so it
+gets removed.
 
 Clippy runs with `-D warnings`, so a warning fails the run. Formatting is
 rustfmt's default; `cargo fmt` fixes what `cargo fmt --check` reports. Both need
@@ -252,6 +281,8 @@ src/                    React + TypeScript interface
   lib/types.ts          mirrors the Rust models
   pages/                one file per screen
   components/           shared widgets and forms
+  test/                 the fake core, the demo book and the render helpers
+  **/__tests__/         interface tests, beside the code they cover
 src-tauri/src/
   commands.rs           the whole API surface exposed to the interface
   db/                   connection, migrations, SQL schema

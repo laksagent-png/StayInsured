@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api, ApiError } from "../lib/api";
@@ -33,7 +33,7 @@ export function RuleForm({
   onClose: () => void;
 }) {
   const toast = useToast();
-  const queryClient = useQueryClient();
+  const [messageProblem, setMessageProblem] = useState<string>();
 
   const [form, setForm] = useState<ReminderRuleInput>(
     rule === "new"
@@ -45,7 +45,7 @@ export function RuleForm({
           channel: "email",
           templateId: null,
           isActive: true,
-          sortOrder: 0,
+          // A new rule carries no place in the ladder: the core gives it the end.
         }
       : {
           name: rule.name,
@@ -63,15 +63,16 @@ export function RuleForm({
 
   const save = useMutation({
     mutationFn: async () => {
+      // The box offers a year either side of expiry, which is as far as the
+      // core will take: anything beyond it is refused rather than saved.
+      const offsetDays = Math.max(-365, Math.min(365, form.offsetDays));
       if (rule === "new") {
-        await api.createRule(form);
+        await api.createRule({ ...form, offsetDays });
       } else {
-        await api.updateRule(rule.id, form);
+        await api.updateRule(rule.id, { ...form, offsetDays });
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["rules"] });
-      queryClient.invalidateQueries({ queryKey: ["reminderOverview"] });
       toast.success("Rule saved");
       onClose();
     },
@@ -80,6 +81,17 @@ export function RuleForm({
 
   const set = <K extends keyof ReminderRuleInput>(key: K, value: ReminderRuleInput[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
+
+  // A rule that writes to a client with no message has nothing to say, and the
+  // core refuses it. Saying so under the box beats sending it and reporting the
+  // refusal back over the top of the form.
+  const submit = () => {
+    if (form.audience === "client" && !form.templateId) {
+      setMessageProblem("Choose the message this rule sends to the client");
+      return;
+    }
+    save.mutate();
+  };
 
   // Days are entered as a positive number; before or after is a separate choice,
   // which reads better than asking someone to type a negative number.
@@ -98,7 +110,7 @@ export function RuleForm({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
+          <Button variant="primary" loading={save.isPending} onClick={submit}>
             Save rule
           </Button>
         </>
@@ -156,7 +168,10 @@ export function RuleForm({
           <Field label="Goes to">
             <Select
               value={form.audience}
-              onChange={(event) => set("audience", event.target.value as ReminderAudience)}
+              onChange={(event) => {
+                setMessageProblem(undefined);
+                set("audience", event.target.value as ReminderAudience);
+              }}
             >
               <option value="client">The client</option>
               <option value="provider">Me</option>
@@ -180,11 +195,15 @@ export function RuleForm({
         <Field
           label="Message"
           required={form.audience === "client"}
+          error={messageProblem}
           hint="Edit the wording under Messages."
         >
           <Select
             value={form.templateId ?? ""}
-            onChange={(event) => set("templateId", Number(event.target.value) || null)}
+            onChange={(event) => {
+              setMessageProblem(undefined);
+              set("templateId", Number(event.target.value) || null);
+            }}
           >
             <option value="">Choose a message</option>
             {(templates.data ?? []).map((template) => (

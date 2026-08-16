@@ -31,7 +31,8 @@ client list.
 ![Reminders](screenshots/reminders.png)
 
 The line under the title says whether sending is automatic and when the last run
-happened. Four figures sit above the tabs.
+happened, and the line after it says whether your daily digest and the desktop
+alerts are switched on. Four figures sit above the tabs.
 
 | Figure | Means |
 | --- | --- |
@@ -42,7 +43,13 @@ happened. Four figures sit above the tabs.
 
 Anything standing between you and a working reminder is spelled out above the
 figures: no mail server, no saved password, practice mode still on, clients with
-no email address, clients who have opted out.
+no email address, clients who have opted out. Each notice carries a link to
+[Settings](settings.md) beside it.
+
+When the day's figures cannot be read at all, **The day's figures could not be
+read** stands under the heading with a **Try again** button, so it is clear the
+book refused rather than that the day is empty. Each tab says the same for
+itself.
 
 ## Due today
 
@@ -62,22 +69,30 @@ sent, skipped or failed — that rule is done with that policy until it renews.
 
 A rule is a point in a policy's year and a message to send when it arrives. The
 ladder is set up for you: 60, 30, 15, 7 and 1 days before expiry, plus one for a
-week after expiry that starts switched off.
+week after expiry that starts switched off. The list is ordered by timing,
+furthest ahead of expiry first, so a rule you add sits where its own timing puts
+it. Where two rules fall on the same day, the place each was given decides which
+of them reads first, and a rule added without one goes after the rest.
 
 Press **Add rule**, or **Edit** on a row.
 
 | Field | Does |
 | --- | --- |
 | **Name** | How the rule reads here and in history |
-| **Days** and **Counted** | The point in the year: so many days before or after expiry |
+| **Days** and **Counted** | The point in the year: so many days before or after expiry, up to a year either side |
 | **Applies to** | Every policy type, or just one — a motor-only wording, for instance |
 | **Goes to** | The client, or you |
 | **How** | Email, a desktop notification, or both |
 | **Message** | Which message it sends. Write them under **Messages** |
 | **Active** | An inactive rule stays in the list and sends nothing |
 
+A rule that goes to the client has to have a message: leave **Message** unset and
+the form says **Choose the message this rule sends to the client** and stays
+open. A rule that only notifies you can go without one.
+
 Press the **On** or **Off** badge in the list to switch a rule without opening
-it. **Remove** deletes the rule and keeps the history of what it sent.
+it. **Remove** asks first, then deletes the rule and keeps the history of what it
+sent.
 
 A rule fires on the day the policy is exactly that far from expiry — a 30-day
 rule catches a policy on the day it has 30 days left, not every day after.
@@ -88,11 +103,17 @@ Nothing is sent for a policy that has already been renewed.
 ![Editing a message](screenshots/reminder-message.png)
 
 Five messages come with the app, and the expiry reminder is the one most rules
-use. Press **Edit** to change the wording, or **New message** to write another.
+use. The list names each one with its subject line and how many rules send it.
+Press **Edit** to change the wording, or **New message** to write another.
 
-Type the message on the left, read it on the right. The preview is rendered
-against a real policy from your own book, so you are reading what a client would
-read rather than a page of braces.
+Type the message on the left, read it on the right. **Used for** says which part
+of the year the message belongs to, and the note under it explains what sends it.
+The preview is rendered against a real policy from your own book, so you are
+reading what a client would read rather than a page of braces.
+
+Every message needs a subject, since a message without one arrives as a blank
+line in the client's inbox. Leave it empty and **Subject is required** appears
+under the box and the cursor lands there.
 
 **Insert a detail** puts a placeholder where the cursor is: `{{client_name}}`,
 `{{expiry_date}}`, `{{premium_amount}}` and the rest. Each is replaced with that
@@ -112,19 +133,22 @@ another one first.
 
 ![Reminder history](screenshots/reminder-history.png)
 
-Every message is recorded, whether it went or not. Filter by status.
+Every message is recorded, whether it went or not. The search box above the log
+finds one by client, subject or address, **Status** narrows it to one kind, and
+**When** at the top of the column orders the log by date — press it again to turn
+the order around. Twenty-five rows show at a time.
 
 | Status | Means |
 | --- | --- |
 | **Sent** | Delivered to the mail server |
-| **Waiting** | In the outbox for the next run, usually behind the daily cap |
-| **Failed** | Three attempts, all refused. The reason is on the row |
+| **Waiting** | In the outbox for the next run, usually behind the daily cap. The row itself reads `queued` |
+| **Failed** | Three attempts, all refused. The row counts the tries and **View** has the reason |
 | **Skipped** | Never attempted — no email address, or the client opted out |
 | **Cancelled** | Stopped before sending, usually because the policy was renewed |
 
-**View** shows the reason, the attempts and the dates. **Send again** puts a
-failed or skipped message back in the queue. **Cancel** stops one that is still
-waiting.
+**View** shows the rule, the policy, the dates, how many attempts were made and
+the reason the last one failed. **Send again** puts a failed or skipped message
+back in the queue. **Cancel** stops one that is still waiting.
 
 A message that cannot be delivered is retried on the next two runs before it is
 marked failed, so a mail server having a bad hour costs nothing.
@@ -144,7 +168,8 @@ Nobody should point an unattended mailer at their client book on the first day.
 5. Turn practice mode off, and set the daily cap low for the first week.
 
 **Send now** runs the day's batch immediately, for when you want it out before
-the scheduled time.
+the scheduled time. It says how many clients that is and waits for you to agree
+before anything leaves.
 
 ## Who never gets written to
 

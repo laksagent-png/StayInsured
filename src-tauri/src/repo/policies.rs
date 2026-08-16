@@ -298,6 +298,15 @@ pub fn update(conn: &Connection, id: i64, input: &PolicyInput) -> AppResult<()> 
 pub fn renew(conn: &Connection, input: &RenewalInput) -> AppResult<i64> {
     let previous = get(conn, input.policy_id)?;
 
+    // One open year to a chain. Nothing but the interface's own buttons kept a
+    // year from being renewed twice, and a second successor would leave the
+    // chain forking with two open years and the desk showing both.
+    if previous.is_renewed {
+        return Err(AppError::Conflict(
+            "That year has already been renewed. Renew the latest year instead.".into(),
+        ));
+    }
+
     let start = match blank_to_none(input.start_date.clone()).and_then(|d| util::parse_date(&d)) {
         Some(date) => date,
         None => {
@@ -361,8 +370,13 @@ pub fn renew(conn: &Connection, input: &RenewalInput) -> AppResult<i64> {
          SELECT ?1, member_id FROM policy_members WHERE policy_id = ?2",
         params![new_id, previous.id],
     )?;
+    // A cancelled year keeps saying so. Cancelling is something the agent did
+    // and the client agreed to; writing 'renewed' over it would leave the book
+    // unable to say the cover was ever ended early. The year is still marked
+    // renewed for every purpose that matters, because `is_renewed` reads the
+    // successor rather than the status.
     conn.execute(
-        "UPDATE policies SET status = 'renewed' WHERE id = ?1",
+        "UPDATE policies SET status = 'renewed' WHERE id = ?1 AND status <> 'cancelled'",
         params![previous.id],
     )?;
 

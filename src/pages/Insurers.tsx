@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Building2, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
@@ -7,6 +7,7 @@ import type { Insurer, InsurerInput, Product, ProductInput } from "../lib/types"
 import { categoryLabel, categoryLabels, count } from "../lib/format";
 import { DataTable, type Column } from "../components/DataTable";
 import {
+  AsyncPanel,
   Badge,
   Button,
   Card,
@@ -16,32 +17,48 @@ import {
   Input,
   Modal,
   Select,
-  Spinner,
   useToast,
 } from "../components/ui";
 
+/**
+ * The insurer the plans panel is filtered to, carried with its name: retiring a
+ * company takes it out of the list the heading would otherwise be read from,
+ * and the plans below the heading are still that company's.
+ */
+interface Chosen {
+  id: number;
+  name: string;
+}
+
+/** An optional field left empty belongs in the book as nothing, not as "". */
+function blankToNone(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
 export function InsurersPage() {
   const toast = useToast();
-  const queryClient = useQueryClient();
 
   const [showInactive, setShowInactive] = useState(false);
   const [insurerDraft, setInsurerDraft] = useState<Insurer | "new">();
   const [productDraft, setProductDraft] = useState<Product | "new">();
-  const [selectedInsurer, setSelectedInsurer] = useState<number>();
+  const [chosen, setChosen] = useState<Chosen>();
 
   const insurers = useQuery({
     queryKey: ["insurers", showInactive],
     queryFn: () => api.listInsurers(showInactive),
   });
   const products = useQuery({
-    queryKey: ["allProducts", selectedInsurer, showInactive],
-    queryFn: () => api.listProducts(selectedInsurer, showInactive),
+    queryKey: ["allProducts", chosen?.id, showInactive],
+    queryFn: () => api.listProducts(chosen?.id, showInactive),
   });
 
   const removeInsurer = useMutation({
     mutationFn: (id: number) => api.deleteInsurer(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["insurers"] });
+    onSuccess: (_result, id) => {
+      // A filter on a company that is no longer in the book leaves the panel
+      // headed by a dash with nothing after it.
+      if (chosen?.id === id) setChosen(undefined);
       toast.success("Insurer removed");
     },
     onError: (err: ApiError) => toast.error(err.message),
@@ -50,11 +67,18 @@ export function InsurersPage() {
   const removeProduct = useMutation({
     mutationFn: (id: number) => api.deleteProduct(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["allProducts"] });
       toast.success("Plan removed");
     },
     onError: (err: ApiError) => toast.error(err.message),
   });
+
+  /**
+   * The company a plan belongs to. The insurer list holds the name as it reads
+   * today, so the two panels agree the moment one is renamed; the copy the plan
+   * carries answers for a company the list does not hold.
+   */
+  const insurerOf = (row: Product): string =>
+    insurers.data?.find((insurer) => insurer.id === row.insurerId)?.name ?? row.insurerName;
 
   const insurerColumns: Column<Insurer>[] = [
     {
@@ -67,6 +91,11 @@ export function InsurersPage() {
             {row.shortCode ?? "—"}
             {row.claimHelpline ? ` · claims ${row.claimHelpline}` : ""}
           </span>
+          {(row.supportEmail || row.website) && (
+            <span className="block text-xs text-slate-400">
+              {[row.supportEmail, row.website].filter(Boolean).join(" · ")}
+            </span>
+          )}
         </span>
       ),
     },
@@ -95,7 +124,7 @@ export function InsurersPage() {
             variant="ghost"
             onClick={(event) => {
               event.stopPropagation();
-              setSelectedInsurer(row.id);
+              setChosen({ id: row.id, name: row.name });
             }}
           >
             Plans
@@ -113,6 +142,7 @@ export function InsurersPage() {
           <Button
             size="sm"
             variant="ghost"
+            aria-label={`Remove ${row.name}`}
             onClick={(event) => {
               event.stopPropagation();
               if (window.confirm(`Remove ${row.name}?`)) removeInsurer.mutate(row.id);
@@ -132,7 +162,7 @@ export function InsurersPage() {
       render: (row) => (
         <span className="block">
           <span className="block font-medium text-slate-800">{row.name}</span>
-          <span className="block text-xs text-slate-400">{row.insurerName}</span>
+          <span className="block text-xs text-slate-400">{insurerOf(row)}</span>
         </span>
       ),
     },
@@ -148,6 +178,14 @@ export function InsurersPage() {
       render: (row) => <span className="text-sm text-slate-700">{count(row.policyCount)}</span>,
     },
     {
+      key: "status",
+      header: "Status",
+      align: "center",
+      render: (row) => (
+        <Badge tone={row.isActive ? "ok" : "muted"}>{row.isActive ? "Active" : "Inactive"}</Badge>
+      ),
+    },
+    {
       key: "actions",
       header: "",
       align: "right",
@@ -159,6 +197,7 @@ export function InsurersPage() {
           <Button
             size="sm"
             variant="ghost"
+            aria-label={`Remove ${row.name}`}
             onClick={() => {
               if (window.confirm(`Remove ${row.name}?`)) removeProduct.mutate(row.id);
             }}
@@ -194,9 +233,7 @@ export function InsurersPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Insurers" bodyClassName="">
-          {insurers.isLoading ? (
-            <Spinner />
-          ) : (
+          <AsyncPanel query={insurers} errorTitle="The insurers could not be read">
             <DataTable
               columns={insurerColumns}
               rows={insurers.data ?? []}
@@ -210,19 +247,15 @@ export function InsurersPage() {
                 />
               }
             />
-          )}
+          </AsyncPanel>
         </Card>
 
         <Card
-          title={
-            selectedInsurer
-              ? `Plans — ${insurers.data?.find((i) => i.id === selectedInsurer)?.name ?? ""}`
-              : "All plans"
-          }
+          title={chosen ? `Plans — ${chosen.name}` : "All plans"}
           action={
             <div className="flex items-center gap-1">
-              {selectedInsurer && (
-                <Button size="sm" variant="ghost" onClick={() => setSelectedInsurer(undefined)}>
+              {chosen && (
+                <Button size="sm" variant="ghost" onClick={() => setChosen(undefined)}>
                   Show all
                 </Button>
               )}
@@ -238,9 +271,7 @@ export function InsurersPage() {
           }
           bodyClassName=""
         >
-          {products.isLoading ? (
-            <Spinner />
-          ) : (
+          <AsyncPanel query={products} errorTitle="The plans could not be read">
             <DataTable
               columns={productColumns}
               rows={products.data ?? []}
@@ -253,57 +284,59 @@ export function InsurersPage() {
                 />
               }
             />
-          )}
+          </AsyncPanel>
         </Card>
       </div>
 
-      <InsurerModal draft={insurerDraft} onClose={() => setInsurerDraft(undefined)} />
-      <ProductModal
-        draft={productDraft}
-        insurers={insurers.data ?? []}
-        defaultInsurerId={selectedInsurer}
-        onClose={() => setProductDraft(undefined)}
-      />
+      {/* Both dialogs are mounted when they open and thrown away when they
+          close, so what was typed and abandoned is not there the next time. */}
+      {insurerDraft && (
+        <InsurerModal draft={insurerDraft} onClose={() => setInsurerDraft(undefined)} />
+      )}
+      {productDraft && (
+        <ProductModal
+          draft={productDraft}
+          insurers={insurers.data ?? []}
+          defaultInsurerId={chosen?.id}
+          onClose={() => setProductDraft(undefined)}
+        />
+      )}
     </div>
   );
 }
 
-function InsurerModal({ draft, onClose }: { draft?: Insurer | "new"; onClose: () => void }) {
-  const queryClient = useQueryClient();
+function InsurerModal({ draft, onClose }: { draft: Insurer | "new"; onClose: () => void }) {
   const toast = useToast();
-  const existing = draft && draft !== "new" ? draft : undefined;
-  const [form, setForm] = useState<InsurerInput>({ name: "", isActive: true });
-  const [seeded, setSeeded] = useState<string | number>();
-
-  const key = existing?.id ?? "new";
-  if (draft && seeded !== key) {
-    setSeeded(key);
-    setForm({
-      name: existing?.name ?? "",
-      shortCode: existing?.shortCode ?? "",
-      website: existing?.website ?? "",
-      claimHelpline: existing?.claimHelpline ?? "",
-      supportEmail: existing?.supportEmail ?? "",
-      notes: existing?.notes ?? "",
-      isActive: existing?.isActive ?? true,
-    });
-  }
+  const existing = draft === "new" ? undefined : draft;
+  const [form, setForm] = useState<InsurerInput>(() => ({
+    name: existing?.name ?? "",
+    shortCode: existing?.shortCode ?? "",
+    website: existing?.website ?? "",
+    claimHelpline: existing?.claimHelpline ?? "",
+    supportEmail: existing?.supportEmail ?? "",
+    notes: existing?.notes ?? "",
+    isActive: existing?.isActive ?? true,
+  }));
 
   const save = useMutation({
     mutationFn: async () => {
-      if (existing) await api.updateInsurer(existing.id, form);
-      else await api.createInsurer(form);
+      const input: InsurerInput = {
+        ...form,
+        shortCode: blankToNone(form.shortCode),
+        website: blankToNone(form.website),
+        claimHelpline: blankToNone(form.claimHelpline),
+        supportEmail: blankToNone(form.supportEmail),
+        notes: blankToNone(form.notes),
+      };
+      if (existing) await api.updateInsurer(existing.id, input);
+      else await api.createInsurer(input);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["insurers"] });
-      queryClient.invalidateQueries({ queryKey: ["insurerOptions"] });
       toast.success(existing ? "Insurer updated" : "Insurer added");
       onClose();
     },
     onError: (err: ApiError) => toast.error(err.message),
   });
-
-  if (!draft) return null;
 
   return (
     <Modal
@@ -371,50 +404,56 @@ function ProductModal({
   defaultInsurerId,
   onClose,
 }: {
-  draft?: Product | "new";
+  draft: Product | "new";
   insurers: Insurer[];
   defaultInsurerId?: number;
   onClose: () => void;
 }) {
-  const queryClient = useQueryClient();
   const toast = useToast();
-  const existing = draft && draft !== "new" ? draft : undefined;
-  const [form, setForm] = useState<ProductInput>({
-    insurerId: 0,
-    name: "",
-    category: "health",
-    isActive: true,
-  });
-  const [seeded, setSeeded] = useState<string | number>();
+  const existing = draft === "new" ? undefined : draft;
+  const [form, setForm] = useState<ProductInput>(() => ({
+    insurerId: existing?.insurerId ?? defaultInsurerId ?? insurers[0]?.id ?? 0,
+    name: existing?.name ?? "",
+    category: existing?.category ?? "health",
+    code: existing?.code ?? "",
+    notes: existing?.notes ?? "",
+    isActive: existing?.isActive ?? true,
+  }));
+  const [insurerError, setInsurerError] = useState<string>();
 
-  const key = existing?.id ?? "new";
-  if (draft && seeded !== key) {
-    setSeeded(key);
-    setForm({
-      insurerId: existing?.insurerId ?? defaultInsurerId ?? insurers[0]?.id ?? 0,
-      name: existing?.name ?? "",
-      category: existing?.category ?? "health",
-      code: existing?.code ?? "",
-      notes: existing?.notes ?? "",
-      isActive: existing?.isActive ?? true,
-    });
+  // A plan can belong to a company that has been retired, and the picker has to
+  // go on naming it rather than opening on nothing.
+  const options: { id: number; name: string }[] = [...insurers];
+  if (existing && !options.some((option) => option.id === existing.insurerId)) {
+    options.push({ id: existing.insurerId, name: existing.insurerName });
   }
 
   const save = useMutation({
     mutationFn: async () => {
-      if (existing) await api.updateProduct(existing.id, form);
-      else await api.createProduct(form);
+      const input: ProductInput = {
+        ...form,
+        code: blankToNone(form.code),
+        notes: blankToNone(form.notes),
+      };
+      if (existing) await api.updateProduct(existing.id, input);
+      else await api.createProduct(input);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["allProducts"] });
-      queryClient.invalidateQueries({ queryKey: ["products"] });
       toast.success(existing ? "Plan updated" : "Plan added");
       onClose();
     },
     onError: (err: ApiError) => toast.error(err.message),
   });
 
-  if (!draft) return null;
+  // The book refuses a plan that belongs to nobody, so the form says so here
+  // rather than sending it and reporting a foreign key back.
+  const submit = () => {
+    if (!form.insurerId) {
+      setInsurerError("Choose the insurer this plan belongs to");
+      return;
+    }
+    save.mutate();
+  };
 
   return (
     <Modal
@@ -425,20 +464,23 @@ function ProductModal({
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
+          <Button variant="primary" loading={save.isPending} onClick={submit}>
             Save
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <Field label="Insurer" required>
+        <Field label="Insurer" required error={insurerError}>
           <Select
             value={form.insurerId || ""}
-            onChange={(event) => setForm({ ...form, insurerId: Number(event.target.value) })}
+            onChange={(event) => {
+              setInsurerError(undefined);
+              setForm({ ...form, insurerId: Number(event.target.value) });
+            }}
           >
             <option value="">Choose an insurer</option>
-            {insurers.map((insurer) => (
+            {options.map((insurer) => (
               <option key={insurer.id} value={insurer.id}>
                 {insurer.name}
               </option>

@@ -20,16 +20,33 @@ export function money(value: number | null | undefined): string {
 /** Short form for tiles, where "₹1.2Cr" reads better than the full number. */
 export function moneyCompact(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
-  return `₹${compact.format(value)}`;
+  // The sign belongs outside the symbol: a loss is "-₹5L", never "₹-5L".
+  const sign = value < 0 ? "-" : "";
+  return `${sign}₹${compact.format(Math.abs(value))}`;
 }
 
 export function count(value: number): string {
   return new Intl.NumberFormat("en-IN").format(value);
 }
 
+/**
+ * A counted noun that reads properly at one: "1 rule", "3 rules".
+ *
+ * Pass the plural where adding an "s" will not do — `plural(n, "policy",
+ * "policies")`.
+ */
+export function plural(value: number, singular: string, many?: string): string {
+  const word = value === 1 ? singular : (many ?? `${singular}s`);
+  return `${count(value)} ${word}`;
+}
+
 export function fileSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  if (bytes <= 0) return "0 KB";
+  // Round to kilobytes first: a file a byte short of a megabyte should read
+  // "1.0 MB" rather than the "1024 KB" that no file manager would show.
+  const kilobytes = Math.max(1, Math.round(bytes / 1024));
+  if (kilobytes >= 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${kilobytes} KB`;
 }
 
 export function date(value: string | null | undefined): string {
@@ -65,7 +82,11 @@ export const categoryLabels: Record<Category, string> = {
 };
 
 export function categoryLabel(category: string): string {
-  return categoryLabels[category as Category] ?? "Other";
+  // An imported category is any string at all, and a plain object lookup would
+  // answer "constructor" with a function that React refuses to draw.
+  return Object.hasOwn(categoryLabels, category)
+    ? categoryLabels[category as Category]
+    : "Other";
 }
 
 export const statusLabels: Record<PolicyStatus, string> = {

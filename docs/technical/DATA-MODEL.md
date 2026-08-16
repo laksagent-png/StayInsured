@@ -130,11 +130,18 @@ These hold across the whole database and the code depends on them.
    with the same `chain_id`, `policy_year + 1` and `previous_policy_id` pointing
    at the year it replaces.
 2. **A chain has exactly one head.** The current year is the row in the chain
-   with no successor — which is what `is_renewed = 0` means.
+   with no successor — which is what `is_renewed = 0` means. `policies::renew`
+   refuses a year that already has one, so a chain cannot fork into two open
+   years; before that guard existed, only the interface's own buttons kept it
+   from happening.
 3. **Status is derived, except `cancelled`.** `sync_statuses` recalculates
    `active`, `expired`, `renewed` and `lapsed` from today's date and chain
    position on every unlock, after every real import, and on demand.
-   `cancelled` is only ever set by hand and is never overwritten.
+   `cancelled` is only ever set by hand and is never overwritten — including by
+   a renewal, which marks the year it replaces `renewed` unless that year was
+   cancelled. A cancelled year that has been renewed is still `is_renewed`, so
+   it stays off the renewals desk and out of the open-year count; the status
+   column is where the book remembers that the cover was ended early.
 4. **A policy number is unique per insurer.** Two insurers may use the same
    number; one insurer may not. This is why a renewal needs a fresh number.
 5. **A member only attaches to their own client's policies.** Enforced by the

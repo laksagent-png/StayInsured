@@ -1053,6 +1053,81 @@ fn a_cancelled_policy_is_left_alone_by_the_sweep() {
 }
 
 #[test]
+fn renewing_a_cancelled_year_leaves_it_cancelled() {
+    let temp = TempDb::new("renew-cancelled");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Imran Qureshi"))?;
+            let insurer = insurers::find_or_create(conn, "Star Health")?;
+            let first =
+                policies::create(conn, &sample_policy(client, insurer, "C-1", "2027-03-31"))?;
+            policies::set_status(conn, first, "cancelled")?;
+
+            // The client came back and took cover again for the following year.
+            let second = policies::renew(
+                conn,
+                &RenewalInput {
+                    policy_id: first,
+                    policy_number: Some("C-2".into()),
+                    start_date: None,
+                    expiry_date: None,
+                    sum_insured: None,
+                    premium_amount: None,
+                    gst_amount: None,
+                    commission_rate: None,
+                    commission_expected: None,
+                    notes: None,
+                },
+            )?;
+
+            let cancelled = policies::get(conn, first)?;
+            assert_eq!(
+                cancelled.status, "cancelled",
+                "the book still says the cover was ended early"
+            );
+            assert!(
+                cancelled.is_renewed,
+                "and still knows a later year replaced it, which is what keeps \
+                 it off the renewals desk"
+            );
+
+            // The sweep must not talk it round either way.
+            policies::sync_statuses(conn)?;
+            assert_eq!(policies::get(conn, first)?.status, "cancelled");
+
+            let chain = policies::chain(conn, second)?;
+            assert_eq!(
+                chain.iter().filter(|p| !p.is_renewed).count(),
+                1,
+                "one open year, as in any chain"
+            );
+
+            // And it cannot be renewed a second time into a forked chain.
+            let again = policies::renew(
+                conn,
+                &RenewalInput {
+                    policy_id: first,
+                    policy_number: Some("C-3".into()),
+                    start_date: None,
+                    expiry_date: None,
+                    sum_insured: None,
+                    premium_amount: None,
+                    gst_amount: None,
+                    commission_rate: None,
+                    commission_expected: None,
+                    notes: None,
+                },
+            );
+            assert!(
+                matches!(again, Err(crate::error::AppError::Conflict(_))),
+                "a year that has been renewed cannot be renewed again"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
 fn an_expiry_moved_forward_brings_a_policy_back() {
     let temp = TempDb::new("revive");
     temp.db
@@ -1424,6 +1499,19 @@ Broken Row,,,,,,,,,,,,\n",
     assert_eq!(
         dry.failed, 1,
         "the blank row should be reported, not imported"
+    );
+
+    // The report names the cell, so the agent knows which one to correct.
+    let issue = &dry.issues[0];
+    assert_eq!(issue.row, 4, "row 1 is the header and rows count from 1");
+    assert_eq!(
+        issue.column.as_deref(),
+        Some("Policy No"),
+        "the row has a name and no policy number, so that is the cell at fault"
+    );
+    assert_eq!(
+        issue.value, None,
+        "an empty cell has no value worth quoting back"
     );
     temp.db
         .with(|conn| {
@@ -2705,6 +2793,52 @@ fn the_ladder_reads_from_furthest_ahead_to_nearest() {
                 switched_on,
                 vec![60, 30, 15, 7, 1],
                 "the chase after expiry is seeded but left off until it is wanted"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_rule_the_form_does_not_place_joins_the_ladder_at_the_end() {
+    let temp = TempDb::new("ladder-append");
+    temp.db
+        .with(|conn| {
+            let template = templates::create(conn, &sample_template("Renewal due"))?;
+            let seeded: Vec<i64> = rules::list(conn)?.iter().map(|r| r.sort_order).collect();
+            let last = *seeded
+                .iter()
+                .max()
+                .expect("the book is seeded with a ladder");
+
+            // The form leaves the placement out, so the core decides it.
+            let mut added = sample_rule("45 days before expiry", template);
+            added.sort_order = None;
+            let id = rules::create(conn, &added)?;
+
+            let placed = rules::list(conn)?
+                .into_iter()
+                .find(|r| r.id == id)
+                .expect("the new rule is on the ladder");
+            assert!(
+                placed.sort_order > last,
+                "a new rule goes below the ones already there, not above them: \
+                 {} is not past {last}",
+                placed.sort_order
+            );
+
+            // Editing it without naming a place leaves it where it was.
+            let kept = placed.sort_order;
+            let mut renamed = sample_rule("45 days before expiry, renamed", template);
+            renamed.sort_order = None;
+            rules::update(conn, id, &renamed)?;
+            let after = rules::list(conn)?
+                .into_iter()
+                .find(|r| r.id == id)
+                .expect("the rule survives being renamed");
+            assert_eq!(
+                after.sort_order, kept,
+                "an edit does not reshuffle the ladder"
             );
             Ok(())
         })

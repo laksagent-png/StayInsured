@@ -1,10 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 
 import { api, ApiError } from "../lib/api";
-import type { Policy, PolicyInput } from "../lib/types";
-import { categoryLabels, date, money } from "../lib/format";
+import type { Policy, PolicyInput, PolicyStatus } from "../lib/types";
+import { categoryLabels, date, money, statusLabels } from "../lib/format";
 import { Badge, Button, Field, Input, Modal, Select, Textarea, useToast } from "./ui";
 
 /** Adds a year minus a day, which is what an annual policy term means in practice. */
@@ -15,6 +15,25 @@ function defaultExpiry(start: string): string {
   const next = new Date(Date.UTC(year + 1, month - 1, day));
   next.setUTCDate(next.getUTCDate() - 1);
   return next.toISOString().slice(0, 10);
+}
+
+/** What the rate comes to on the premium, which is what the form suggests. */
+function commissionFrom(
+  premium: number | null | undefined,
+  rate: number | null | undefined,
+): number | null {
+  if (!premium || !rate) return null;
+  return Math.round((premium * rate) / 100);
+}
+
+/**
+ * The statuses an agent owns. The others follow from the dates and the chain,
+ * so the core works them out and the form leaves them alone.
+ */
+const CHOOSABLE_STATUSES: PolicyStatus[] = ["active", "cancelled"];
+
+function isNegative(value: number | null | undefined): boolean {
+  return value != null && value < 0;
 }
 
 const EMPTY: PolicyInput = {
@@ -50,11 +69,11 @@ export function PolicyForm({
   policy?: Policy;
   fixedClientId?: number;
 }) {
-  const queryClient = useQueryClient();
   const toast = useToast();
   const [form, setForm] = useState<PolicyInput>(EMPTY);
   const [error, setError] = useState<string | null>(null);
-  const [clientSearch, setClientSearch] = useState("");
+  // Null while the box is showing the chosen client rather than a search.
+  const [clientSearch, setClientSearch] = useState<string | null>(null);
   const [showClientList, setShowClientList] = useState(false);
 
   const insurers = useQuery({ queryKey: ["insurerOptions"], queryFn: api.insurerOptions });
@@ -64,8 +83,8 @@ export function PolicyForm({
     enabled: form.insurerId > 0,
   });
   const clientResults = useQuery({
-    queryKey: ["clientPicker", clientSearch],
-    queryFn: () => api.listClients({ search: clientSearch, pageSize: 8, sort: "name" }),
+    queryKey: ["clientPicker", clientSearch ?? ""],
+    queryFn: () => api.listClients({ search: clientSearch ?? "", pageSize: 8, sort: "name" }),
     enabled: showClientList,
   });
   const selectedClient = useQuery({
@@ -82,7 +101,7 @@ export function PolicyForm({
   useEffect(() => {
     if (!open) return;
     setError(null);
-    setClientSearch("");
+    setClientSearch(null);
     setShowClientList(false);
 
     if (policy) {
@@ -101,7 +120,12 @@ export function PolicyForm({
         premiumFrequency: policy.premiumFrequency,
         paymentMode: policy.paymentMode ?? "",
         commissionRate: policy.commissionRate,
-        commissionExpected: policy.commissionExpected,
+        // An amount that matches the rate was worked out rather than typed, so
+        // it is left to keep following the premium.
+        commissionExpected:
+          policy.commissionExpected === commissionFrom(policy.premiumAmount, policy.commissionRate)
+            ? null
+            : policy.commissionExpected,
         nomineeName: policy.nomineeName ?? "",
         nomineeRelation: policy.nomineeRelation ?? "",
         vehicleNumber: policy.vehicleNumber ?? "",
@@ -126,16 +150,19 @@ export function PolicyForm({
     setForm((current) => ({ ...current, [key]: value }));
 
   // Commission amount follows the rate unless it has been typed in directly.
-  const suggestedCommission = useMemo(() => {
-    if (!form.premiumAmount || !form.commissionRate) return null;
-    return Math.round((form.premiumAmount * form.commissionRate) / 100);
-  }, [form.premiumAmount, form.commissionRate]);
+  const suggestedCommission = useMemo(
+    () => commissionFrom(form.premiumAmount, form.commissionRate),
+    [form.premiumAmount, form.commissionRate],
+  );
 
   const save = useMutation({
     mutationFn: async () => {
       const payload: PolicyInput = {
         ...form,
         commissionExpected: form.commissionExpected ?? suggestedCommission,
+        // A registration number belongs to motor cover; any other category
+        // leaves it behind rather than carrying it along unseen.
+        vehicleNumber: form.category === "motor" ? form.vehicleNumber : "",
       };
       if (policy) {
         await api.updatePolicy(policy.id, payload);
@@ -144,21 +171,46 @@ export function PolicyForm({
       return api.createPolicy(payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["policies"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
       toast.success(policy ? "Policy updated" : "Policy added");
       onClose();
     },
     onError: (err: ApiError) => setError(err.message),
   });
 
+  /** Taking a client on: members belong to a client, so another client starts
+   * with none of them covered. */
+  const chooseClient = (id: number) => {
+    setForm((current) => ({ ...current, clientId: id, memberIds: [] }));
+    setShowClientList(false);
+    setClientSearch(null);
+  };
+
   const validate = () => {
     if (!form.clientId) return "Choose the client this policy belongs to";
     if (!form.insurerId) return "Choose the insurer";
     if (!form.policyNumber.trim()) return "Policy number is required";
     if (!form.startDate || !form.expiryDate) return "Both start and expiry dates are needed";
+    // Both dates are ISO, so they compare as they read.
+    if (form.expiryDate < form.startDate) return "The expiry date must come after the start date";
+    if (isNegative(form.sumInsured)) return "The sum insured cannot be less than nothing";
+    if (isNegative(form.premiumAmount)) return "The premium cannot be less than nothing";
+    if (isNegative(form.gstAmount)) return "The GST cannot be less than nothing";
+    if (isNegative(form.commissionExpected)) return "The commission cannot be less than nothing";
+    if (form.commissionRate != null && (form.commissionRate < 0 || form.commissionRate > 100)) {
+      return "The commission rate is a share of the premium, so it lies between 0 and 100";
+    }
     return null;
+  };
+
+  const submit = () => {
+    // A second Enter while the core is writing would send the policy twice.
+    if (save.isPending) return;
+    const problem = validate();
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    save.mutate();
   };
 
   return (
@@ -175,24 +227,19 @@ export function PolicyForm({
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button
-            variant="primary"
-            loading={save.isPending}
-            onClick={() => {
-              const problem = validate();
-              if (problem) {
-                setError(problem);
-                return;
-              }
-              save.mutate();
-            }}
-          >
+          <Button variant="primary" loading={save.isPending} onClick={submit}>
             {policy ? "Save changes" : "Add policy"}
           </Button>
         </>
       }
     >
-      <div className="space-y-5">
+      <form
+        className="space-y-5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="sm:col-span-2">
             <Field label="Client" required>
@@ -202,21 +249,39 @@ export function PolicyForm({
                   value={selectedClient.data?.fullName ?? "Loading…"}
                 />
               ) : (
-                <div className="relative">
+                <div
+                  className="relative"
+                  // The list closes as soon as the work moves past it, but not
+                  // while the focus is on its way to one of its own rows.
+                  onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                      setShowClientList(false);
+                    }
+                  }}
+                >
                   <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-slate-400" />
                   <Input
                     className="pl-9"
                     placeholder="Search by name, phone or code"
-                    value={
-                      showClientList || !form.clientId
-                        ? clientSearch
-                        : (selectedClient.data?.fullName ?? "")
-                    }
+                    value={clientSearch ?? selectedClient.data?.fullName ?? ""}
                     onChange={(event) => {
                       setClientSearch(event.target.value);
                       setShowClientList(true);
                     }}
-                    onFocus={() => setShowClientList(true)}
+                    onFocus={(event) => {
+                      setShowClientList(true);
+                      // The chosen name is on show, so typing replaces it.
+                      event.currentTarget.select();
+                    }}
+                    // Enter here belongs to the list underneath: it takes the
+                    // closest match rather than saving a policy that has no
+                    // client on it yet.
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter") return;
+                      event.preventDefault();
+                      const closest = clientResults.data?.rows[0];
+                      if (showClientList && closest) chooseClient(closest.id);
+                    }}
                   />
                   {showClientList && (clientResults.data?.rows.length ?? 0) > 0 && (
                     <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
@@ -225,11 +290,7 @@ export function PolicyForm({
                           <button
                             type="button"
                             className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-brand-50"
-                            onClick={() => {
-                              set("clientId", client.id);
-                              setShowClientList(false);
-                              setClientSearch("");
-                            }}
+                            onClick={() => chooseClient(client.id)}
                           >
                             <span>
                               <span className="block font-medium text-slate-700">
@@ -446,6 +507,9 @@ export function PolicyForm({
                   <button
                     key={member.id}
                     type="button"
+                    // The relationship is set apart by a margin on screen, which
+                    // a screen reader runs into the name.
+                    aria-label={`${member.fullName}, ${member.relationship}`}
                     onClick={() =>
                       set(
                         "memberIds",
@@ -470,6 +534,31 @@ export function PolicyForm({
           </div>
         )}
 
+        {policy && (
+          <div className="grid gap-4 sm:grid-cols-4">
+            <Field
+              label="Status"
+              hint="Cancel a policy the client ended early; the rest follow the dates"
+            >
+              <Select
+                value={form.status ?? policy.status}
+                onChange={(event) => set("status", event.target.value)}
+              >
+                {!CHOOSABLE_STATUSES.includes(policy.status) && (
+                  <option value={policy.status} disabled>
+                    {statusLabels[policy.status]}
+                  </option>
+                )}
+                {CHOOSABLE_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {statusLabels[status]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+        )}
+
         <Field label="Notes">
           <Textarea
             value={form.notes ?? ""}
@@ -484,7 +573,13 @@ export function PolicyForm({
         )}
 
         {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
-      </div>
+
+        {/*
+          Enter in a field submits through the form's own button, and the one
+          the agent presses sits in the modal's footer, outside the form.
+        */}
+        <button type="submit" hidden />
+      </form>
     </Modal>
   );
 }

@@ -78,11 +78,18 @@ export function LockScreen({
       }
       setup.mutate();
     } else {
+      if (!password) {
+        setError("Enter the password that opens this book");
+        return;
+      }
       unlock.mutate();
     }
   };
 
-  const busy = setup.isPending || unlock.isPending || keychain.isPending;
+  // The keychain is deliberately left out: an attempt that hangs — a system
+  // prompt nobody answered — must not shut the operator out of typing the
+  // password they know.
+  const busy = setup.isPending || unlock.isPending;
 
   return (
     <div className="grid h-full place-items-center bg-gradient-to-br from-brand-700 via-brand-600 to-brand-800 p-6">

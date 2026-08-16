@@ -246,6 +246,86 @@ export function Spinner({ label }: { label?: string }) {
   );
 }
 
+/** What a failure said, in the operator's words rather than the console's. */
+export function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error) return error;
+  return "Something went wrong";
+}
+
+/**
+ * A read that did not come back.
+ *
+ * Drawn instead of the rows, never instead of the screen: the operator still
+ * needs the heading and the buttons around it to know where they are.
+ */
+export function ErrorState({
+  error,
+  onRetry,
+  title = "That could not be read",
+}: {
+  error: unknown;
+  onRetry?: () => void;
+  title?: string;
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center"
+    >
+      <AlertTriangle className="size-8 text-amber-500" />
+      <div>
+        <p className="text-sm font-semibold text-slate-700">{title}</p>
+        <p className="mt-1 max-w-md text-sm text-slate-500">{errorMessage(error)}</p>
+      </div>
+      {onRetry && (
+        <Button size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      )}
+    </div>
+  );
+}
+
+interface PanelQuery {
+  isLoading: boolean;
+  isError: boolean;
+  error: unknown;
+  refetch?: () => unknown;
+}
+
+/**
+ * The three answers a read can give, told apart.
+ *
+ * Without this a screen shows its empty state whenever there are no rows, so a
+ * core that cannot answer looks exactly like a book with nothing in it — the
+ * agent is invited to add what they already have, or to fix filters they never
+ * set. Wrap the rows; the heading and the controls stay outside.
+ */
+export function AsyncPanel({
+  query,
+  children,
+  loadingLabel,
+  errorTitle,
+}: {
+  query: PanelQuery;
+  children: ReactNode;
+  loadingLabel?: string;
+  errorTitle?: string;
+}) {
+  if (query.isLoading) return <Spinner label={loadingLabel} />;
+  if (query.isError) {
+    return (
+      <ErrorState
+        error={query.error}
+        title={errorTitle}
+        onRetry={query.refetch ? () => query.refetch?.() : undefined}
+      />
+    );
+  }
+  return <>{children}</>;
+}
+
 export function Modal({
   open,
   onClose,
@@ -323,8 +403,11 @@ export function Pagination({
   onPage: (page: number) => void;
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
-  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const to = Math.min(total, page * pageSize);
+  // A page past the end can be asked for — a filter narrowing under your feet
+  // will do it — and the range has to stay inside the book when it happens.
+  const current = Math.min(Math.max(1, page), pages);
+  const from = total === 0 ? 0 : (current - 1) * pageSize + 1;
+  const to = Math.min(total, current * pageSize);
 
   return (
     <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500">
@@ -332,13 +415,18 @@ export function Pagination({
         {from}–{to} of {new Intl.NumberFormat("en-IN").format(total)}
       </span>
       <div className="flex items-center gap-1">
-        <Button size="sm" variant="ghost" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+        <Button size="sm" variant="ghost" disabled={current <= 1} onClick={() => onPage(current - 1)}>
           Previous
         </Button>
         <span className="px-2">
-          Page {page} of {pages}
+          Page {current} of {pages}
         </span>
-        <Button size="sm" variant="ghost" disabled={page >= pages} onClick={() => onPage(page + 1)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={current >= pages}
+          onClick={() => onPage(current + 1)}
+        >
           Next
         </Button>
       </div>

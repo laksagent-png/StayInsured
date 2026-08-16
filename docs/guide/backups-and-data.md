@@ -24,7 +24,14 @@ can take one with the app open and work in progress. Scans you have attached are
 inside the book, so the backup carries those too.
 
 Take one before anything large: a big [import](import-your-book.md), a password
-change, or a machine upgrade.
+change, or a machine upgrade. **Back up now** is a button rather than a setting,
+so it writes the copy the moment you press it and there is nothing to save
+first.
+
+The card sits inside the settings screen. When the settings cannot be read,
+**The settings could not be read** stands where the cards would be with a **Try
+again** button, and neither **Back up now** nor **Open data folder** is on screen
+until that read succeeds.
 
 ## Keep a copy off the machine
 
@@ -35,14 +42,31 @@ Do this. A backup that only exists on the laptop is no backup at all if the
 laptop is lost, and the file is encrypted, so a cloud folder is a safe place for
 it.
 
+The path is a setting, so press **Save changes** at the top of the screen once
+you have typed it; the next backup is the first one copied. Give it a folder
+that already exists — when the path is not one, the backup is still written on
+this machine and the copy is skipped without a word.
+
 ## How many are kept
 
 **Backups to keep** decides how many are retained before the oldest is dropped.
 Fourteen is the default and suits daily backups with a fortnight of history.
 
+It takes a whole number of 1 or more. Anything else — an empty box, a zero, a
+negative count — is refused with **Keep at least one backup** under the box, and
+**Save changes** is unavailable until you put a usable number back. The button is
+also grey until something on the screen has been edited, so a screen you have
+only read has nothing to save.
+
+Only the `backups/` folder on this machine is pruned. Copies mirrored to a
+synced folder stay there until you remove them yourself, which is worth knowing
+before you point this at a drive you are short of room on.
+
 ## Where your data lives
 
-**Open data folder** in Settings takes you straight there.
+**Open data folder** in Settings takes you straight there. When your system will
+not open it, the app says why rather than appearing to do nothing, and the path
+is printed under the buttons so you can reach it by hand.
 
 | System | Folder |
 | --- | --- |

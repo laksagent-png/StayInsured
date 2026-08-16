@@ -31,12 +31,20 @@ Open the client and press **Add** on the **Members covered** panel.
 | Field | Required | Notes |
 | --- | --- | --- |
 | **Full name** | Yes | |
-| **Relationship** | | Self, spouse, son, daughter, father, mother or other |
+| **Relationship** | | Self, spouse, son, daughter, father, mother or other. Starts on spouse |
 | **Date of birth** | | Tells you when a child ages out or a parent moves premium band |
 | **Gender** | | |
 
+**Save** puts them on the client. A member needs a name and nothing else; save
+without one and the dialog says so and stays open for you to correct it.
+**Cancel**, the corner cross and the Escape key all close it without saving.
+
 Record the client themself as **Self** when they are covered under their own
 floater. It keeps the list of lives complete.
+
+Until there is anyone to show, the panel reads *Add family members to attach them
+to health and travel policies.* A panel that could not be read says so instead,
+with a **Try again** beneath it.
 
 ## Attach members to a policy
 
@@ -49,8 +57,13 @@ members and attached to that policy.
 
 ## Edit or remove a member
 
-Click a member's name to edit them. The remove button takes them off the client
-and off the policies they were attached to, after asking.
+Every member's row ends with two buttons that name the person they act on —
+**Edit Sneha Sharma**, **Remove Sneha Sharma**. Hover either one and it says
+whose row you are on, so there is no counting down a family of five to be sure
+which life you are about to change.
+
+Edit opens their details. Remove takes them off the client and off the policies
+they were attached to, and asks first, by name.
 
 Removing a member does not change any policy's premium or sum insured. It only
 changes who you have recorded as covered.

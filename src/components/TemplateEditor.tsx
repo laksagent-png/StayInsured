@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { api, ApiError } from "../lib/api";
@@ -55,10 +55,11 @@ export function TemplateEditor({
   onClose: () => void;
 }) {
   const toast = useToast();
-  const queryClient = useQueryClient();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
   const lastFocused = useRef<"subject" | "body">("body");
+
+  const [subjectProblem, setSubjectProblem] = useState<string>();
 
   const [form, setForm] = useState<EmailTemplateInput>(
     template === "new"
@@ -106,12 +107,22 @@ export function TemplateEditor({
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["templates"] });
       toast.success("Message saved");
       onClose();
     },
     onError: (err: ApiError) => toast.error(err.message),
   });
+
+  // A message with no subject line arrives as a blank in the client's inbox, and
+  // the core refuses it. The box it belongs in is the place to say so.
+  const submit = () => {
+    if (!form.subject.trim()) {
+      setSubjectProblem("Subject is required");
+      subjectRef.current?.focus();
+      return;
+    }
+    save.mutate();
+  };
 
   /** Drops a placeholder where the cursor was, rather than at the end. */
   function insert(name: string) {
@@ -120,6 +131,7 @@ export function TemplateEditor({
       const field = subjectRef.current;
       const at = field?.selectionStart ?? form.subject.length;
       const next = form.subject.slice(0, at) + token + form.subject.slice(at);
+      setSubjectProblem(undefined);
       setForm({ ...form, subject: next });
       window.setTimeout(() => field?.setSelectionRange(at + token.length, at + token.length), 0);
       return;
@@ -148,7 +160,7 @@ export function TemplateEditor({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
+          <Button variant="primary" loading={save.isPending} onClick={submit}>
             Save message
           </Button>
         </>
@@ -180,12 +192,15 @@ export function TemplateEditor({
             </Field>
           </div>
 
-          <Field label="Subject" required>
+          <Field label="Subject" required error={subjectProblem}>
             <Input
               ref={subjectRef}
               value={form.subject}
               onFocus={() => (lastFocused.current = "subject")}
-              onChange={(event) => setForm({ ...form, subject: event.target.value })}
+              onChange={(event) => {
+                setSubjectProblem(undefined);
+                setForm({ ...form, subject: event.target.value });
+              }}
               placeholder="Your {{category_label}} policy expires on {{expiry_date}}"
             />
           </Field>

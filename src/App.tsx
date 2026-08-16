@@ -7,7 +7,7 @@ import { api } from "./lib/api";
 import type { SessionState } from "./lib/types";
 import { offerUpdate } from "./lib/updates";
 import { AppShell } from "./components/AppShell";
-import { Spinner } from "./components/ui";
+import { ErrorState, Spinner } from "./components/ui";
 import { LockScreen } from "./pages/LockScreen";
 import { DashboardPage } from "./pages/Dashboard";
 import { ClientsPage } from "./pages/Clients";
@@ -21,11 +21,7 @@ import { SettingsPage } from "./pages/Settings";
 
 export default function App() {
   const queryClient = useQueryClient();
-  const session = useQuery({
-    queryKey: ["session"],
-    queryFn: api.sessionState,
-    staleTime: 0,
-  });
+  const session = useQuery({ queryKey: ["session"], queryFn: api.sessionState });
   const [hasBeenUnlocked, setHasBeenUnlocked] = useState(false);
 
   /**
@@ -67,7 +63,22 @@ export default function App() {
     );
   }
 
-  if (!session.data?.unlocked) {
+  // Without a session there is nothing to decide by, and the unlock form is the
+  // wrong thing to show: an install that cannot be read would look merely
+  // locked, and the password typed into it could never be checked.
+  if (!session.data) {
+    return (
+      <div className="grid h-full place-items-center p-6">
+        <ErrorState
+          error={session.error}
+          title="StayInsured could not start"
+          onRetry={() => session.refetch()}
+        />
+      </div>
+    );
+  }
+
+  if (!session.data.unlocked) {
     // The keychain opens the book as the app starts. Arriving here after it has
     // been open means someone closed it on purpose, and asking for the password
     // is the whole point of their having done so.

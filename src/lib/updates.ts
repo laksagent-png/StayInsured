@@ -5,22 +5,25 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 
 let checked = false;
+let checking = false;
 
 /**
  * Looks for a newer release once per launch and offers to install it.
  *
  * Nothing is shown unless there is something to install: a laptop that is
- * offline, or already current, sees no dialog at all. The check is skipped
- * while the window is hidden, because the app is launched at login into the
- * tray, and a dialog appearing over someone's desktop at startup is the kind
- * of interruption that gets an app quit rather than updated.
+ * offline, or already current, sees no dialog at all. A hidden window is left
+ * alone, because the app is launched at login into the tray, and a dialog
+ * appearing over someone's desktop at startup is the kind of interruption that
+ * gets an app quit rather than updated. Being asked while hidden does not spend
+ * the launch either, so the offer keeps until the window is opened.
  */
 export async function offerUpdate(): Promise<void> {
-  if (checked) return;
-  checked = true;
+  if (checked || checking) return;
+  checking = true;
 
   try {
     if (!(await getCurrentWindow().isVisible())) return;
+    checked = true;
 
     const update = await check();
     if (!update) return;
@@ -46,5 +49,7 @@ export async function offerUpdate(): Promise<void> {
     // missing network, a GitHub outage or an unreadable release file all just
     // mean the offer waits until the next launch.
     console.warn("update check failed", err);
+  } finally {
+    checking = false;
   }
 }

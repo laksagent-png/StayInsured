@@ -38,7 +38,9 @@ Motor, "overseas" Travel.
 
 Statuses are recalculated every time you unlock the app, and on demand with
 **Recalculate** on the [renewals desk](renewals.md). Cancelled is the only one
-the app never changes for you.
+nothing ever changes for you: a cancelled year stays cancelled however long it
+sits there, and stays cancelled even after you renew it, so the book can always
+tell you the cover was ended early that year.
 
 ## Keyboard
 

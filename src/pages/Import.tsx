@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
+  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   FileDown,
@@ -8,13 +9,24 @@ import {
   ListChecks,
   Upload,
 } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, ApiError } from "../lib/api";
 import type { ImportPreview, ImportReport } from "../lib/types";
 import { categoryLabels, count } from "../lib/format";
-import { Badge, Button, Card, Checkbox, Field, Select, cx, useToast } from "../components/ui";
+import {
+  AsyncPanel,
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  Field,
+  Select,
+  cx,
+  useToast,
+} from "../components/ui";
+import { readsOnly } from "../lib/queryClient";
 
 /**
  * Import runs in three deliberate moves: map the columns, check without saving,
@@ -24,6 +36,7 @@ import { Badge, Button, Card, Checkbox, Field, Select, cx, useToast } from "../c
 export function ImportPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
+  const mappingId = useId();
 
   const [preview, setPreview] = useState<ImportPreview>();
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -39,12 +52,38 @@ export function ImportPage() {
   const applyPreview = (data?: ImportPreview) => {
     if (!data) return;
     setPreview(data);
-    setMapping(data.suggestedMapping);
+    setMapping(offeredMapping(data));
     setCheck(undefined);
     setResult(undefined);
   };
 
+  /**
+   * A check speaks for the mapping and the options it ran with. Once either
+   * moves it describes a run nobody asked for, so it is put aside and the
+   * commit waits for a fresh one.
+   */
+  const chooseColumn = (key: string, header: string) => {
+    setMapping((current) => {
+      const next = { ...current };
+      if (header) next[key] = header;
+      else delete next[key];
+      return next;
+    });
+    setCheck(undefined);
+  };
+
+  const chooseDefaultCategory = (value: string) => {
+    setDefaultCategory(value);
+    setCheck(undefined);
+  };
+
+  const chooseUpdateExisting = (value: boolean) => {
+    setUpdateExisting(value);
+    setCheck(undefined);
+  };
+
   const pickFile = useMutation({
+    meta: readsOnly,
     mutationFn: async () => {
       const picked = await open({
         multiple: false,
@@ -62,12 +101,14 @@ export function ImportPage() {
   });
 
   const pickSheet = useMutation({
+    meta: readsOnly,
     mutationFn: (sheet: string) => api.previewImport(filePath!, sheet),
     onSuccess: applyPreview,
     onError: (err: ApiError) => toast.error(err.message),
   });
 
   const template = useMutation({
+    meta: readsOnly,
     mutationFn: async () => {
       const path = await save({
         title: "Save import template",
@@ -80,6 +121,21 @@ export function ImportPage() {
     onSuccess: (path) => path && toast.success("Template saved"),
     onError: (err: ApiError) => toast.error(err.message),
   });
+
+  /** What the finished import brought in, told as it happened. */
+  const announce = (report: ImportReport) => {
+    if (report.policiesInserted > 0) {
+      toast.success(`Imported ${count(report.policiesInserted)} policies`);
+    } else if (report.policiesUpdated > 0) {
+      toast.success(`Updated ${count(report.policiesUpdated)} policies`);
+    } else if (report.failed > 0) {
+      toast.error(`Nothing was imported — ${count(report.failed)} rows failed`);
+    } else if (report.totalRows === 0) {
+      toast.info("That sheet has no rows, so nothing was imported");
+    } else {
+      toast.info(`Nothing was imported — ${count(report.skipped)} rows were skipped`);
+    }
+  };
 
   const runImport = useMutation({
     mutationFn: (dryRun: boolean) =>
@@ -102,17 +158,29 @@ export function ImportPage() {
       } else {
         setResult(report);
         queryClient.invalidateQueries();
-        toast.success(`Imported ${count(report.policiesInserted)} policies`);
+        announce(report);
       }
     },
     onError: (err: ApiError) => toast.error(err.message),
   });
+
+  // A column is named to the core by its heading, so a heading carried by two
+  // columns is one choice, answered by the first column that carries it.
+  const headers = preview?.headers ?? [];
+  const columns = Array.from(new Set(headers.filter((header) => header)));
+  const repeatedColumns = columns.filter(
+    (header) => headers.filter((other) => other === header).length > 1,
+  );
 
   const requiredMissing = (fields.data ?? [])
     .filter((field) => field.required && !mapping[field.key])
     .map((field) => field.label);
 
   const groups = Array.from(new Set((fields.data ?? []).map((field) => field.group)));
+
+  // Without the recognised fields there is no mapping to speak of, so neither
+  // run can be trusted; while one run is in flight the other would overlap it.
+  const canRun = fields.isSuccess && requiredMissing.length === 0 && !runImport.isPending;
 
   return (
     <div className="space-y-4">
@@ -191,58 +259,74 @@ export function ImportPage() {
           <Card
             title="Match your columns to fields"
             action={
-              requiredMissing.length > 0 ? (
-                <Badge tone="danger">Needs {requiredMissing.join(", ")}</Badge>
-              ) : (
-                <Badge tone="ok">Ready</Badge>
-              )
+              fields.isSuccess ? (
+                requiredMissing.length > 0 ? (
+                  <Badge tone="danger">Needs {requiredMissing.join(", ")}</Badge>
+                ) : (
+                  <Badge tone="ok">Ready</Badge>
+                )
+              ) : undefined
             }
           >
-            <div className="grid gap-6 md:grid-cols-2">
-              {groups.map((group) => (
-                <div key={group}>
-                  <h3 className="mb-2.5 text-xs font-semibold tracking-wide text-slate-400 uppercase">
-                    {group}
-                  </h3>
-                  <div className="space-y-2.5">
-                    {(fields.data ?? [])
-                      .filter((field) => field.group === group)
-                      .map((field) => (
-                        <div key={field.key} className="flex items-center gap-3">
-                          <label className="w-40 shrink-0 text-sm text-slate-600">
-                            {field.label}
-                            {field.required && <span className="text-rose-500"> *</span>}
-                          </label>
-                          <Select
-                            className={cx(
-                              "flex-1",
-                              field.required && !mapping[field.key] && "border-rose-300",
-                            )}
-                            value={mapping[field.key] ?? ""}
-                            onChange={(event) =>
-                              setMapping((current) => {
-                                const next = { ...current };
-                                if (event.target.value) next[field.key] = event.target.value;
-                                else delete next[field.key];
-                                return next;
-                              })
-                            }
-                          >
-                            <option value="">Not imported</option>
-                            {preview.headers
-                              .filter((header) => header)
-                              .map((header) => (
+            <AsyncPanel
+              query={fields}
+              loadingLabel="Reading the recognised fields"
+              errorTitle="The recognised fields could not be read"
+            >
+              <div className="grid gap-6 md:grid-cols-2">
+                {groups.map((group) => (
+                  <div key={group}>
+                    <h3 className="mb-2.5 text-xs font-semibold tracking-wide text-slate-400 uppercase">
+                      {group}
+                    </h3>
+                    <div className="space-y-2.5">
+                      {(fields.data ?? [])
+                        .filter((field) => field.group === group)
+                        .map((field) => (
+                          <div key={field.key} className="flex items-center gap-3">
+                            <label
+                              htmlFor={`${mappingId}-${field.key}`}
+                              className={cx(
+                                "w-40 shrink-0 text-sm text-slate-600",
+                                field.required &&
+                                  "after:ml-0.5 after:text-rose-500 after:content-['*']",
+                              )}
+                            >
+                              {field.label}
+                            </label>
+                            <Select
+                              id={`${mappingId}-${field.key}`}
+                              className={cx(
+                                "flex-1",
+                                field.required && !mapping[field.key] && "border-rose-300",
+                              )}
+                              value={mapping[field.key] ?? ""}
+                              onChange={(event) => chooseColumn(field.key, event.target.value)}
+                            >
+                              <option value="">Not imported</option>
+                              {columns.map((header) => (
                                 <option key={header} value={header}>
                                   {header}
                                 </option>
                               ))}
-                          </Select>
-                        </div>
-                      ))}
+                            </Select>
+                          </div>
+                        ))}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </AsyncPanel>
+
+            {repeatedColumns.length > 0 && (
+              <p className="mt-4 flex items-start gap-2 text-xs text-amber-700">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                <span>
+                  Repeated headings: {repeatedColumns.join(", ")}. Each is read from the first
+                  column that carries it — rename the others in the spreadsheet to import them.
+                </span>
+              </p>
+            )}
 
             <div className="mt-5 flex flex-wrap items-end gap-5 border-t border-slate-100 pt-4">
               <div className="w-56">
@@ -252,7 +336,7 @@ export function ImportPage() {
                 >
                   <Select
                     value={defaultCategory}
-                    onChange={(event) => setDefaultCategory(event.target.value)}
+                    onChange={(event) => chooseDefaultCategory(event.target.value)}
                   >
                     {Object.entries(categoryLabels).map(([value, label]) => (
                       <option key={value} value={value}>
@@ -266,13 +350,13 @@ export function ImportPage() {
                 label="Update records that already exist"
                 hint="Off means matching policies are skipped instead"
                 checked={updateExisting}
-                onChange={setUpdateExisting}
+                onChange={chooseUpdateExisting}
               />
               <div className="ml-auto flex gap-2">
                 <Button
                   icon={<ListChecks className="size-4" />}
                   loading={runImport.isPending && runImport.variables === true}
-                  disabled={requiredMissing.length > 0}
+                  disabled={!canRun}
                   onClick={() => runImport.mutate(true)}
                 >
                   Check without saving
@@ -281,7 +365,7 @@ export function ImportPage() {
                   variant="primary"
                   icon={<ArrowRight className="size-4" />}
                   loading={runImport.isPending && runImport.variables === false}
-                  disabled={requiredMissing.length > 0 || !check}
+                  disabled={!canRun || !check}
                   onClick={() => runImport.mutate(false)}
                 >
                   Import for real
@@ -335,6 +419,19 @@ export function ImportPage() {
   );
 }
 
+/**
+ * The suggestion, cut down to the columns the mapping editor can offer.
+ *
+ * A blank heading is not a choice on screen, so carrying one into the import
+ * would send a column the operator was never shown and cannot correct.
+ */
+function offeredMapping(preview: ImportPreview): Record<string, string> {
+  const offered = new Set(preview.headers.filter((header) => header));
+  return Object.fromEntries(
+    Object.entries(preview.suggestedMapping).filter(([, header]) => offered.has(header)),
+  );
+}
+
 function ReportCard({ report, final }: { report: ImportReport; final: boolean }) {
   return (
     <Card
@@ -365,18 +462,35 @@ function ReportCard({ report, final }: { report: ImportReport; final: boolean })
             {report.issues.map((issue, index) => (
               <li key={index} className="flex gap-2">
                 <span className="shrink-0 font-mono text-slate-400">row {issue.row}</span>
+                {issue.column && (
+                  <span className="shrink-0 font-medium text-slate-500">{issue.column}</span>
+                )}
                 <span className="text-slate-700">{issue.message}</span>
+                {issue.value && (
+                  <span className="ml-auto max-w-48 shrink-0 truncate font-mono text-slate-500">
+                    “{issue.value}”
+                  </span>
+                )}
               </li>
             ))}
           </ul>
         </div>
       )}
 
-      {final && report.failed === 0 && report.issues.length === 0 && (
-        <p className="mt-4 flex items-center gap-2 text-sm text-emerald-700">
-          <CheckCircle2 className="size-4" />
-          Every row imported cleanly.
+      {report.totalRows === 0 ? (
+        <p className="mt-4 flex items-center gap-2 text-sm text-amber-700">
+          <AlertTriangle className="size-4" />
+          That sheet has no rows, so there is nothing to import.
         </p>
+      ) : (
+        final &&
+        report.failed === 0 &&
+        report.issues.length === 0 && (
+          <p className="mt-4 flex items-center gap-2 text-sm text-emerald-700">
+            <CheckCircle2 className="size-4" />
+            Every row imported cleanly.
+          </p>
+        )
       )}
     </Card>
   );

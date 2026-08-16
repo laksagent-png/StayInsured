@@ -49,8 +49,14 @@ The app reads your headings and fills the mapping in for you. Your job is to
 correct the guesses and fill in anything it left blank.
 
 Fields are grouped into **Client** and **Policy**. Required fields carry a red
-asterisk, and the badge at the top of the card turns green and reads **Ready**
-once all four are matched. Set any column you do not want imported to **Ignore**.
+asterisk, and the badge at the top of the card names the ones still to do —
+**Needs Policy number, Insurer** — until all four are matched, when it turns
+green and reads **Ready**. Set any field you do not want filled to **Not
+imported**.
+
+Two columns in your file with the same heading are one choice here, and an amber
+line under the mapping names them. Each is read from the first column that
+carries it, so rename the others in the spreadsheet if you need both.
 
 Two settings sit under the mapping:
 
@@ -63,7 +69,8 @@ Two settings sit under the mapping:
 
 Click **Check without saving**. The app reads every row of the file, does the
 entire import, reports what it would have done, and then throws it all away.
-Your book is untouched.
+Your book is untouched. The button waits until all four required fields are
+matched, since there is nothing worth checking until they are.
 
 ![Import check](screenshots/import-check.png)
 
@@ -85,11 +92,18 @@ seconds.
 
 ## Step 4: import for real
 
-Click **Import for real**. The button stays disabled until a check has run, so
-nobody commits a file they have not seen the report for.
+Click **Import for real**. The button stays out of reach until a check has run,
+with **Run the check first** under it, so nobody commits a file they have not
+seen the report for.
+
+Change anything after that — a column in the mapping, **Category when not in the
+file**, or **Update records that already exist** — and the report is put aside
+and **Import for real** goes out of reach again. The check speaks for the
+mapping it ran with, so a changed mapping needs a fresh one.
 
 The report is the same set of numbers, now describing what happened. **View
-policies** takes you to the result.
+policies** takes you to the result, and a file that came in cleanly says **Every
+row imported cleanly** under the numbers.
 
 ## Columns the app recognises
 

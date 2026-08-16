@@ -314,7 +314,10 @@ takes `policyId` plus optional `policyNumber`, `startDate`, `expiryDate`,
 `sumInsured`, `premiumAmount`, `gstAmount`, `commissionRate`,
 `commissionExpected` and `notes`. Anything omitted is carried forward from the
 policy being renewed; the term defaults to the day after expiry through a year
-minus a day; covered members are copied; the expiring year becomes `renewed`.
+minus a day; covered members are copied; the expiring year becomes `renewed`,
+unless it is `cancelled`, which stands — see the invariant in
+[DATA-MODEL](DATA-MODEL.md). A year that already has a successor returns
+`conflict`: renew the latest year in the chain instead.
 
 Because `(insurerId, policyNumber)` is unique, **supply a `policyNumber` that
 differs from the expiring year's** — reusing it returns `conflict`.
@@ -372,8 +375,12 @@ records the batch in `import_batches`.
 
 `ImportReport` counts `totalRows`, `policiesInserted`, `policiesUpdated`,
 `clientsCreated`, `clientsUpdated`, `insurersCreated`, `skipped` and `failed`,
-with up to 300 `issues` carrying a 1-based spreadsheet `row` and a message.
-A failed row is rolled back whole; nothing half-created survives it.
+with up to 300 `issues` carrying a 1-based spreadsheet `row` and a `message`.
+Where the failure is about one cell — a blank name, a blank policy number or
+insurer, an unreadable expiry, a policy already present with updates switched
+off — the issue also carries the `column` it was read from and the `value` it
+held, both null otherwise, and `value` null for a cell that was empty. A failed
+row is rolled back whole; nothing half-created survives it.
 
 **`write_import_template`** writes an `.xlsx` with every recognised column and
 one example row, and returns the path.

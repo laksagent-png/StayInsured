@@ -1,7 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Download, Plus, Search, UserPlus, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { api, ApiError } from "../lib/api";
@@ -10,6 +10,7 @@ import { count, date, initials } from "../lib/format";
 import { ClientForm } from "../components/ClientForm";
 import { DataTable, type Column } from "../components/DataTable";
 import {
+  AsyncPanel,
   Badge,
   Button,
   Card,
@@ -18,42 +19,45 @@ import {
   Input,
   Pagination,
   Select,
-  Spinner,
   useToast,
 } from "../components/ui";
+import { readsOnly } from "../lib/queryClient";
+import { useListFilter } from "../lib/useListFilter";
 
 export function ClientsPage() {
   const [params] = useSearchParams();
   const toast = useToast();
-  const queryClient = useQueryClient();
 
-  const [filter, setFilter] = useState<ClientFilter>({
+  const { filter, setFilter, searchText, setSearchText, sortBy, goToPage } = useListFilter<
+    ClientFilter & { page: number }
+  >({
     page: 1,
     pageSize: 25,
     sort: "name",
     missingEmail: params.get("missingEmail") === "1",
   });
-  const [searchText, setSearchText] = useState("");
   const [editing, setEditing] = useState<Client | undefined>();
   const [formOpen, setFormOpen] = useState(false);
-
-  // Debounced so typing does not fire a query per keystroke.
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setFilter((current) => ({ ...current, search: searchText, page: 1 })),
-      250,
-    );
-    return () => window.clearTimeout(timer);
-  }, [searchText]);
 
   const clients = useQuery({
     queryKey: ["clients", filter],
     queryFn: () => api.listClients(filter),
+    // A narrowed list is the same list asked a different way, so the rows stay
+    // up while the answer comes back rather than flashing away to a spinner.
+    placeholderData: keepPreviousData,
   });
+
   const cities = useQuery({ queryKey: ["cities"], queryFn: api.cities });
   const categories = useQuery({ queryKey: ["categories"], queryFn: api.categories });
 
+  // Nothing found and nothing to find are different situations: an agent
+  // opening an empty book should be invited to start it, not told to clear
+  // filters they never set. Archived clients are let in rather than kept out,
+  // so asking for them narrows nothing.
+  const narrowed = Boolean(filter.search || filter.city || filter.category || filter.missingEmail);
+
   const exportRows = useMutation({
+    meta: readsOnly,
     mutationFn: async () => {
       const path = await save({
         title: "Export clients",
@@ -74,7 +78,6 @@ export function ClientsPage() {
     mutationFn: ({ id, archived }: { id: number; archived: boolean }) =>
       api.setClientArchived(id, archived),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
       toast.success("Client updated");
     },
     onError: (err: ApiError) => toast.error(err.message),
@@ -175,7 +178,11 @@ export function ClientsPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-800">Clients</h1>
           <p className="text-sm text-slate-500">
-            {clients.data ? `${count(clients.data.total)} in the book` : "Loading"}
+            {clients.data
+              ? `${count(clients.data.total)} in the book`
+              : clients.isLoading
+                ? "Loading"
+                : null}
           </p>
         </div>
         <div className="flex gap-2">
@@ -212,11 +219,10 @@ export function ClientsPage() {
           </div>
 
           <Select
+            aria-label="City"
             className="w-40"
             value={filter.city ?? ""}
-            onChange={(event) =>
-              setFilter((current) => ({ ...current, city: event.target.value, page: 1 }))
-            }
+            onChange={(event) => setFilter({ city: event.target.value, page: 1 })}
           >
             <option value="">All cities</option>
             {cities.data?.map((city) => (
@@ -227,11 +233,10 @@ export function ClientsPage() {
           </Select>
 
           <Select
+            aria-label="Policy type"
             className="w-44"
             value={filter.category ?? ""}
-            onChange={(event) =>
-              setFilter((current) => ({ ...current, category: event.target.value, page: 1 }))
-            }
+            onChange={(event) => setFilter({ category: event.target.value, page: 1 })}
           >
             <option value="">Any policy type</option>
             {categories.data?.map((option) => (
@@ -245,69 +250,59 @@ export function ClientsPage() {
             <Checkbox
               label="Missing email"
               checked={filter.missingEmail ?? false}
-              onChange={(value) =>
-                setFilter((current) => ({ ...current, missingEmail: value, page: 1 }))
-              }
+              onChange={(value) => setFilter({ missingEmail: value, page: 1 })}
             />
             <Checkbox
               label="Include archived"
               checked={filter.includeArchived ?? false}
-              onChange={(value) =>
-                setFilter((current) => ({ ...current, includeArchived: value, page: 1 }))
-              }
+              onChange={(value) => setFilter({ includeArchived: value, page: 1 })}
             />
           </div>
         </div>
       </Card>
 
       <Card bodyClassName="">
-        {clients.isLoading ? (
-          <Spinner />
-        ) : (
-          <>
-            <DataTable
-              columns={columns}
-              rows={clients.data?.rows ?? []}
-              rowKey={(row) => row.id}
-              sort={filter.sort}
-              descending={filter.descending}
-              onSort={(key) =>
-                setFilter((current) => ({
-                  ...current,
-                  sort: key,
-                  descending: current.sort === key ? !current.descending : false,
-                }))
-              }
-              empty={
-                <EmptyState
-                  icon={<Users className="size-9" />}
-                  title="No clients match"
-                  description="Try clearing the filters, or add the client you were looking for."
-                  action={
-                    <Button
-                      variant="primary"
-                      icon={<UserPlus className="size-4" />}
-                      onClick={() => {
-                        setEditing(undefined);
-                        setFormOpen(true);
-                      }}
-                    >
-                      Add a client
-                    </Button>
-                  }
-                />
-              }
-            />
-            {clients.data && clients.data.total > 0 && (
-              <Pagination
-                page={clients.data.page}
-                pageSize={clients.data.pageSize}
-                total={clients.data.total}
-                onPage={(page) => setFilter((current) => ({ ...current, page }))}
+        <AsyncPanel query={clients} errorTitle="The client list could not be read">
+          <DataTable
+            columns={columns}
+            rows={clients.data?.rows ?? []}
+            rowKey={(row) => row.id}
+            sort={filter.sort}
+            descending={filter.descending}
+            onSort={sortBy}
+            empty={
+              <EmptyState
+                icon={<Users className="size-9" />}
+                title={narrowed ? "No clients match" : "Nothing in the book yet"}
+                description={
+                  narrowed
+                    ? "Try clearing the filters, or add the client you were looking for."
+                    : "Add your first client, and their policies and renewals follow."
+                }
+                action={
+                  <Button
+                    variant="primary"
+                    icon={<UserPlus className="size-4" />}
+                    onClick={() => {
+                      setEditing(undefined);
+                      setFormOpen(true);
+                    }}
+                  >
+                    Add a client
+                  </Button>
+                }
               />
-            )}
-          </>
-        )}
+            }
+          />
+          {clients.data && clients.data.total > 0 && (
+            <Pagination
+              page={clients.data.page}
+              pageSize={clients.data.pageSize}
+              total={clients.data.total}
+              onPage={goToPage}
+            />
+          )}
+        </AsyncPanel>
       </Card>
 
       <ClientForm

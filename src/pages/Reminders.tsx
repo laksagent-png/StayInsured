@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
-import { AlertTriangle, BellRing, CheckCircle2, Clock, Plus, Send } from "lucide-react";
+import { AlertTriangle, BellRing, CheckCircle2, Clock, Plus, Search, Send } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -8,26 +8,31 @@ import { api, ApiError } from "../lib/api";
 import type {
   EmailTemplate,
   Notification,
+  NotificationFilter,
   NotificationStatus,
   PlannedReminder,
   ReminderOverview,
   ReminderRule,
 } from "../lib/types";
-import { categoryLabel, count, date, relativeDays } from "../lib/format";
+import { categoryLabel, count, date, plural, relativeDays } from "../lib/format";
 import { DataTable, type Column } from "../components/DataTable";
 import { RuleForm, timingLabel } from "../components/RuleForm";
 import { TemplateEditor } from "../components/TemplateEditor";
 import {
+  AsyncPanel,
   Badge,
   Button,
   Card,
   EmptyState,
+  ErrorState,
+  Input,
   Modal,
   Pagination,
   Select,
   Spinner,
   useToast,
 } from "../components/ui";
+import { useListFilter, type ListFilterBase } from "../lib/useListFilter";
 
 type TabId = "due" | "rules" | "messages" | "history";
 
@@ -69,9 +74,6 @@ export function RemindersPage() {
   const run = useMutation({
     mutationFn: (dryRun: boolean) => api.runReminders(dryRun),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["reminderOverview"] });
-      queryClient.invalidateQueries({ queryKey: ["plannedReminders"] });
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
       if (result.dryRun) {
         toast.success(
           `${count(result.queued)} would go out, ${count(result.skipped)} would be skipped. Nothing was sent.`,
@@ -88,7 +90,23 @@ export function RemindersPage() {
 
   if (overview.isLoading) return <Spinner label="Loading reminders" />;
   const state = overview.data;
-  if (!state) return null;
+  // Everything below the title is worked out from the day's figures, so without
+  // them there is nothing to draw but the failure — under the heading, so the
+  // agent can still see which screen refused them.
+  if (!state) {
+    return (
+      <div className="space-y-5">
+        <h1 className="text-xl font-semibold text-slate-800">Reminders</h1>
+        <Card bodyClassName="p-0">
+          <ErrorState
+            error={overview.error}
+            title="The day's figures could not be read"
+            onRetry={() => overview.refetch()}
+          />
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -101,6 +119,7 @@ export function RemindersPage() {
               : "Automatic sending is off. You can still send today's batch by hand."}
             {state.lastSweep && ` Last run ${date(state.lastSweep.slice(0, 10))}.`}
           </p>
+          <p className="text-sm text-slate-500">{extras(state)}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -168,6 +187,21 @@ export function RemindersPage() {
       {tab === "history" && <HistoryTab />}
     </div>
   );
+}
+
+/**
+ * What the run does besides writing to clients. Both are switched in Settings,
+ * and neither leaves a trace on this screen otherwise, so an agent expecting a
+ * digest each morning has nowhere to see whether one is coming.
+ */
+function extras(state: ReminderOverview): string {
+  const digest = state.digestEnabled
+    ? "A daily digest of the same run comes to you."
+    : "The daily digest to you is off.";
+  const alerts = state.desktopAlerts
+    ? "Desktop alerts show on this computer."
+    : "Desktop alerts are off.";
+  return `${digest} ${alerts}`;
 }
 
 /** The handful of things that stop reminders working, said plainly. */
@@ -324,27 +358,35 @@ function DueTab() {
     },
   ];
 
-  if (planned.isLoading) return <Spinner label="Working out what is due" />;
   const rows = planned.data ?? [];
 
   return (
     <Card bodyClassName="p-0">
-      {rows.length === 0 ? (
-        <EmptyState
-          icon={<CheckCircle2 className="size-8" />}
-          title="Nothing is due today"
-          description="Reminders appear here on the day a rule matches a policy. Anything already sent for this policy year will not appear again."
-        />
-      ) : (
-        <DataTable columns={columns} rows={rows} rowKey={(row) => `${row.ruleId}-${row.policyId}`} />
-      )}
+      <AsyncPanel
+        query={planned}
+        loadingLabel="Working out what is due"
+        errorTitle="Today's plan could not be worked out"
+      >
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={<CheckCircle2 className="size-8" />}
+            title="Nothing is due today"
+            description="Reminders appear here on the day a rule matches a policy. Anything already sent for this policy year will not appear again."
+          />
+        ) : (
+          <DataTable
+            columns={columns}
+            rows={rows}
+            rowKey={(row) => `${row.ruleId}-${row.policyId}`}
+          />
+        )}
+      </AsyncPanel>
     </Card>
   );
 }
 
 function RulesTab() {
   const toast = useToast();
-  const queryClient = useQueryClient();
   const [draft, setDraft] = useState<ReminderRule | "new">();
 
   const rules = useQuery({ queryKey: ["rules"], queryFn: api.listRules });
@@ -361,17 +403,12 @@ function RulesTab() {
         isActive: !rule.isActive,
         sortOrder: rule.sortOrder,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["rules"] });
-      queryClient.invalidateQueries({ queryKey: ["reminderOverview"] });
-    },
     onError: (err: ApiError) => toast.error(err.message),
   });
 
   const remove = useMutation({
     mutationFn: (id: number) => api.deleteRule(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["rules"] });
       toast.success("Rule removed");
     },
     onError: (err: ApiError) => toast.error(err.message),
@@ -460,16 +497,14 @@ function RulesTab() {
         }
         bodyClassName="p-0"
       >
-        {rules.isLoading ? (
-          <Spinner />
-        ) : (
+        <AsyncPanel query={rules} errorTitle="The ladder of rules could not be read">
           <DataTable
             columns={columns}
             rows={rules.data ?? []}
             rowKey={(row) => row.id}
             empty="No rules yet. Add one to start reminding clients."
           />
-        )}
+        </AsyncPanel>
       </Card>
       {draft && <RuleForm rule={draft} onClose={() => setDraft(undefined)} />}
     </>
@@ -478,7 +513,6 @@ function RulesTab() {
 
 function MessagesTab() {
   const toast = useToast();
-  const queryClient = useQueryClient();
   const [draft, setDraft] = useState<EmailTemplate | "new">();
 
   const templates = useQuery({ queryKey: ["templates"], queryFn: api.listTemplates });
@@ -486,7 +520,6 @@ function MessagesTab() {
   const remove = useMutation({
     mutationFn: (id: number) => api.deleteTemplate(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["templates"] });
       toast.success("Message removed");
     },
     onError: (err: ApiError) => toast.error(err.message),
@@ -509,7 +542,7 @@ function MessagesTab() {
       align: "center",
       render: (row) => (
         <span className="text-sm text-slate-600">
-          {row.usedByRules === 0 ? "—" : `${count(row.usedByRules)} rules`}
+          {row.usedByRules === 0 ? "—" : plural(row.usedByRules, "rule")}
         </span>
       ),
     },
@@ -547,39 +580,32 @@ function MessagesTab() {
         }
         bodyClassName="p-0"
       >
-        {templates.isLoading ? (
-          <Spinner />
-        ) : (
+        <AsyncPanel query={templates} errorTitle="The messages could not be read">
           <DataTable columns={columns} rows={templates.data ?? []} rowKey={(row) => row.id} />
-        )}
+        </AsyncPanel>
       </Card>
       {draft && <TemplateEditor template={draft} onClose={() => setDraft(undefined)} />}
     </>
   );
 }
 
+/** The question the log asks, with the page always answered. */
+type LogFilter = NotificationFilter & ListFilterBase;
+
 function HistoryTab() {
   const toast = useToast();
-  const queryClient = useQueryClient();
-  const [status, setStatus] = useState<NotificationStatus | "">("");
-  const [page, setPage] = useState(1);
+  const { filter, setFilter, searchText, setSearchText, sortBy, goToPage } =
+    useListFilter<LogFilter>({ page: 1, pageSize: 25 });
   const [reading, setReading] = useState<Notification>();
 
   const history = useQuery({
-    queryKey: ["notifications", status, page],
-    queryFn: () =>
-      api.listNotifications({
-        statuses: status ? [status] : undefined,
-        page,
-        pageSize: 25,
-      }),
+    queryKey: ["notifications", filter],
+    queryFn: () => api.listNotifications(filter),
   });
 
   const retry = useMutation({
     mutationFn: (id: number) => api.retryNotification(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      queryClient.invalidateQueries({ queryKey: ["reminderOverview"] });
       toast.success("Back in the queue for the next run");
     },
     onError: (err: ApiError) => toast.error(err.message),
@@ -588,8 +614,6 @@ function HistoryTab() {
   const cancel = useMutation({
     mutationFn: (id: number) => api.cancelNotification(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      queryClient.invalidateQueries({ queryKey: ["reminderOverview"] });
       toast.success("Cancelled");
     },
     onError: (err: ApiError) => toast.error(err.message),
@@ -673,42 +697,59 @@ function HistoryTab() {
       <Card
         title="Everything that has gone out"
         action={
-          <Select
-            value={status}
-            onChange={(event) => {
-              setStatus(event.target.value as NotificationStatus | "");
-              setPage(1);
-            }}
-            className="w-40"
-          >
-            <option value="">All</option>
-            <option value="sent">Sent</option>
-            <option value="queued">Waiting</option>
-            <option value="failed">Failed</option>
-            <option value="skipped">Skipped</option>
-            <option value="cancelled">Cancelled</option>
-          </Select>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-slate-400" />
+              <Input
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Search by client, subject or address"
+                className="w-64 pl-9"
+              />
+            </div>
+            <Select
+              aria-label="Status"
+              value={filter.statuses?.[0] ?? ""}
+              onChange={(event) =>
+                setFilter({
+                  statuses: event.target.value
+                    ? [event.target.value as NotificationStatus]
+                    : undefined,
+                  page: 1,
+                })
+              }
+              className="w-40"
+            >
+              <option value="">All</option>
+              <option value="sent">Sent</option>
+              <option value="queued">Waiting</option>
+              <option value="failed">Failed</option>
+              <option value="skipped">Skipped</option>
+              <option value="cancelled">Cancelled</option>
+            </Select>
+          </div>
         }
         bodyClassName="p-0"
       >
-        {history.isLoading ? (
-          <Spinner />
-        ) : (
-          <>
-            <DataTable
-              columns={columns}
-              rows={history.data?.rows ?? []}
-              rowKey={(row) => row.id}
-              empty="Nothing has been sent yet."
-            />
+        <AsyncPanel query={history} errorTitle="The log could not be read">
+          <DataTable
+            columns={columns}
+            rows={history.data?.rows ?? []}
+            rowKey={(row) => row.id}
+            sort={filter.sort}
+            descending={filter.descending}
+            onSort={sortBy}
+            empty="Nothing has been sent yet."
+          />
+          {history.data && (
             <Pagination
-              page={history.data?.page ?? 1}
-              pageSize={history.data?.pageSize ?? 25}
-              total={history.data?.total ?? 0}
-              onPage={setPage}
+              page={history.data.page}
+              pageSize={history.data.pageSize}
+              total={history.data.total}
+              onPage={goToPage}
             />
-          </>
-        )}
+          )}
+        </AsyncPanel>
       </Card>
 
       {reading && (

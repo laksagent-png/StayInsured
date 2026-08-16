@@ -25,7 +25,7 @@ The eight screens, the search box, and how to read the dashboard.
 | **Settings** | `/settings` | Agency details, password, backups, your mail server |
 
 The number beside **Renewals** counts the policies expiring within 30 days. It
-updates as you work, so an empty badge means the week is clear.
+updates as you work, so a bare **Renewals** means the next month is clear.
 
 The number beside **Reminders** counts what is due to go out today plus anything
 that failed to send. It turns red when something has failed, because those are
@@ -37,37 +37,46 @@ Your agency name sits at the top of the sidebar and **Lock app** at the foot.
 
 The search box at the top finds policies by **policy number**, **client name**
 or **vehicle number**. Press **⌘K** on a Mac or **Ctrl+K** on Windows to jump
-into it from anywhere, and **Esc** to leave it. Results appear as you type;
-picking one opens that policy.
+into it from anywhere. Press **Enter** and the policies list opens, filtered to
+what you typed — including when the policies list is already the screen you are
+on, so a second search from there narrows the list under you. **Escape** hands
+the keyboard back to the screen behind the box, and closes any dialog that is
+open.
 
 Two badges sit beside the search box:
 
-- **Active cover** — how many policies are running right now.
-- **Due this week** — how many expire within seven days. When this is not zero,
-  it is your day's work.
+- **14 active policies** — how many are running right now.
+- **3 due this week** — how many expire within seven days. It only appears when
+  something does, and when it appears it is your day's work.
 
 ## Read the dashboard
 
-Every number on the dashboard is a link to the list behind it, so nothing has
-to be counted by hand.
+Nothing here has to be counted by hand, and the panels that lead somewhere are
+links to the list behind them.
 
 | Panel | What it tells you | Where it goes |
 | --- | --- | --- |
-| **Active policies** | Live cover across the book | The policies list |
-| **Expiring this week** | Cover stopping within seven days | The renewals desk |
+| **Expiring this week** | Cover stopping within seven days, with the count for the next 30 days under it | The renewals desk |
 | **Unrenewed & expired** | Cover that stopped with nothing replacing it | The chase list on the policies screen |
-| **Premium under management** | Premium on all active policies | — |
+| **Premium under management** | Premium on all active policies, with how many those are | — |
+| **Commission expected** | Commission on all active policies, with how many clients they cover | — |
+| **Renewal pipeline** | How the next 90 days are loaded, overdue in red | — |
+| **Mix by category** | Live cover split across health, life, motor and the rest, with the premium in each | — |
 | Amber banner | Clients with no email address | Those clients, filtered |
-| **Renewal pipeline** | How the next 90 days are loaded, overdue in red | The matching renewals tab |
-| **Mix by category** | Live cover split across health, life, motor and the rest | — |
-| **Next 45 days** | The nearest expiries, soonest first | The client behind each row |
+| **Next 45 days** | The nearest expiries, soonest first | The client behind each row, or **Open renewals** for the desk |
 | **Recently lapsed** | Cover that has stopped and needs chasing | The client behind each row |
 
 Work the dashboard top to bottom in the morning: clear **Expiring this week**,
 then look at **Recently lapsed** for anyone who slipped.
 
-The **Expiring soon window** in [Settings](settings.md) decides how many days
-ahead count as expiring soon here.
+The seven and thirty days on this screen are fixed. The **Expiring soon window**
+in [Settings](settings.md) is a different figure, and shapes your daily digest
+rather than anything here.
+
+When the book cannot be read, **Your book could not be read** takes the place of
+the whole screen, with the reason and a **Try again** button, rather than a set
+of zeroes that would read as an empty book. The counts beside the search box and
+in the sidebar drop away at the same time, for the same reason.
 
 ## An empty book
 

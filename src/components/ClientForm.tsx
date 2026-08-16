@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { api, ApiError } from "../lib/api";
@@ -20,10 +20,19 @@ const EMPTY: ClientInput = {
   pincode: "",
   occupation: "",
   pan: "",
+  gstin: "",
+  preferredLanguage: "",
   notes: "",
   remindersOptedOut: false,
 };
 
+/**
+ * A client as the form holds them.
+ *
+ * The save writes every column, so the GSTIN and the preferred language are
+ * carried through even though there is no box for either: a form that sent
+ * only what it draws would empty them on the way past.
+ */
 function toInput(client: Client): ClientInput {
   return {
     fullName: client.fullName,
@@ -40,8 +49,51 @@ function toInput(client: Client): ClientInput {
     pincode: client.pincode ?? "",
     occupation: client.occupation ?? "",
     pan: client.pan ?? "",
+    gstin: client.gstin ?? "",
+    preferredLanguage: client.preferredLanguage ?? "",
     notes: client.notes ?? "",
     remindersOptedOut: client.remindersOptedOut,
+  };
+}
+
+/** A box left empty means the field is not known, which is nothing at all. */
+function blank(value: string | null | undefined): string | null {
+  const text = (value ?? "").trim();
+  return text.length ? text : null;
+}
+
+/** The same shape as `looks_like_email` in the core, so both agree. */
+function looksLikeEmail(value: string): boolean {
+  const [local, domain, extra] = value.split("@");
+  if (extra !== undefined || !local || !domain) return false;
+  return domain.includes(".") && !domain.startsWith(".") && !domain.endsWith(".");
+}
+
+/**
+ * What crosses the bridge: an untouched box is null rather than an empty
+ * string, so the core is told the field is unknown rather than being asked to
+ * store emptiness.
+ */
+function toPayload(form: ClientInput): ClientInput {
+  return {
+    fullName: form.fullName.trim(),
+    clientCode: blank(form.clientCode),
+    email: blank(form.email),
+    phone: blank(form.phone),
+    altPhone: blank(form.altPhone),
+    dateOfBirth: blank(form.dateOfBirth),
+    gender: blank(form.gender),
+    addressLine1: blank(form.addressLine1),
+    addressLine2: blank(form.addressLine2),
+    city: blank(form.city),
+    state: blank(form.state),
+    pincode: blank(form.pincode),
+    occupation: blank(form.occupation),
+    pan: blank(form.pan),
+    gstin: blank(form.gstin),
+    preferredLanguage: blank(form.preferredLanguage),
+    notes: blank(form.notes),
+    remindersOptedOut: form.remindersOptedOut,
   };
 }
 
@@ -56,7 +108,6 @@ export function ClientForm({
   client?: Client;
   onSaved?: (id: number) => void;
 }) {
-  const queryClient = useQueryClient();
   const toast = useToast();
   const [form, setForm] = useState<ClientInput>(EMPTY);
   const [error, setError] = useState<string | null>(null);
@@ -78,22 +129,32 @@ export function ClientForm({
 
   const save = useMutation({
     mutationFn: async () => {
+      const input = toPayload(form);
       if (client) {
-        await api.updateClient(client.id, form);
+        await api.updateClient(client.id, input);
         return client.id;
       }
-      return api.createClient(form);
+      return api.createClient(input);
     },
     onSuccess: (id) => {
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
-      queryClient.invalidateQueries({ queryKey: ["client", id] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       toast.success(client ? "Client updated" : "Client added");
       onSaved?.(id);
       onClose();
     },
     onError: (err: ApiError) => setError(err.message),
   });
+
+  // An address the mail server will never reach is worth catching here: the
+  // client stays in the book and quietly drops out of every reminder run.
+  const submit = () => {
+    const email = blank(form.email);
+    if (email && !looksLikeEmail(email)) {
+      setError(`"${email}" is not a valid email address`);
+      return;
+    }
+    setError(null);
+    save.mutate();
+  };
 
   return (
     <Modal
@@ -104,13 +165,19 @@ export function ClientForm({
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
+          <Button variant="primary" loading={save.isPending} onClick={submit}>
             {client ? "Save changes" : "Add client"}
           </Button>
         </>
       }
     >
-      <div className="grid gap-4 sm:grid-cols-2">
+      <form
+        className="grid gap-4 sm:grid-cols-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
         <Field label="Full name" required className="sm:col-span-2">
           <Input
             value={form.fullName}
@@ -223,7 +290,13 @@ export function ClientForm({
             placeholder="Prefers a call before renewal, family floater under review…"
           />
         </Field>
-      </div>
+
+        {/*
+          Enter in a field submits through the form's own button, and the one
+          the agent presses sits in the modal's footer, outside the form.
+        */}
+        <button type="submit" hidden />
+      </form>
 
       {error && (
         <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>

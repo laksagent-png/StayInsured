@@ -393,10 +393,32 @@ from it, so the two cannot say different things.
 
 - **React 18 + Vite + Tailwind 4**, one file per screen under `src/pages/`,
   shared widgets in `src/components/`.
-- **TanStack Query owns all server state.** No global store. Reads are cached
-  with a 15-second stale time, `refetchOnWindowFocus` is off because refetching
-  on every focus makes a desktop app feel jumpy, and `retry` is off because a
-  local database failure will not fix itself.
+- **TanStack Query owns all server state.** No global store. Nothing is held as
+  fresh: a screen asked for again asks the book again, because a read is a local
+  SQLite query and the core moves on its own — the reminder sweep sends, the
+  status pass expires policies — while the window sits there.
+  `refetchOnWindowFocus` is off because refetching on every focus makes a
+  desktop app feel jumpy, and `retry` is off because a local database failure
+  will not fix itself. Screens setting their own `staleTime: 0` to escape a
+  shared default is how a cleared filter came to be answered from the cache it
+  was meant to replace.
+- **One query client, in `src/lib/queryClient.ts`, used by the app and by the
+  tests.** A successful write invalidates the whole cache rather than the keys
+  the call site happens to remember: a renewal moves the renewal counts, the
+  sidebar badge, the dashboard and the client it belongs to, and naming those
+  keys mutation by mutation is how they fall out of step. A read is a local
+  SQLite query, so asking everything again costs almost nothing. A mutation that
+  writes nothing — a file picker, an export, a copy saved to disk — is marked
+  `meta: readsOnly` and skips the invalidation.
+- **A read has four answers, not two.** `AsyncPanel` in `components/ui.tsx`
+  draws the spinner, the failure with what it said and a Try again, or the
+  rows; the caller supplies the empty state and distinguishes an empty book from
+  a search that found nothing. Screens that only handled `isLoading` drew their
+  empty state on failure, so a core that could not answer looked exactly like a
+  book with nothing in it.
+- **`useListFilter` owns what a list is asking for.** URL search terms including
+  later changes, the 250 ms debounce, returning to page one whenever the
+  question changes, and dropping empty values instead of sending `""`.
 - **`HashRouter`**, because the app is served from a file-based webview.
 - **`App.tsx` is the session gate.** It queries `session_state` and renders
   either `LockScreen` or the routed shell. Lock state is therefore driven by the
@@ -479,7 +501,10 @@ database in a temporary directory, with no window:
 - an expiry corrected to a future date brings the policy back to active
 - editing a policy leaves its chain, its year and last year's record alone
 - a status the rest of the app cannot read is refused
-- a chain keeps exactly one open year however many times it is renewed
+- a chain keeps exactly one open year however many times it is renewed, and a
+  year that already has a successor cannot be renewed a second time
+- renewing a cancelled year leaves it cancelled, still marked as renewed and
+  still ignored by the sweep
 - deleting a year leaves the earlier ones standing
 - a member from another client cannot be attached to a policy
 - an insurer holding policies is refused deletion and retired instead, and
@@ -525,6 +550,8 @@ database in a temporary directory, with no window:
   elsewhere
 - a rule writing to a client is refused without a message, while the provider
   digest may go without one, and timing beyond a year either side is refused
+- a rule the form does not place joins the ladder at the end rather than the
+  top, and an edit that names no place leaves it where it was
 - deleting a rule leaves the record of what it sent, no longer pointing at it
 - a template fills in the policy, refuses unknown names, and cannot be broken by
   a client name containing an ampersand
@@ -533,8 +560,29 @@ database in a temporary directory, with no window:
   refuses a type that is not a scan, and outlives the policy it was filed under
 - deleting a client takes their documents and the bytes with them
 
-Run them with `cd src-tauri && cargo test --lib`. The frontend is covered by
-`tsc --noEmit`; there is no UI test suite.
+Run them with `cd src-tauri && cargo test --lib`.
+
+The interface has a suite of its own, run with `npm test` (Vitest, jsdom,
+Testing Library) and included in `npm run check`. It renders the real screens
+against a fake core: `src/test/backend.ts` answers every `invoke` from an
+in-memory book, applying the same validation, normalisation and cascades the
+Rust repositories do, so a screen that sends a payload the core would refuse
+fails here too. The Tauri bridge itself — dialogs, the clipboard, the updater,
+the event stream — is mocked in `src/test/tauri.ts`, and the clock is frozen at
+a fixed date so an expiry is always the same number of days away.
+
+The tests are written from the operator's side: they click what is on screen
+and read what comes back, rather than reaching for a component's props. What
+they cover, screen by screen, is the shell and dashboard, the client list and
+record, the policy list and form, renewals, insurers and plans, reminders with
+their rules and messages, import, settings and the lock screen. `src/test/`
+holds the harness and its own README.
+
+A test that describes a bug still open is marked `it.fails`, so the suite stays
+green while the marker keeps the bug written down; flipping one back to `it` is
+what fixing it looks like.
+
+The frontend is also covered by `tsc --noEmit`.
 
 `npm run check` is the whole gate in one command: the typecheck, then
 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and the tests.

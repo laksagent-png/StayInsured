@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Download, Plus, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { api, ApiError } from "../lib/api";
@@ -11,35 +11,31 @@ import { PolicyForm } from "../components/PolicyForm";
 import { PolicyTable } from "../components/PolicyTable";
 import { RenewModal } from "../components/RenewModal";
 import { Badge, Button, Card, Checkbox, Input, Modal, Select, useToast } from "../components/ui";
+import { readsOnly } from "../lib/queryClient";
+import { useListFilter, type ListFilterBase } from "../lib/useListFilter";
+
+/** The list question this screen asks, with the page always answered. */
+type PoliciesFilter = PolicyFilter & ListFilterBase;
 
 export function PoliciesPage() {
   const [params] = useSearchParams();
   const toast = useToast();
 
-  const [filter, setFilter] = useState<PolicyFilter>(() => ({
+  const { filter, setFilter, searchText, setSearchText } = useListFilter<PoliciesFilter>({
     page: 1,
     pageSize: 25,
     sort: "expiry",
-    search: params.get("q") ?? undefined,
     ...(params.get("view") === "lapsed" ? { unrenewedOnly: true } : {}),
-  }));
-  const [searchText, setSearchText] = useState(params.get("q") ?? "");
+  });
   const [editing, setEditing] = useState<Policy | undefined>();
   const [formOpen, setFormOpen] = useState(false);
   const [renewing, setRenewing] = useState<Policy | undefined>();
   const [history, setHistory] = useState<Policy | undefined>();
 
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setFilter((current) => ({ ...current, search: searchText, page: 1 })),
-      250,
-    );
-    return () => window.clearTimeout(timer);
-  }, [searchText]);
-
   const insurers = useQuery({ queryKey: ["insurerOptions"], queryFn: api.insurerOptions });
 
   const exportRows = useMutation({
+    meta: readsOnly,
     mutationFn: async () => {
       const path = await save({
         title: "Export policies",
@@ -56,8 +52,20 @@ export function PoliciesPage() {
     onError: (err: ApiError) => toast.error(err.message),
   });
 
-  const update = (patch: Partial<PolicyFilter>) =>
-    setFilter((current) => ({ ...current, ...patch, page: 1 }));
+  /** A narrower question is a different list, so it starts at the first page. */
+  const update = (patch: Partial<PoliciesFilter>) => setFilter({ ...patch, page: 1 });
+
+  /** Whether anything beyond the page and the order has been asked for. */
+  const narrowed = Boolean(
+    filter.search ||
+      filter.categories ||
+      filter.statuses ||
+      filter.insurerId ||
+      filter.expiryFrom ||
+      filter.expiryTo ||
+      filter.latestOnly ||
+      filter.unrenewedOnly,
+  );
 
   return (
     <div className="space-y-4">
@@ -103,6 +111,7 @@ export function PoliciesPage() {
             </div>
 
             <Select
+              aria-label="Category"
               className="w-44"
               value={filter.categories?.[0] ?? ""}
               onChange={(event) =>
@@ -118,6 +127,7 @@ export function PoliciesPage() {
             </Select>
 
             <Select
+              aria-label="Status"
               className="w-40"
               value={filter.statuses?.[0] ?? ""}
               onChange={(event) =>
@@ -133,6 +143,7 @@ export function PoliciesPage() {
             </Select>
 
             <Select
+              aria-label="Insurer"
               className="w-52"
               value={filter.insurerId ?? ""}
               onChange={(event) =>
@@ -153,6 +164,7 @@ export function PoliciesPage() {
               <span>Expiry between</span>
               <Input
                 type="date"
+                aria-label="Expiry from"
                 className="w-36"
                 value={filter.expiryFrom ?? ""}
                 onChange={(event) => update({ expiryFrom: event.target.value || undefined })}
@@ -160,6 +172,7 @@ export function PoliciesPage() {
               <span>and</span>
               <Input
                 type="date"
+                aria-label="Expiry to"
                 className="w-36"
                 value={filter.expiryTo ?? ""}
                 onChange={(event) => update({ expiryTo: event.target.value || undefined })}
@@ -183,7 +196,16 @@ export function PoliciesPage() {
               className="ml-auto"
               onClick={() => {
                 setSearchText("");
-                setFilter({ page: 1, pageSize: 25, sort: "expiry" });
+                update({
+                  search: undefined,
+                  categories: undefined,
+                  statuses: undefined,
+                  insurerId: undefined,
+                  expiryFrom: undefined,
+                  expiryTo: undefined,
+                  latestOnly: undefined,
+                  unrenewedOnly: undefined,
+                });
               }}
             >
               Clear filters
@@ -202,6 +224,12 @@ export function PoliciesPage() {
           }}
           onRenew={setRenewing}
           onHistory={setHistory}
+          emptyTitle={narrowed ? "No policies match" : "No policies yet"}
+          emptyDescription={
+            narrowed
+              ? "Adjust the filters, or add a policy."
+              : "Record the first policy and it appears here."
+          }
         />
       </Card>
 

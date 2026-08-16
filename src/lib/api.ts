@@ -65,7 +65,11 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
       const { kind, message } = raw as { kind: ErrorKind; message: string };
       throw new ApiError(kind, message);
     }
-    throw new ApiError("internal", typeof raw === "string" ? raw : "Something went wrong");
+    if (typeof raw === "string") throw new ApiError("internal", raw);
+    // A thrown Error has no kind, but it does have something to say, and
+    // "Something went wrong" is worth less to the operator than its own words.
+    if (raw instanceof Error && raw.message) throw new ApiError("internal", raw.message);
+    throw new ApiError("internal", "Something went wrong");
   }
 }
 

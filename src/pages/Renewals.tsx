@@ -5,11 +5,12 @@ import { useState } from "react";
 
 import { api, ApiError } from "../lib/api";
 import type { Policy, PolicyFilter } from "../lib/types";
-import { count } from "../lib/format";
+import { count, plural } from "../lib/format";
 import { PolicyTable } from "../components/PolicyTable";
 import { RenewModal } from "../components/RenewModal";
 import { PolicyForm } from "../components/PolicyForm";
 import { Button, Card, cx, useToast } from "../components/ui";
+import { readsOnly } from "../lib/queryClient";
 
 type TabId = "overdue" | "7" | "30" | "60" | "90";
 
@@ -54,7 +55,14 @@ export function RenewalsPage() {
 
   const refresh = useMutation({
     mutationFn: api.refreshStatuses,
-    onSuccess: () => toast.success("Statuses recalculated against today's date"),
+    // The core answers with how many policies it moved on, which is the whole
+    // point of pressing it: a quiet desk and a stale desk look the same.
+    onSuccess: (moved) =>
+      toast.success(
+        moved === 0
+          ? "Statuses recalculated against today's date, and nothing moved on"
+          : `Statuses recalculated against today's date, moving ${plural(moved, "policy", "policies")} on`,
+      ),
     onError: (err: ApiError) => toast.error(err.message),
   });
 
@@ -78,6 +86,7 @@ export function RenewalsPage() {
   });
 
   const exportRows = useMutation({
+    meta: readsOnly,
     mutationFn: async () => {
       const path = await save({
         title: "Export renewal list",

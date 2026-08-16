@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, MailWarning, Pencil, Plus, Trash2, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -12,9 +12,12 @@ import { PolicyForm } from "../components/PolicyForm";
 import { PolicyTable } from "../components/PolicyTable";
 import { RenewModal } from "../components/RenewModal";
 import {
+  AsyncPanel,
   Badge,
   Button,
   Card,
+  EmptyState,
+  ErrorState,
   Field,
   Input,
   Modal,
@@ -30,7 +33,6 @@ export function ClientDetailPage() {
   const clientId = Number(id);
   const navigate = useNavigate();
   const toast = useToast();
-  const queryClient = useQueryClient();
 
   const [editOpen, setEditOpen] = useState(false);
   const [policyOpen, setPolicyOpen] = useState(false);
@@ -58,8 +60,15 @@ export function ClientDetailPage() {
   const removeMember = useMutation({
     mutationFn: (memberId: number) => api.deleteMember(memberId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["members", clientId] });
       toast.success("Member removed");
+    },
+    onError: (err: ApiError) => toast.error(err.message),
+  });
+
+  const setArchived = useMutation({
+    mutationFn: (archived: boolean) => api.setClientArchived(clientId, archived),
+    onSuccess: (_result, archived) => {
+      toast.success(archived ? "Client archived" : "Client restored");
     },
     onError: (err: ApiError) => toast.error(err.message),
   });
@@ -67,7 +76,6 @@ export function ClientDetailPage() {
   const removeClient = useMutation({
     mutationFn: () => api.deleteClient(clientId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
       toast.success("Client deleted");
       navigate("/clients");
     },
@@ -75,7 +83,26 @@ export function ClientDetailPage() {
   });
 
   if (client.isLoading) return <Spinner />;
-  if (!client.data) return null;
+  // An address that names no client of ours — a deleted client, a mistyped id —
+  // is a different thing from a book that would not answer, and the two are
+  // worth telling apart before any of the page is drawn.
+  if (client.error instanceof ApiError && client.error.kind === "not_found") {
+    return (
+      <EmptyState
+        title="Client not found"
+        description="No client sits at this address. They may have been deleted, or the address may be mistyped."
+      />
+    );
+  }
+  if (client.isError || !client.data) {
+    return (
+      <ErrorState
+        error={client.error}
+        title="This client could not be read"
+        onRetry={() => client.refetch()}
+      />
+    );
+  }
   const data = client.data;
 
   return (
@@ -175,39 +202,55 @@ export function ClientDetailPage() {
           }
           bodyClassName=""
         >
-          {(members.data?.length ?? 0) === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-slate-400">
-              Add family members to attach them to health and travel policies.
-            </p>
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {members.data?.map((member) => (
-                <li key={member.id} className="flex items-center gap-2 px-4 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-700">{member.fullName}</p>
-                    <p className="text-xs text-slate-400">
-                      {titleCase(member.relationship)}
-                      {member.dateOfBirth ? ` · ${date(member.dateOfBirth)}` : ""}
-                    </p>
-                  </div>
-                  <Button size="sm" variant="ghost" onClick={() => setMemberDraft(member)}>
-                    <Pencil className="size-3.5 text-slate-400" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      if (window.confirm(`Remove ${member.fullName}?`)) {
-                        removeMember.mutate(member.id);
-                      }
-                    }}
-                  >
-                    <Trash2 className="size-3.5 text-slate-400" />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
+          <AsyncPanel query={members} errorTitle="The members could not be read">
+            {(members.data?.length ?? 0) === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-slate-400">
+                Add family members to attach them to health and travel policies.
+              </p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {members.data?.map((member) => (
+                  <li key={member.id} className="flex items-center gap-2 px-4 py-2.5">
+                    <button
+                      type="button"
+                      className="group min-w-0 flex-1 cursor-pointer text-left focus-visible:ring-2 focus-visible:ring-brand-500/40 focus-visible:outline-none"
+                      onClick={() => setMemberDraft(member)}
+                    >
+                      <p className="truncate text-sm font-medium text-slate-700 group-hover:underline">
+                        {member.fullName}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {titleCase(member.relationship)}
+                        {member.dateOfBirth ? ` · ${date(member.dateOfBirth)}` : ""}
+                      </p>
+                    </button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Edit ${member.fullName}`}
+                      title={`Edit ${member.fullName}`}
+                      onClick={() => setMemberDraft(member)}
+                    >
+                      <Pencil className="size-3.5 text-slate-400" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Remove ${member.fullName}`}
+                      title={`Remove ${member.fullName}`}
+                      onClick={() => {
+                        if (window.confirm(`Remove ${member.fullName}?`)) {
+                          removeMember.mutate(member.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="size-3.5 text-slate-400" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </AsyncPanel>
         </Card>
 
         <Card title="Book value">
@@ -220,15 +263,7 @@ export function ClientDetailPage() {
             <Button
               variant="ghost"
               className="w-full justify-start"
-              onClick={() =>
-                api
-                  .setClientArchived(clientId, !data.isArchived)
-                  .then(() => {
-                    queryClient.invalidateQueries({ queryKey: ["client", clientId] });
-                    toast.success(data.isArchived ? "Client restored" : "Client archived");
-                  })
-                  .catch((err: ApiError) => toast.error(err.message))
-              }
+              onClick={() => setArchived.mutate(!data.isArchived)}
             >
               {data.isArchived ? "Restore client" : "Archive client"}
             </Button>
@@ -277,11 +312,13 @@ export function ClientDetailPage() {
         onClose={() => setPolicyOpen(false)}
       />
       <RenewModal policy={renewing} onClose={() => setRenewing(undefined)} />
-      <MemberModal
-        draft={memberDraft}
-        clientId={clientId}
-        onClose={() => setMemberDraft(undefined)}
-      />
+      {memberDraft && (
+        <MemberModal
+          draft={memberDraft}
+          clientId={clientId}
+          onClose={() => setMemberDraft(undefined)}
+        />
+      )}
     </div>
   );
 }
@@ -295,35 +332,28 @@ function Detail({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
+/** Mounted only while it is open, so every opening starts from the member it
+ * was opened on rather than from the last draft. */
 function MemberModal({
   draft,
   clientId,
   onClose,
 }: {
-  draft?: InsuredMember | "new";
+  draft: InsuredMember | "new";
   clientId: number;
   onClose: () => void;
 }) {
-  const queryClient = useQueryClient();
   const toast = useToast();
-  const existing = draft && draft !== "new" ? draft : undefined;
+  const existing = draft === "new" ? undefined : draft;
 
-  const [form, setForm] = useState<MemberInput>({ clientId, fullName: "" });
-
-  // Reset whenever a different member is opened.
-  const key = existing?.id ?? "new";
-  const [seeded, setSeeded] = useState<string | number>();
-  if (draft && seeded !== key) {
-    setSeeded(key);
-    setForm({
-      clientId,
-      fullName: existing?.fullName ?? "",
-      relationship: existing?.relationship ?? "spouse",
-      dateOfBirth: existing?.dateOfBirth ?? "",
-      gender: existing?.gender ?? "",
-      notes: existing?.notes ?? "",
-    });
-  }
+  const [form, setForm] = useState<MemberInput>({
+    clientId,
+    fullName: existing?.fullName ?? "",
+    relationship: existing?.relationship ?? "spouse",
+    dateOfBirth: existing?.dateOfBirth ?? "",
+    gender: existing?.gender ?? "",
+    notes: existing?.notes ?? "",
+  });
 
   const save = useMutation({
     mutationFn: async () => {
@@ -331,14 +361,11 @@ function MemberModal({
       else await api.createMember(form);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["members", clientId] });
       toast.success(existing ? "Member updated" : "Member added");
       onClose();
     },
     onError: (err: ApiError) => toast.error(err.message),
   });
-
-  if (!draft) return null;
 
   return (
     <Modal

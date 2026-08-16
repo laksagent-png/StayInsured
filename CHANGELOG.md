@@ -5,6 +5,105 @@ settings survive every version below.
 
 ## Upcoming
 
+### Fixed
+
+A pass over every screen, prompted by writing a test for each one. The tests
+found around 130 faults; these are the ones you would have noticed.
+
+- **The rest of the app keeps up with what you just did.** Renewing a policy,
+  archiving a client or adding a plan used to leave the other screens showing
+  the old figures until you went away and came back — the tab counts, the
+  sidebar badge, the dashboard and the client's own page could all disagree
+  with each other. Every screen now takes a change as it happens.
+
+- **A screen that cannot read your book says so.** When something went wrong
+  reading the database, most screens simply showed nothing, which looks exactly
+  like a book with nothing in it: you were invited to add clients you already
+  had, or to clear filters you had never set. A failed read now says what went
+  wrong and offers **Try again**, and an empty list says it is empty.
+
+- **Forms catch a mistake before saving it.** Dates that are not real dates or
+  fall in the wrong order, amounts that are not numbers, an email address that
+  is not one — these went to the database and came back as an error from deep
+  inside the app, or worse, were saved. They are now refused where you are
+  working, with a plain explanation, before anything is written. **Enter** saves
+  the client, policy and renewal forms from any box — in the policy form's
+  client search it picks the closest match instead — and **Escape** closes a
+  dialog.
+
+- **A row the import cannot read now names the cell.** "Rows needing attention"
+  told you the row number and the reason; it now names the column and quotes
+  what was in it, so a bad date in a book of two thousand rows is something you
+  can find. Correcting the mapping after a check also puts the report aside, so
+  an import can no longer be committed against a check that no longer applies.
+
+- **Editing a client no longer clears the details the form does not show.**
+  Saving from a shortened form could quietly empty fields you had filled in
+  elsewhere.
+
+- **Searching, filtering and paging behave.** Searching from the top of the
+  window now works even when you are already on the screen you are searching;
+  changing a filter or the sort order takes you back to the first page instead
+  of stranding you in the middle of a new list; clearing a search box removes
+  the filter rather than searching for nothing; and the pager can no longer run
+  past the last page.
+
+- **Lists can be driven from the keyboard.** Column headings sort with Enter or
+  Space and rows open the same way, and a screen reader now says which column
+  the list is sorted by.
+
+- **Counts and figures read properly.** "1 rule" instead of "1 rules", a
+  negative amount as -₹5L rather than ₹-5L, and file sizes that round the way a
+  file manager rounds them.
+
+- **Policies.** The **Status** box in the policy form is properly labelled, so
+  cancelling a year works with the keyboard and with a screen reader, and the
+  filters along the top of the list now say what each one is for.
+
+- **Renewals.** Recalculating tells you what it changed instead of finishing in
+  silence.
+
+- **A cancelled year stays cancelled after you renew it.** If a client cancelled
+  and later came back, renewing the cancelled year used to mark it **Renewed**,
+  and the book then had no record that the cover was ever ended early. It keeps
+  saying **Cancelled** now, while the new year goes on record as usual.
+
+- **A policy year cannot be renewed twice.** Nothing but the buttons on screen
+  stopped a second renewal being written against the same year, which would have
+  left one policy with two current years pulling the counts and the renewals
+  desk in different directions. Renew the latest year of a policy; the app says
+  so if you reach an older one.
+
+- **Insurers and plans.** Removing a company now takes its plans with it rather
+  than leaving them behind with no owner; a plan must belong to a company; the
+  plans table shows whether a plan is in use; and an insurer row shows the
+  support email and website you recorded.
+
+- **Reminders.** A new rule joins the ladder at the bottom instead of jumping to
+  the top; a rule that writes to a client will not save without a message
+  chosen, and a message will not save without a subject; and the history can be
+  searched and sorted by date.
+
+- **Settings.** The four numeric boxes state the range they accept and refuse
+  anything outside it instead of storing a number the app then ignores; **Save
+  changes** stays greyed out until you have actually changed something, and goes
+  out again if you undo an edit by hand; what you have typed survives a save in
+  progress; **Send test** checks the address before it writes anything; and a
+  stored mail password can be removed.
+
+- **A member opens by name.** Clicking an insured member's name opens their
+  details, the way clicking a policy row opens the policy, so a family can be
+  worked through from the keyboard. Member and document names now underline
+  under the pointer, so it is clear they open something.
+
+- **The unlock screen.** Unlocking with an empty box says so rather than asking
+  the database, and the form stays usable while your keychain is still thinking.
+
+- **Documents.** The two buttons on a row name the document they act on — **Save
+  a copy of Policy schedule 2025-26**, **Remove Policy schedule 2025-26** — on
+  hover and to a screen reader, and a document that cannot be opened says why
+  instead of showing an empty viewer.
+
 ## 0.3.2 — 16 August 2026
 
 ### Changed

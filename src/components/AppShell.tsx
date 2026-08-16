@@ -14,9 +14,9 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 import type { SessionState } from "../lib/types";
-import { Badge, Button, Input } from "./ui";
+import { Badge, Button, Input, useToast } from "./ui";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -37,6 +37,7 @@ export function AppShell({
   onLocked: (session: SessionState) => void;
 }) {
   const navigate = useNavigate();
+  const toast = useToast();
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -46,7 +47,13 @@ export function AppShell({
 
   // The session the command hands back is the one the app is switched over to,
   // so the lock screen appears in the same tick the database handle is dropped.
-  const lock = useMutation({ mutationFn: api.lock, onSuccess: onLocked });
+  // A book that would not close leaves the app exactly as it was, which on its
+  // own looks like a button that did nothing.
+  const lock = useMutation({
+    mutationFn: api.lock,
+    onSuccess: onLocked,
+    onError: (err: ApiError) => toast.error(err.message),
+  });
 
   // Cmd/Ctrl+K focuses search, the one shortcut a data-entry tool really needs.
   useEffect(() => {
@@ -136,6 +143,11 @@ export function AppShell({
               ref={searchRef}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              // Escape is the way out of a box you were dropped into by ⌘K,
+              // and it hands the keyboard back to the screen underneath.
+              onKeyDown={(event) => {
+                if (event.key === "Escape") event.currentTarget.blur();
+              }}
               placeholder="Search clients, policy numbers, vehicles…"
               className="pl-9"
             />

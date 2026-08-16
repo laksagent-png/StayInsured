@@ -53,7 +53,10 @@ The first launch asks for two things: your agency name, and a password.
 | **Confirm password** | Yes | Must match |
 | **Trust this device** | No | Stores the key in the Keychain (macOS) or Credential Manager (Windows) |
 
-Press **Create encrypted database** and the book is ready to use.
+Press **Create encrypted database** and the book is ready to use. A password
+under eight characters is refused with **Use a password of at least 8
+characters**, and a confirmation that does not match it with **The two passwords
+do not match**; nothing is created until both are right.
 
 **The password is the key, and there is no reset.** It is not stored anywhere
 and nobody — including you — can recover the data without it. Write it down and
@@ -67,11 +70,16 @@ time. You can change your mind either way later.
 
 ![Unlock](screenshots/unlock.png)
 
-Type the password and press **Unlock**.
+Type the password and press **Unlock**. Pressing it with the box empty asks you
+to **Enter the password that opens this book** and goes no further.
 
 On a trusted device the app unlocks itself as it starts. Lock it by hand and it
 asks for the password instead, so leaving your desk still shuts the book;
 **Use the saved key on this device** opens it again without typing anything.
+
+While the app is still waiting on the keychain, the box and **Unlock** stay
+usable. A keychain that takes its time — or a system prompt nobody answered —
+never stands between you and the password you already know.
 
 Unlocking also brings every status in line with today's date, so the renewal
 counts you see are the counts as of this morning.

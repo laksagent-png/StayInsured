@@ -14,8 +14,17 @@ import {
 import { AlertTriangle, ArrowRight, MailWarning, TrendingUp, Users } from "lucide-react";
 
 import { api } from "../lib/api";
-import { categoryLabel, count, date, money, moneyCompact, relativeDays, urgencyTone } from "../lib/format";
-import { Badge, Card, EmptyState, Spinner } from "../components/ui";
+import {
+  categoryLabel,
+  count,
+  date,
+  money,
+  moneyCompact,
+  plural,
+  relativeDays,
+  urgencyTone,
+} from "../lib/format";
+import { Badge, Card, EmptyState, ErrorState, Spinner } from "../components/ui";
 
 const CATEGORY_COLOURS = [
   "#0d9488",
@@ -29,10 +38,21 @@ const CATEGORY_COLOURS = [
 ];
 
 export function DashboardPage() {
-  const { data, isLoading } = useQuery({ queryKey: ["dashboard"], queryFn: api.dashboard });
+  const dashboard = useQuery({ queryKey: ["dashboard"], queryFn: api.dashboard });
 
-  if (isLoading) return <Spinner label="Reading your book" />;
-  if (!data) return null;
+  if (dashboard.isLoading) return <Spinner label="Reading your book" />;
+  // Every panel below reads from the one answer, so there is no part of this
+  // screen worth drawing without it.
+  if (!dashboard.data) {
+    return (
+      <ErrorState
+        error={dashboard.error}
+        title="Your book could not be read"
+        onRetry={() => dashboard.refetch()}
+      />
+    );
+  }
+  const data = dashboard.data;
 
   const isEmpty = data.totalClients === 0;
 
@@ -168,7 +188,7 @@ export function DashboardPage() {
                     </ResponsiveContainer>
                   </div>
                   <ul className="mt-3 space-y-1.5">
-                    {data.byCategory.slice(0, 6).map((entry, index) => (
+                    {data.byCategory.map((entry, index) => (
                       <li key={entry.category} className="flex items-center gap-2 text-xs">
                         <span
                           className="size-2.5 rounded-full"
@@ -196,7 +216,10 @@ export function DashboardPage() {
             >
               <MailWarning className="size-5 shrink-0 text-amber-600" />
               <span className="flex-1">
-                <strong>{count(data.clientsWithoutEmail)} clients have no email address.</strong>{" "}
+                <strong>
+                  {plural(data.clientsWithoutEmail, "client")}{" "}
+                  {data.clientsWithoutEmail === 1 ? "has" : "have"} no email address.
+                </strong>{" "}
                 They will be skipped when reminders start going out.
               </span>
               <ArrowRight className="size-4" />

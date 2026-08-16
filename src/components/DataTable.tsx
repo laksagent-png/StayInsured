@@ -50,14 +50,26 @@ export function DataTable<T>({
                 <th
                   key={column.key}
                   style={column.width ? { width: column.width } : undefined}
+                  // A sorted column has to say so out loud, and a header that
+                  // sorts has to be reachable by the keyboard that sorts it.
+                  aria-sort={active ? (descending ? "descending" : "ascending") : undefined}
+                  tabIndex={sortable ? 0 : undefined}
                   className={cx(
                     "px-3 py-2 text-xs font-semibold tracking-wide text-slate-500 uppercase",
                     column.align === "right" && "text-right",
                     column.align === "center" && "text-center",
                     !column.align && "text-left",
-                    sortable && "cursor-pointer select-none hover:text-slate-700",
+                    sortable &&
+                      "cursor-pointer select-none hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-brand-500/40 focus-visible:outline-none",
                   )}
                   onClick={() => sortable && onSort?.(column.sortKey!)}
+                  onKeyDown={(event) => {
+                    if (!sortable) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSort?.(column.sortKey!);
+                    }
+                  }}
                 >
                   <span
                     className={cx(
@@ -83,9 +95,21 @@ export function DataTable<T>({
             <tr
               key={rowKey(row)}
               onClick={() => onRowClick?.(row)}
+              tabIndex={onRowClick ? 0 : undefined}
+              onKeyDown={(event) => {
+                if (!onRowClick) return;
+                // Only the row itself: Enter inside a button in the row is that
+                // button's, not an instruction to open the record.
+                if (event.target !== event.currentTarget) return;
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onRowClick(row);
+                }
+              }}
               className={cx(
                 "border-b border-slate-100 last:border-0",
-                onRowClick && "cursor-pointer",
+                onRowClick &&
+                  "cursor-pointer focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/40 focus-visible:outline-none",
                 "hover:bg-brand-50/40",
               )}
             >
