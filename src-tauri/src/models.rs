@@ -738,6 +738,16 @@ pub struct SessionState {
     pub initialised: bool,
     pub unlocked: bool,
     pub can_use_keychain: bool,
+    /// Whether the password protects the file or only the screens. Always true
+    /// here: this core opens SQLCipher with a key derived from the password, so
+    /// there is no reading the book without it.
+    ///
+    /// It is reported rather than assumed because the lock screen and the security
+    /// section of Settings promise the operator that their data is encrypted, and a
+    /// promise a backend cannot keep should not be printed. The Electron edition in
+    /// `legacy-windows/` reuses these same screens over a plain SQLite file and
+    /// answers false, at which point they say what is actually true there.
+    pub encrypted: bool,
     pub schema_version: i32,
     pub data_dir: String,
 }

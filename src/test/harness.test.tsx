@@ -51,6 +51,7 @@ describe("test harness", () => {
       initialised: true,
       unlocked: false,
       canUseKeychain: true,
+      encrypted: true,
       schemaVersion: 3,
       dataDir: "/tmp",
     });

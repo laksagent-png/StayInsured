@@ -542,6 +542,7 @@ export const fixtures = {
     initialised: true,
     unlocked: true,
     canUseKeychain: true,
+    encrypted: true,
     schemaVersion: 3,
     dataDir: "/Users/you/Library/Application Support/com.stayinsured.app",
   },

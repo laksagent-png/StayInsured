@@ -16,6 +16,7 @@ function closed(over: Partial<SessionState> = {}): SessionState {
     initialised: true,
     unlocked: false,
     canUseKeychain: false,
+    encrypted: true,
     schemaVersion: 3,
     dataDir: "/Users/you/Library/Application Support/com.stayinsured.app",
     ...over,
@@ -107,6 +108,36 @@ describe("first run", () => {
     await user.click(screen.getByRole("button", { name: /Create encrypted database/ }));
 
     expect(await screen.findByText("This machine already has a book")).toBeInTheDocument();
+  });
+});
+
+// The screens are shared with the Electron edition for Windows 7, which opens a
+// plain SQLite file. Someone told their data is encrypted when it is not may leave
+// a laptop or a backup somewhere they otherwise would not, so a core that cannot
+// encrypt says so and this screen stops claiming it.
+describe("a core that does not encrypt", () => {
+  it("promises a locked app rather than an encrypted file", async () => {
+    renderWithProviders(<LockScreen session={closed({ initialised: false, encrypted: false })} />);
+
+    expect(await screen.findByText(/does not encrypt the database file/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Create client book/ })).toBeInTheDocument();
+    expect(screen.queryByText(/cannot be recovered/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Create encrypted database/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not call the finished book encrypted", async () => {
+    const { user } = renderWithProviders(
+      <LockScreen session={closed({ initialised: false, encrypted: false })} />,
+    );
+
+    await user.type(passwordBox(), "a-long-enough-password");
+    await user.type(screen.getByLabelText(/Confirm password/), "a-long-enough-password");
+    await user.click(screen.getByRole("button", { name: /Create client book/ }));
+
+    expect(await screen.findByText("Your client book is ready")).toBeInTheDocument();
+    expect(screen.queryByText(/encrypted/)).not.toBeInTheDocument();
   });
 });
 

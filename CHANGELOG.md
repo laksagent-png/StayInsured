@@ -5,6 +5,15 @@ settings survive every version below.
 
 ## Upcoming
 
+### Changed
+
+- **The setup and security screens only promise encryption where there is some.**
+  They still say what they always said in this app, because this app does encrypt
+  your book. There is now a separate edition for Windows 7 machines, which cannot,
+  and the same screens tell whoever is using it plainly: the password locks the app,
+  but anyone who can copy the file can read the clients in it. Being told your data
+  is encrypted when it is not is how a laptop ends up somewhere it should not.
+
 ## 0.3.3 — 16 August 2026
 
 ### Fixed

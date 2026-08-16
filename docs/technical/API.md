@@ -103,10 +103,19 @@ interface SessionState {
   initialised: boolean;    // vault.json exists
   unlocked: boolean;       // a decrypted connection is open
   canUseKeychain: boolean; // a key is stored in the OS keychain
+  encrypted: boolean;      // always true here; see below
   schemaVersion: number;   // latest applied migration
   dataDir: string;         // absolute path to the data directory
 }
 ```
+
+**`encrypted`** is always `true` from this backend, which opens SQLCipher with a
+key derived from the password. It is reported rather than assumed because the lock
+screen and the security section of Settings promise the operator that their
+database is encrypted, and those screens are shared with the Electron edition in
+`legacy-windows/`, which serves the same commands over a plain SQLite file and
+answers `false`. A backend that cannot keep the promise says so and the screens
+print a warning instead.
 
 **`setup`** creates the vault parameters, the encrypted database and the owner
 row, and seeds `provider_name` from `displayName` (default `"Owner"`).

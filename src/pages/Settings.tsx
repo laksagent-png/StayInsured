@@ -218,7 +218,11 @@ export function SettingsPage() {
       setCurrent("");
       setReplacement("");
       setConfirm("");
-      toast.success("Password changed and the database re-encrypted");
+      toast.success(
+        session.data?.encrypted === false
+          ? "Password changed"
+          : "Password changed and the database re-encrypted",
+      );
     },
     onError: (err: ApiError) => toast.error(err.message),
   });
@@ -322,10 +326,18 @@ export function SettingsPage() {
 
           <Card title="Security">
             <div className="space-y-4">
-              <p className="rounded-lg bg-slate-50 px-3.5 py-3 text-xs text-slate-600">
-                Your client data is stored in an AES-256 encrypted database. The key comes from your
-                password through Argon2id and is never written to disk in plain form.
-              </p>
+              {session.data?.encrypted === false ? (
+                <p className="rounded-lg bg-amber-50 px-3.5 py-3 text-xs text-amber-900">
+                  Your password guards this app, but the database file itself is not encrypted in
+                  this edition. Anyone with the file, or with a backup of it, can read your clients.
+                  Keep the computer and its backups secure.
+                </p>
+              ) : (
+                <p className="rounded-lg bg-slate-50 px-3.5 py-3 text-xs text-slate-600">
+                  Your client data is stored in an AES-256 encrypted database. The key comes from
+                  your password through Argon2id and is never written to disk in plain form.
+                </p>
+              )}
 
               <div className="grid gap-4 sm:grid-cols-3">
                 <Field label="Current password">

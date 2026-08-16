@@ -931,6 +931,32 @@ describe("settings, the master password", () => {
     expect(await screen.findByText("The keychain is locked")).toBeInTheDocument();
     expect(button("Stop trusting this device")).toBeInTheDocument();
   });
+
+  it("claims encryption only from a core that encrypts", async () => {
+    await renderSettings();
+
+    expect(screen.getByText(/AES-256 encrypted database/)).toBeInTheDocument();
+  });
+
+  // The Electron edition for Windows 7 shares this screen over a plain SQLite
+  // file. Left as it is, the section would tell an operator their data was safe on
+  // a stolen laptop when it is readable by anyone holding the file.
+  it("warns instead when the core leaves the file readable", async () => {
+    backend().book.session.encrypted = false;
+    const { user } = await renderSettings();
+
+    expect(screen.getByText(/the database file itself is not encrypted/)).toBeInTheDocument();
+    expect(screen.queryByText(/AES-256/)).not.toBeInTheDocument();
+
+    await fillPassword(user, {
+      current: CORRECT_PASSWORD,
+      replacement: "a-longer-secret",
+      confirm: "a-longer-secret",
+    });
+    await user.click(button("Change password"));
+
+    expect(await screen.findByText("Password changed")).toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------- about

@@ -7,9 +7,14 @@ import type { SessionState } from "../lib/types";
 import { Button, Checkbox, Field, Input, useToast } from "../components/ui";
 
 /**
- * Both the first-run setup and the day-to-day unlock. The password is not a UI
- * gate: it derives the key the database itself is encrypted with, so there is no
- * way past this screen and no copy of the data outside it.
+ * Both the first-run setup and the day-to-day unlock. On the Tauri core the
+ * password is not a UI gate: it derives the key the database itself is encrypted
+ * with, so there is no way past this screen and no copy of the data outside it.
+ *
+ * `session.encrypted` is false on the Electron edition for Windows 7, where the
+ * file is plain SQLite and this screen is only a screen. What it says changes with
+ * it, because a password wall described as encryption would leave someone
+ * believing a stolen laptop was safe.
  */
 export function LockScreen({
   session,
@@ -19,6 +24,9 @@ export function LockScreen({
   autoUnlock?: boolean;
 }) {
   const isSetup = session ? !session.initialised : false;
+  // Absent means the Tauri core, which is the only one that shipped before this
+  // field existed, and it encrypts.
+  const encrypted = session?.encrypted ?? true;
   const queryClient = useQueryClient();
   const toast = useToast();
 
@@ -35,7 +43,7 @@ export function LockScreen({
   const setup = useMutation({
     mutationFn: () => api.setup(password, displayName, remember),
     onSuccess: () => {
-      toast.success("Your encrypted database is ready");
+      toast.success(encrypted ? "Your encrypted database is ready" : "Your client book is ready");
       onDone();
     },
     onError: (err: ApiError) => setError(err.message),
@@ -106,10 +114,18 @@ export function LockScreen({
           </div>
         </div>
 
-        {isSetup && (
+        {isSetup && encrypted && (
           <p className="mb-5 rounded-lg bg-brand-50 px-3.5 py-3 text-sm text-brand-900">
             This password encrypts your client database on this machine. It is not stored anywhere
             and cannot be recovered, so keep a copy somewhere safe.
+          </p>
+        )}
+
+        {isSetup && !encrypted && (
+          <p className="mb-5 rounded-lg bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
+            This password locks the app on this machine, but it does not encrypt the database file.
+            Anyone who can copy that file can read your clients, so keep this computer itself
+            secure.
           </p>
         )}
 
@@ -166,7 +182,7 @@ export function LockScreen({
             loading={busy}
             icon={<KeyRound className="size-4" />}
           >
-            {isSetup ? "Create encrypted database" : "Unlock"}
+            {isSetup ? (encrypted ? "Create encrypted database" : "Create client book") : "Unlock"}
           </Button>
         </form>
 

@@ -30,6 +30,13 @@ export interface SessionState {
   initialised: boolean;
   unlocked: boolean;
   canUseKeychain: boolean;
+  /**
+   * Whether the password protects the file or only the screens. The Tauri core
+   * derives the SQLCipher key from it and answers true; the Electron edition for
+   * Windows 7 opens a plain file and answers false. The screens that promise
+   * encryption read this rather than assuming it.
+   */
+  encrypted: boolean;
   schemaVersion: number;
   dataDir: string;
 }

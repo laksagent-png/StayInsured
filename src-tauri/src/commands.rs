@@ -25,6 +25,7 @@ pub fn session_state(state: State<AppState>) -> SessionState {
         initialised: vault::Vault::exists(&state.paths.vault),
         unlocked: state.is_unlocked(),
         can_use_keychain: vault::recall_key().is_some(),
+        encrypted: true,
         schema_version: migrations::latest_version(),
         data_dir: state.paths.root.to_string_lossy().to_string(),
     }
