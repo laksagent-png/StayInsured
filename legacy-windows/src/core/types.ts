@@ -246,6 +246,57 @@ export interface PolicyFilter {
   pageSize?: number | null;
 }
 
+export interface ImportFieldInfo {
+  key: string;
+  label: string;
+  group: string;
+  required: boolean;
+}
+
+export interface ImportPreview {
+  fileName: string;
+  sheetNames: string[];
+  sheet: string;
+  headers: string[];
+  sampleRows: string[][];
+  totalRows: number;
+  /** field key -> header name */
+  suggestedMapping: Record<string, string>;
+  unmappedHeaders: string[];
+}
+
+export interface ImportOptions {
+  path: string;
+  sheet?: string | null;
+  /** field key -> header name */
+  mapping: Record<string, string>;
+  defaultCategory?: string | null;
+  /** Update clients and policies that already exist instead of skipping them. */
+  updateExisting?: boolean | null;
+  /** Validate and report without keeping any changes. */
+  dryRun?: boolean | null;
+}
+
+export interface ImportIssue {
+  row: number;
+  column: string | null;
+  value: string | null;
+  message: string;
+}
+
+export interface ImportReport {
+  dryRun: boolean;
+  totalRows: number;
+  policiesInserted: number;
+  policiesUpdated: number;
+  clientsCreated: number;
+  clientsUpdated: number;
+  insurersCreated: number;
+  skipped: number;
+  failed: number;
+  issues: ImportIssue[];
+}
+
 export interface ExpiryBucket {
   label: string;
   count: number;

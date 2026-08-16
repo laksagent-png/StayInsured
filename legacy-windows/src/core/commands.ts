@@ -19,6 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { AppError } from "./errors";
+import * as importer from "./importer";
 import * as clients from "./repo/clients";
 import * as dashboard from "./repo/dashboard";
 import * as insurers from "./repo/insurers";
@@ -27,6 +28,7 @@ import * as policies from "./repo/policies";
 import * as products from "./repo/products";
 import * as settings from "./repo/settings";
 import type { Session } from "./session";
+import type { ImportOptions } from "./types";
 import { CATEGORIES, categoryLabel } from "./util";
 
 type Args = Record<string, unknown>;
@@ -145,6 +147,28 @@ export const COMMANDS: Record<string, Handler> = {
   delete_policy: (session, args) => session.db().withTx((conn) => policies.remove(conn, num(args, "id"))),
   refresh_statuses: (session) => session.db().withTx(policies.syncStatuses),
 
+  // ---------------------------------------------------------------- import
+  //
+  // The field list, the preview and the template read a file the operator picked
+  // rather than the book, so — as in the Rust core — they answer while the app is
+  // locked. Only the import itself needs the database.
+  import_fields: () => importer.fieldCatalogue(),
+  preview_import: (_session, args) =>
+    importer.preview(str(args, "path"), (args["sheet"] as string | null) ?? null),
+  run_import: (session, args) => {
+    const db = session.db();
+    const options = obj<ImportOptions>(args, "options");
+    const report = db.with((conn) => importer.run(conn, options));
+    // Rows that arrived already expired should say so before the screen redraws.
+    if (!(options.dryRun ?? false)) db.withTx(policies.syncStatuses);
+    return report;
+  },
+  write_import_template: (_session, args) => {
+    const target = str(args, "path");
+    importer.writeTemplate(target);
+    return target;
+  },
+
   // ---------------------------------------------------------------- settings and backups
   get_settings: (session) => session.db().with(settings.all),
   save_settings: (session, args) =>
@@ -154,18 +178,14 @@ export const COMMANDS: Record<string, Handler> = {
   // ---------------------------------------------------------------- not built yet
   //
   // Each of these has a screen in the interface that will now say plainly that
-  // this edition cannot do it. Reminders and import are the two that matter most,
-  // and both are a sweep of business rules rather than a bridge problem.
+  // this edition cannot do it. Reminders are the ones that matter most, and they
+  // are a sweep of business rules rather than a bridge problem.
   list_documents: unbuilt("Attaching documents"),
   attach_document: unbuilt("Attaching documents"),
   document_content: unbuilt("Attaching documents"),
   save_document_copy: unbuilt("Attaching documents"),
   delete_document: unbuilt("Attaching documents"),
 
-  import_fields: unbuilt("Importing a spreadsheet"),
-  preview_import: unbuilt("Importing a spreadsheet"),
-  run_import: unbuilt("Importing a spreadsheet"),
-  write_import_template: unbuilt("Importing a spreadsheet"),
   export_policies: unbuilt("Exporting"),
   export_clients: unbuilt("Exporting"),
 
