@@ -475,6 +475,12 @@ database in a temporary directory, with no window:
 - export writes both formats and refuses a third
 - a backup reopens with the same key
 - Indian date and money formats parse
+- a page size is clamped to something a screen can draw, and a sort key that is
+  not on the allow-list falls back instead of reaching the SQL
+- a percent sign or underscore typed into a search box is looked for rather
+  than obeyed as a wildcard
+- a filter value the code does not know is dropped, and a filter left with
+  nothing is dropped whole
 - a rule fires on its day and not before, and once however often the sweep runs
 - a dry run writes nothing and sends nothing
 - one rule writes to one policy year once, and cancelling does not free the slot

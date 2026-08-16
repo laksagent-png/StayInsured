@@ -11,6 +11,7 @@ use crate::models::{
     ClientFilter, ClientInput, DocumentInput, EmailTemplateInput, InsurerInput, MemberInput,
     NotificationFilter, PolicyFilter, PolicyInput, ProductInput, ReminderRuleInput, RenewalInput,
 };
+use crate::query;
 use crate::reminders::{self, NoAlerts, SweepOptions};
 use crate::repo::{
     clients, dashboard, documents, insurers, members, notifications, policies, products, rules,
@@ -1930,6 +1931,130 @@ fn deleting_a_client_takes_their_documents() {
                     row.get(0)
                 })?;
             assert_eq!((rows, blobs), (0, 0));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_page_size_stays_within_what_a_screen_can_draw() {
+    assert_eq!(query::paginate(None, None), (1, 50, 50, 0));
+    assert_eq!(query::paginate(Some(3), Some(20)), (3, 20, 20, 40));
+    assert_eq!(
+        query::paginate(Some(0), Some(0)),
+        (1, 1, 1, 0),
+        "a page of nothing would return nothing however far it was paged"
+    );
+    assert_eq!(
+        query::paginate(Some(1), Some(5_000)),
+        (1, 500, 500, 0),
+        "and a page big enough to load the whole book is capped"
+    );
+}
+
+#[test]
+fn sorting_can_only_name_a_column_the_code_chose() {
+    const ALLOWED: &[(&str, &str)] = &[("name", "c.full_name"), ("city", "c.city")];
+
+    assert_eq!(
+        query::order_by(Some("name"), false, ALLOWED, "c.id"),
+        " ORDER BY c.full_name ASC"
+    );
+    assert_eq!(
+        query::order_by(Some("city"), true, ALLOWED, "c.id"),
+        " ORDER BY c.city DESC"
+    );
+    assert_eq!(
+        query::order_by(None, false, ALLOWED, "c.id"),
+        " ORDER BY c.id ASC"
+    );
+
+    // The sort key arrives from the interface, so anything not on the list has
+    // to fall back rather than reach the SQL text.
+    assert_eq!(
+        query::order_by(
+            Some("c.full_name; DROP TABLE clients"),
+            false,
+            ALLOWED,
+            "c.id"
+        ),
+        " ORDER BY c.id ASC"
+    );
+}
+
+#[test]
+fn a_filter_drops_a_value_the_code_does_not_know() {
+    let mixed = vec![
+        "Sent".to_string(),
+        "teapot".to_string(),
+        " queued ".to_string(),
+    ];
+    let (clause, values) = query::in_clause("n.status", &mixed, notifications::STATUSES)
+        .expect("two of the three are real statuses");
+    assert_eq!(clause, "n.status IN (?, ?)");
+    assert_eq!(
+        values,
+        vec![
+            rusqlite::types::Value::Text("sent".into()),
+            rusqlite::types::Value::Text("queued".into())
+        ],
+        "case and space are tidied, and the invented one is dropped"
+    );
+
+    assert!(
+        query::in_clause("n.status", &["teapot".to_string()], notifications::STATUSES).is_none(),
+        "with nothing left the filter is dropped rather than matching nothing"
+    );
+}
+
+#[test]
+fn a_search_for_a_percent_sign_looks_for_a_percent_sign() {
+    assert_eq!(query::like_pattern("50%"), "%50\\%%");
+    assert_eq!(query::like_pattern("a_b"), "%a\\_b%");
+    assert_eq!(query::like_pattern("back\\slash"), "%back\\\\slash%");
+    assert_eq!(query::like_pattern("  Rohit  "), "%Rohit%");
+
+    // And the escape reaches the query, so a wildcard typed into a search box
+    // is looked for rather than obeyed.
+    let temp = TempDb::new("search-escape");
+    let (client, policy) = book_expiring_in(&temp, 30, Some("ananya@example.com"));
+    temp.db
+        .with(|conn| {
+            let ladder = rules::active(conn)?;
+            let today = util::today_iso();
+            for (index, subject) in ["Renewal 50% complete", "Renewal 5000 complete"]
+                .into_iter()
+                .enumerate()
+            {
+                notifications::queue(
+                    conn,
+                    &notifications::NewNotification {
+                        rule_id: ladder[index].id,
+                        policy_id: policy,
+                        client_id: client,
+                        policy_period: "2027-03-31".into(),
+                        audience: "client".into(),
+                        channel: "email".into(),
+                        to_address: Some("ananya@example.com".into()),
+                        subject: subject.into(),
+                        body: "<p>Hello</p>".into(),
+                        scheduled_for: today.clone(),
+                    },
+                )?;
+            }
+
+            let found = notifications::list(
+                conn,
+                &NotificationFilter {
+                    search: Some("50%".into()),
+                    ..Default::default()
+                },
+            )?;
+            assert_eq!(found.total, 1, "the percent sign is text, not a wildcard");
+            assert_eq!(
+                found.rows[0].subject.as_deref(),
+                Some("Renewal 50% complete")
+            );
             Ok(())
         })
         .unwrap();
