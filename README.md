@@ -12,9 +12,9 @@ and reminders go out through your own mailbox rather than through us.
 Every operation, one page each and with pictures, is in the
 [agent's guide](docs/guide/index.md). This page is the short version.
 
-Runs on macOS and Windows. Building from source, or working on the app itself, is
-covered in [DEVELOPER.md](DEVELOPER.md), with the architecture and command
-reference in [docs/](docs/README.md).
+Runs on macOS and on Windows 10 version 1803 or newer. Building from source, or
+working on the app itself, is covered in [DEVELOPER.md](DEVELOPER.md), with the
+architecture and command reference in [docs/](docs/README.md).
 
 ---
 
@@ -35,6 +35,11 @@ gives you an Open button there and then. Apple removed that shortcut in macOS 15
 
 **On Windows** — run the `.exe` installer. Windows will say the publisher is
 unknown. Choose **More info**, then **Run anyway**.
+
+Windows 10 version 1803 is the oldest version the app runs on. On Windows 7, 8
+and 8.1 the installer stops and says so rather than installing something that
+cannot open: the app draws its screens with the Microsoft Edge WebView2 runtime,
+and Microsoft ended WebView2 support for those versions in January 2024.
 
 Both warnings appear because the app is not registered with Apple and Microsoft,
 which costs money each year. They are not a sign that anything is wrong.

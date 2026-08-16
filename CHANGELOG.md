@@ -5,6 +5,13 @@ settings survive every version below.
 
 ## Upcoming
 
+### Changed
+
+- **The Windows installer tells you when a computer is too old.** Windows 10
+  version 1803 is the oldest version the app runs on. On Windows 7, 8 and 8.1 the
+  installer now explains that and stops without touching the machine, instead of
+  installing an app that closes the moment you open it.
+
 ## 0.3.1 — 16 August 2026
 
 ### Fixed
