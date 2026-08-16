@@ -35,6 +35,11 @@ install — [updates](#get-new-versions) replace the app without either of them.
 
 The app needs no other software. It carries its own database.
 
+On Windows it needs version 10 build 1803 or newer. The installer checks the
+version before it copies anything, and on Windows 7, 8 and 8.1 it explains why it
+cannot go on and leaves the machine untouched — those versions cannot run the
+Microsoft Edge WebView2 runtime the app draws its screens with.
+
 ## Create your book
 
 The first launch asks for two things: your agency name, and a password.

@@ -90,6 +90,11 @@ other side of real encryption.
 **Will updating lose my data?** No. A newer version replaces the app, not your
 book.
 
+**Will it run on Windows 7?** No, and the installer says so instead of leaving
+you with an app that will not open. Windows 10 version 1803 is the oldest it
+runs on, because the component every screen is drawn with stopped supporting
+Windows 7, 8 and 8.1 in January 2024.
+
 **Why is a policy I renewed still showing?** Check the **Overdue** tab: a policy
 is only marked renewed when the next year is recorded against it. Recording next
 year through **Renew** rather than as a new policy is what links the two.

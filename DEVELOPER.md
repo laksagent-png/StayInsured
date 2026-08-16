@@ -3,8 +3,8 @@
 A desktop client-and-policy manager for an insurance agency. Everything lives on
 your machine in an encrypted database; nothing is sent anywhere.
 
-Runs on macOS, Windows and Linux from the same codebase (Tauri 2: a Rust core
-with a React user interface).
+Runs on macOS, Windows 10 version 1803 or newer, and Linux from the same codebase
+(Tauri 2: a Rust core with a React user interface).
 
 **This file is for developers.** If you want to install and use the app, read the
 [README](README.md) and download an installer from the
@@ -168,6 +168,20 @@ changelog has no section for that version, so the installers can never ship
 under the wrong number or with nothing to say for themselves. The release body
 is the changelog section plus the standing install instructions, and it carries
 a universal macOS `.dmg` with a Windows `.exe` and `.msi`.
+
+`src-tauri/installer-hooks.nsh` stops the `.exe` on anything older than Windows
+build 17134, which is Windows 10 version 1803. Three layers rule the older
+versions out independently: WebView2 has not supported Windows 7, 8 or 8.1 since
+January 2024, the Rust standard library dropped them in 1.78, and Tailwind 4
+needs Chromium 111 for the `oklch()` and `color-mix()` colours it compiles to.
+Since none of that can be worked around from the installer, it explains the
+problem instead of leaving behind a shortcut that dies on launch. It refuses in
+`.onGUIInit` before the wizard draws a page, and again in `NSIS_HOOK_PREINSTALL`
+for a silent install, where `.onGUIInit` never runs. An unreadable build number
+lets the machine through, because a wrong guess turns away a machine the app
+would have run on. The `.msi` carries no equivalent check — WiX would need
+Tauri's whole template overridden for it — and every release points Windows
+users at the `.exe`.
 
 Every user-visible change adds a line under **Upcoming** as it is made, not at
 release time — the person who made the change is the one who knows what it means

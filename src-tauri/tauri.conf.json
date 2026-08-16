@@ -38,6 +38,11 @@
     ],
     "copyright": "StayInsured",
     "category": "Business",
+    "windows": {
+      "nsis": {
+        "installerHooks": "installer-hooks.nsh"
+      }
+    },
     "shortDescription": "Insurance client and policy management",
     "longDescription": "Track clients, policies and renewals, send expiry reminders, and report on your book of business. All data stays on this machine in an encrypted database."
   },

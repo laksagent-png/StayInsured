@@ -565,6 +565,12 @@ when the tag and `tauri.conf.json` disagree, so installers cannot ship under the
 wrong version. Releases are unsigned, and both installers therefore warn on
 first launch.
 
+The `.exe` refuses to install below Windows build 17134 — Windows 10 version
+1803 — through `src-tauri/installer-hooks.nsh`. WebView2, the Rust standard
+library and Tailwind 4 each rule out Windows 7, 8 and 8.1 on their own, so the
+installer says so and leaves the machine untouched rather than installing an app
+whose window can never open.
+
 **An installed copy updates itself.** The same release carries an
 `.app.tar.gz` for macOS and a `.nsis.zip` for Windows, each with a `.sig`, plus
 a `latest.json` describing the newest version. `tauri-action` writes all of them
