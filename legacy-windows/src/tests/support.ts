@@ -13,8 +13,17 @@ import path from "node:path";
 
 import { Database, type Conn } from "../core/db";
 import { appPaths, type CoreEnv, type SecretName, type SecretStore } from "../core/env";
+import * as clients from "../core/repo/clients";
+import * as insurers from "../core/repo/insurers";
+import * as policies from "../core/repo/policies";
+import * as settings from "../core/repo/settings";
 import { Session } from "../core/session";
-import type { ClientInput, PolicyInput } from "../core/types";
+import type {
+  ClientInput,
+  EmailTemplateInput,
+  PolicyInput,
+  ReminderRuleInput,
+} from "../core/types";
 import { addDays, todayIso } from "../core/util";
 
 /**
@@ -119,6 +128,29 @@ export function samplePolicy(
   };
 }
 
+export function sampleTemplate(name: string): EmailTemplateInput {
+  return {
+    name,
+    trigger: "expiry_reminder",
+    subject: "Your policy expires on {{expiry_date}}",
+    bodyHtml: "<p>Dear {{client_name}},</p>",
+    isActive: true,
+  };
+}
+
+/** A rule the seeded ladder does not already have, so it can be placed and moved. */
+export function sampleRule(name: string, templateId: number): ReminderRuleInput {
+  return {
+    name,
+    offsetDays: 45,
+    category: null,
+    audience: "client",
+    channel: "email",
+    templateId,
+    isActive: true,
+  };
+}
+
 /** `util::iso(util::today() + Duration::days(n))` in the Rust tests. */
 export function daysFromToday(days: number): string {
   const iso = addDays(todayIso(), days);
@@ -130,4 +162,29 @@ export function daysFromToday(days: number): string {
 export function scalar<T>(conn: Conn, sql: string, ...params: unknown[]): T {
   const row = conn.prepare(sql).get(...(params as never[])) as Record<string, T>;
   return Object.values(row)[0] as T;
+}
+
+/**
+ * A book with one client whose only policy expires in exactly `days`, and the
+ * agency named. `book_expiring_in` in the Rust tests, which every reminder case
+ * starts from.
+ */
+export function bookExpiringIn(
+  db: Database,
+  days: number,
+  email: string | null,
+): { clientId: number; policyId: number } {
+  return db.withTx((conn) => {
+    const input = sampleClient("Ananya Sharma");
+    input.email = email;
+    const clientId = clients.create(conn, input);
+    const insurerId = insurers.findOrCreate(conn, "Star Health and Allied Insurance");
+    const policyId = policies.create(
+      conn,
+      samplePolicy(clientId, insurerId, "SH/2026/884213", daysFromToday(days)),
+    );
+    settings.put(conn, "provider_name", "Sunrise Insurance Services");
+    settings.put(conn, "digest_enabled", "false");
+    return { clientId, policyId };
+  });
 }

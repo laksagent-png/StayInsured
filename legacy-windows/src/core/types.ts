@@ -348,3 +348,98 @@ export interface DocumentInput {
   title?: string | null;
   path: string;
 }
+
+export interface EmailTemplate {
+  id: number;
+  name: string;
+  trigger: string;
+  subject: string;
+  bodyHtml: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** How many rules send this template; one in use cannot be deleted. */
+  usedByRules: number;
+}
+
+export interface EmailTemplateInput {
+  name: string;
+  trigger: string;
+  subject: string;
+  bodyHtml: string;
+  isActive?: boolean | null;
+}
+
+export interface Placeholder {
+  name: string;
+  description: string;
+}
+
+/** A rendered template, as it would arrive. */
+export interface TemplatePreview {
+  subject: string;
+  html: string;
+  text: string;
+  /** Names in the template that no value will ever fill — almost always a typo. */
+  unknownPlaceholders: string[];
+  /** The policy the sample values came from, or null when the book is empty. */
+  samplePolicy: string | null;
+}
+
+export interface ReminderRule {
+  id: number;
+  name: string;
+  /** Days before expiry; negative means after it. */
+  offsetDays: number;
+  category: string | null;
+  audience: string;
+  channel: string;
+  templateId: number | null;
+  templateName: string | null;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface ReminderRuleInput {
+  name: string;
+  offsetDays: number;
+  category?: string | null;
+  audience: string;
+  channel: string;
+  templateId?: number | null;
+  isActive?: boolean | null;
+  sortOrder?: number | null;
+}
+
+/** One row of the outbox. */
+export interface Notification {
+  id: number;
+  ruleId: number | null;
+  ruleName: string | null;
+  policyId: number | null;
+  policyNumber: string | null;
+  clientId: number | null;
+  clientName: string | null;
+  policyPeriod: string;
+  audience: string;
+  channel: string;
+  toAddress: string | null;
+  subject: string | null;
+  status: string;
+  attempts: number;
+  lastError: string | null;
+  scheduledFor: string;
+  sentAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationFilter {
+  statuses?: string[] | null;
+  clientId?: number | null;
+  policyId?: number | null;
+  search?: string | null;
+  sort?: string | null;
+  descending?: boolean | null;
+  page?: number | null;
+  pageSize?: number | null;
+}
