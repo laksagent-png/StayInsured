@@ -619,19 +619,26 @@ library and Tailwind 4 each rule out Windows 7, 8 and 8.1 on their own, so the
 installer says so and leaves the machine untouched rather than installing an app
 whose window can never open.
 
-Reaching those machines is not built, but it is no longer unknown.
-`legacy-windows/` holds an Electron 22 probe, and run on a Windows 7 SP1 machine
-it passes: that runtime starts, a native SQLite module loads, and the schema in
-`src-tauri/src/db/schema` applies to a plain, unencrypted file with a row written
-and read back. It builds and releases from its own workflow on `legacy-v*` tags,
-separate from the app's, and shares no code with it.
+Reaching those machines is `legacy-windows/`, a second edition on Electron 22 with
+this core reimplemented in TypeScript. A probe cleared the runtime first — on a
+Windows 7 SP1 machine Electron 22 starts, a native SQLite module loads, and the
+schema in `src-tauri/src/db/schema` applies to a plain file with a row written and
+read back — and that probe still runs on every build of it. It releases from its own
+workflow on `legacy-v*` tags, separate from the app's.
 
-What that result does not license is a decision. It clears the runtime and the
-data layer, and leaves the interface untested: this app's screens are Tailwind 4
-on React, and the Chromium inside Electron 22 is version 108. It also leaves
-untouched the cost that decides the matter, which is a second implementation of
-every rule in `src-tauri/src/` — renewal chains, the reminder outbox, the lapse
-sweep — kept honest against the first. `DEVELOPER.md` carries both.
+Two decisions there reach back into this code. The edition does not encrypt: it
+opens a plain SQLite file, so `SessionState` carries an `encrypted` flag that this
+core answers `true` and that one answers `false`, and the lock screen and the
+security section of Settings read it rather than promising encryption unconditionally.
+And its interface is this app's `src/`, built with the `@tauri-apps/*` imports
+aliased onto shims over Electron IPC rather than copied — so a screen changed here
+changes there, and a screen that quietly hard-codes a claim about encryption breaks
+an edition its author was not thinking about.
+
+The cost that decides that edition's future is drift: every rule here now exists
+twice. Its `src/tests/` ports the cases in `src-tauri/src/tests.rs` one for one and
+names each original, which is the only mechanism holding the two together.
+`DEVELOPER.md` carries what is built there and what is not.
 
 **An installed copy updates itself.** The same release carries an
 `.app.tar.gz` for macOS and a `.nsis.zip` for Windows, each with a `.sig`, plus

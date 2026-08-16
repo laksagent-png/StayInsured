@@ -14,6 +14,9 @@ import path from "node:path";
 
 import type BetterSqlite3 from "better-sqlite3";
 
+import { LATEST_VERSION, applyMigrations } from "./core/schema";
+import { schemaDir } from "./env";
+
 export interface Check {
   name: string;
   ok: boolean;
@@ -24,22 +27,6 @@ export interface ProbeReport {
   environment: Record<string, string>;
   checks: Check[];
   reportPath: string;
-}
-
-/** The migrations the Rust core applies, in the order `migrations.rs` applies them. */
-const MIGRATIONS = ["001_init.sql", "002_seed.sql", "003_documents.sql"];
-const LATEST_VERSION = MIGRATIONS.length;
-
-/**
- * The schema is read from the Rust core rather than copied into this project,
- * so the probe cannot pass against a schema the app has since moved on from.
- * A packaged build carries the files as an extra resource; a dev run reads them
- * where they live.
- */
-function schemaDir(): string {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, "schema")
-    : path.join(__dirname, "..", "..", "src-tauri", "src", "db", "schema");
 }
 
 function describe(error: unknown): string {
@@ -121,7 +108,7 @@ export function runProbe(): ProbeReport {
     checks.push({ name: "foreign keys enforced", ok: false, detail: describe(error) });
   }
 
-  checks.push(applyMigrations(db));
+  checks.push(migrationCheck(db));
   checks.push(countObjects(db));
   checks.push(writeAndReadBack(db));
 
@@ -129,29 +116,14 @@ export function runProbe(): ProbeReport {
   return finish({ environment, checks, reportPath });
 }
 
-/** Mirrors `db/migrations.rs`: apply each file in order, then stamp the version. */
-function applyMigrations(db: BetterSqlite3.Database): Check {
+/**
+ * The same `applyMigrations` the edition itself uses, so the gate tests the code
+ * that runs rather than a description of it.
+ */
+function migrationCheck(db: BetterSqlite3.Database): Check {
   const directory = schemaDir();
   try {
-    const [{ user_version: current }] = db.pragma("user_version") as { user_version: number }[];
-
-    for (const [index, file] of MIGRATIONS.entries()) {
-      const version = index + 1;
-      if (version <= current) continue;
-
-      const sql = fs.readFileSync(path.join(directory, file), "utf8");
-      db.exec("BEGIN");
-      try {
-        db.exec(sql);
-        db.exec(`PRAGMA user_version = ${version}`);
-        db.exec("COMMIT");
-      } catch (error) {
-        db.exec("ROLLBACK");
-        throw new Error(`${file}: ${describe(error)}`);
-      }
-    }
-
-    const [{ user_version: applied }] = db.pragma("user_version") as { user_version: number }[];
+    const applied = applyMigrations(db, directory);
     return {
       name: "the app's real schema applies",
       ok: applied === LATEST_VERSION,

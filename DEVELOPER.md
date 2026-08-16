@@ -263,46 +263,69 @@ Without the secrets the build still succeeds and still produces installers; it
 simply publishes no update anyone can take. A release worth announcing is one
 where `latest.json` is among the assets.
 
-## The Windows 7 probe
+## The Windows 7 edition
 
-`legacy-windows/` is a feasibility probe, not a second edition of the app. The
-app needs Windows 10 version 1803 or newer, and reaching older machines would
-mean a parallel edition built on Electron 22 — the last release supporting them —
-with the Rust core reimplemented in TypeScript. Whether that is even possible
-rested on one question, and the probe has answered it: run on a Windows 7 SP1
-machine, every check passes.
+`legacy-windows/` is a second edition of the app for machines the app itself
+refuses. It needs Windows 10 version 1803 or newer; reaching older machines means
+Electron 22 — the last release supporting them — with the Rust core reimplemented
+in TypeScript. Whether that was even possible rested on one question, and a probe
+answered it: run on a Windows 7 SP1 machine, every check passes. The probe is still
+there and CI still runs it, because evidence that stops being re-run stops being
+evidence.
 
-That is a green light for the runtime and the storage, and for nothing else. Two
-questions stand between it and a decision. The screens are Tailwind 4 on React
-and the Chromium in Electron 22 is version 108, which has none of `oklch()`,
-`color-mix()` or `@property`; the probe reports what that Chromium understands,
-and the report is where to look before promising anything about how the app
-looks. Larger than that is the part no probe can settle: a parallel edition means
-every rule in `src-tauri/src/` written a second time — renewal chains, the
-reminder outbox, the lapse sweep, the retry and cap rules — and then kept
-agreeing with the first for as long as both exist.
+Two things about it are worth knowing before reading a line of it.
+
+**It does not encrypt.** The app derives a SQLCipher key from the password; this
+edition opens a plain SQLite file. `session_state` reports `encrypted: false`, and
+the lock screen and Settings — the same components, shared — print a warning where
+they otherwise promise an encrypted database. That flag is the whole mechanism by
+which the shared interface stays honest about which core it is talking to, so a
+screen that claims encryption must read it rather than assume it.
+
+**It is a port in progress.** Built: the session and password wall, settings,
+clients, members, insurers, products, policies with the renewal chain and the
+status sweep, and the dashboard. Not built: the importer, exporters, documents, the
+reminder outbox and everything that sends mail. Those commands exist and refuse
+with a message naming themselves, because a screen that half works costs an
+operator an hour before it admits anything.
 
 ```bash
 cd legacy-windows
 npm install
-npm run probe        # the checks, printed
-npm start            # the same, in a window
+npm start            # the app
+npm test             # the ported rules
+npm run probe        # the Windows 7 checks, printed
 ```
 
-It checks that Electron 22 starts, that the `better-sqlite3` native module loads,
-and that all three migrations apply to a plain, unencrypted SQLite file with a
-client row written and read back. The schema comes from
-`src-tauri/src/db/schema` rather than a copy, so the probe cannot pass against a
-schema the core has moved on from. `legacy-windows/README.md` covers what it
-does and does not prove.
+The cost that decides this edition's future is not the porting but the drift: every
+rule in `src-tauri/src/` now exists twice and has to keep agreeing with itself.
+`npm test` is the answer to that, and the only one available. Each case is ported
+from the Rust test of the same name and says so, so the two suites can be read side
+by side; when a rule changes in `src-tauri/src/tests.rs`, the case it changed is
+where this edition finds out it has fallen behind. It runs under
+`ELECTRON_RUN_AS_NODE` rather than `vitest`, because `better-sqlite3` here is built
+against Electron's ABI and the machine's own Node cannot load it at all.
+
+The interface is not copied. `vite.config.ts` builds the app's own `src/` with the
+`@tauri-apps/*` imports aliased onto shims over Electron IPC, and compiles the CSS
+down for Chromium 108, which has none of `oklch()`, `color-mix()` or `@property`.
+Two copies of the screens would drift the way two copies of the rules threaten to,
+except that nothing would be testing it.
+
+The probe checks that Electron 22 starts, that the `better-sqlite3` native module
+loads, and that the migrations apply to a plain, unencrypted SQLite file with a
+client row written and read back. The schema comes from `src-tauri/src/db/schema`
+rather than a copy, so neither the probe nor the edition can pass against a schema
+the core has moved on from. `legacy-windows/README.md` covers the rest.
 
 Its release is separate from the app's. Pushing a `legacy-v*` tag runs **Build
 the Windows 7 probe** and publishes as a prerelease; the `v*` tags the app
 releases under never match it, and that installer deliberately carries no Windows
 version guard. GitHub's runners start at Windows Server 2019, so CI shows only
-that the installer builds and the schema applies. The Windows 7 answer came from
-carrying that installer to a Windows 7 SP1 machine, which is the only place it
-could come from, and where any further claim about Windows 7 has to be earned.
+that the installer builds, the schema applies and the ported rules still agree.
+The Windows 7 answer came from carrying that installer to a Windows 7 SP1 machine,
+which is the only place it could come from, and where any further claim about
+Windows 7 has to be earned.
 
 The same release carries two Mac disk images, from `npm run package:mac`. They
 answer nothing about Windows 7; they exist so the *packaged* app can be run on a
@@ -313,8 +336,9 @@ in either shows up on a Mac in seconds rather than on a virtual machine. Nothing
 signs them, so macOS quarantines a downloaded copy; `legacy-windows/README.md`
 has the one command that clears it.
 
-Nothing there is part of the app. `npm run check` at the root does not see it, and
-no user-facing behaviour depends on it.
+Nothing there ships with the app. `npm run check` at the root does not see it, and
+no behaviour of the app depends on it — with one exception, which is the
+`encrypted` flag on `SessionState` and the two screens that read it.
 
 ## Where the app keeps its data
 
@@ -354,7 +378,7 @@ src-tauri/src/
   scheduler.rs          the once-a-minute tick behind the daily sweep
   vault.rs              password hashing, key derivation, keychain
   tests.rs              data-layer tests
-legacy-windows/         the Windows 7 probe, not part of the app
+legacy-windows/         the Windows 7 edition: the core in TypeScript, unencrypted
 ```
 
 The interface never writes SQL. It calls commands; commands call repositories;

@@ -1,11 +1,14 @@
 name: Build the Windows 7 probe
 
-# Separate from **Build installers** on purpose. This builds the Electron
-# feasibility probe in `legacy-windows/`, which is not the product: it exists to
-# answer whether a parallel Electron edition can run on Windows 7 at all.
+# Separate from **Build installers** on purpose. This builds the Electron edition
+# in `legacy-windows/`, for the Windows versions the app itself refuses. It is a
+# different application with a different core and no encryption, and its own tag
+# prefix keeps it from ever being mistaken for an app release: `legacy-v0.0.3` does
+# not match the `v*` trigger the real release uses.
 #
-# It has its own tag prefix so it can never be mistaken for an app release.
-# `legacy-v0.0.2` does not match the `v*` trigger the real release uses.
+# The name still says probe because the artifacts do. Renaming the product moves the
+# folder an installed copy keeps its data in, which is not a thing to do in the same
+# release that first gives it data worth keeping.
 on:
   push:
     tags:
@@ -65,11 +68,28 @@ jobs:
       - name: Install
         run: npm ci --no-audit --no-fund
 
+      # The interface is the app's own `src/`, built by the root project's Vite with
+      # the Tauri imports aliased onto shims. `legacy-windows` carries no copy of
+      # React, Tailwind or Vite, so without this the build has nothing to build with.
+      #
+      # Run from the root, which also keeps `legacy-windows/.npmrc` out of it: these
+      # dependencies are for a build tool and must not be pinned to Electron's ABI.
+      - name: Install the app's dependencies
+        working-directory: .
+        run: npm ci --no-audit --no-fund
+
       # Neither runner can answer the Windows 7 question: one is Windows Server,
       # the other is a Mac. Both can prove the native module loads and the app's
       # real schema applies. The step fails the job on a bad check.
       - name: Run the probe
         run: npm run probe
+
+      # The rules ported from `src-tauri/src/` held against the cases the Rust
+      # suite holds them to. This runs on both platforms because the runner's OS
+      # decides how SQLite sees dates and how the native module was built, and the
+      # lapse sweep is a date comparison.
+      - name: Run the core tests
+        run: npm test
 
       - name: Build
         run: npm run ${{ matrix.script }}
@@ -105,18 +125,30 @@ jobs:
           fail_on_unmatched_files: true
           files: builds/*/*
           body: |
-            A feasibility probe, not a release of StayInsured.
+            The Windows 7 edition of StayInsured, for machines the app itself
+            refuses. It is a separate build on Electron 22 with the Rust core
+            rewritten in TypeScript — not a version of StayInsured, and not
+            supported alongside it. Do not point both at the same folder.
 
-            Run the `.exe` on a Windows 7 SP1 machine. It reports whether
-            Electron 22 starts, whether the `better-sqlite3` native module
-            loads, and whether the app's real schema applies to a plain SQLite
-            file. It also reports which modern CSS this Chromium understands.
+            **It does not encrypt your book.** StayInsured stores your clients in
+            an encrypted database that the password unlocks. This edition cannot,
+            and stores them in a plain file instead: the password still locks the
+            app, but anyone who can copy that file — or a backup of it, or the
+            disk — can read every client in it. The setup and security screens say
+            so. Keep the machine itself secure.
 
-            The window shows the result, and a copy is saved as
-            `probe-report.json` in the app's data folder.
+            **It is unfinished.** Clients, policies, renewals and the dashboard
+            work. Importing a spreadsheet, exporting, documents and the whole
+            reminder side are not built, and say so when you reach them rather
+            than half working.
 
-            The `.dmg` files answer none of that. They are here so the packaged
-            app can be run on a Mac, which catches packaging mistakes without a
+            Run the `.exe` on Windows 7 SP1 or newer. It installs both the 64-bit
+            and 32-bit builds and picks the one that fits. Launch it with
+            `--probe` to see the checks that decided this edition was possible at
+            all; the result is also saved as `probe-report.json` beside the data.
+
+            The `.dmg` files are not for using the app. They exist so the packaged
+            build can be run on a Mac, which catches packaging mistakes without a
             virtual machine. Nothing signs them, so macOS needs one argument
             before it will open one:
 

@@ -1,0 +1,445 @@
+/**
+ * The renewal chain and the status sweep, ported from the Rust tests of the same
+ * names: `renewal_builds_a_chain_and_preserves_history`,
+ * `statuses_follow_the_calendar`, `a_cancelled_policy_is_left_alone_by_the_sweep`,
+ * `renewing_a_cancelled_year_leaves_it_cancelled`,
+ * `an_expiry_moved_forward_brings_a_policy_back`,
+ * `editing_a_policy_leaves_its_place_in_the_chain_alone`,
+ * `a_chain_keeps_exactly_one_open_year`, `deleting_a_year_leaves_the_earlier_ones_standing`,
+ * `duplicate_policy_number_for_same_insurer_is_rejected`,
+ * `two_insurers_may_each_use_the_same_policy_number`,
+ * `only_the_statuses_the_app_knows_are_accepted` and
+ * `members_attach_only_to_their_own_client`.
+ *
+ * This is the file worth having. Everything else in the port either works or
+ * throws; these rules can be subtly wrong and stay quiet for a year, until a
+ * renewal that should have been on the desk was not, and the client's cover
+ * lapsed. The Rust suite is the specification and these are the same cases.
+ */
+
+import * as clients from "../core/repo/clients";
+import * as dashboard from "../core/repo/dashboard";
+import * as insurers from "../core/repo/insurers";
+import * as members from "../core/repo/members";
+import * as policies from "../core/repo/policies";
+import { expect, suite, test, throwsKind } from "./harness";
+import { daysFromToday, sampleClient, samplePolicy, tempDb } from "./support";
+
+suite("renewal", () => {
+  test("builds a chain and preserves history", () => {
+    const db = tempDb("renew");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Rohit Sharma"));
+      const insurer = insurers.findOrCreate(conn, "Star Health");
+      const first = policies.create(conn, samplePolicy(client, insurer, "HS/2026/001", "2027-03-31"));
+
+      const second = policies.renew(conn, {
+        policyId: first,
+        policyNumber: "HS/2027/002",
+        sumInsured: 1_500_000,
+        premiumAmount: 27_000,
+        notes: "Cover increased",
+      });
+
+      const old = policies.get(conn, first);
+      const created = policies.get(conn, second);
+
+      expect.equal(old.status, "renewed");
+      expect.equal(old.premiumAmount, 24_500, "last year's premium must survive");
+      expect.ok(old.isRenewed);
+
+      expect.equal(created.policyYear, 2);
+      expect.equal(created.previousPolicyId, first);
+      expect.equal(created.chainId, old.chainId);
+      expect.equal(created.startDate, "2027-04-01", "starts the day after expiry");
+      expect.equal(created.expiryDate, "2028-03-31", "runs a year minus a day");
+      expect.equal(created.sumInsured, 1_500_000);
+      // Carried forward because the renewal did not restate it.
+      expect.equal(created.commissionRate, 15);
+
+      const chain = policies.chain(conn, second);
+      expect.equal(chain.length, 2);
+      expect.equal(chain[0]!.policyYear, 1, "oldest year first");
+
+      const latest = policies.list(conn, { latestOnly: true });
+      expect.equal(latest.total, 1, "the latest year is the one without a successor");
+      expect.equal(latest.rows[0]!.id, second);
+    });
+    db.close();
+  });
+
+  test("keeps exactly one open year, whatever is asked of it", async () => {
+    const db = tempDb("one-open-year");
+    await db.with(async (conn) => {
+      const client = clients.create(conn, sampleClient("Nikhil Joshi"));
+      const insurer = insurers.findOrCreate(conn, "Care Health");
+      const first = policies.create(conn, samplePolicy(client, insurer, "O-1", "2027-03-31"));
+      const second = policies.renew(conn, { policyId: first, policyNumber: "O-2" });
+
+      await throwsKind(
+        "conflict",
+        () => policies.renew(conn, { policyId: first, policyNumber: "O-3" }),
+        "a year that has been renewed cannot be renewed again into a forked chain",
+      );
+
+      const chain = policies.chain(conn, second);
+      expect.equal(chain.filter((policy) => !policy.isRenewed).length, 1);
+    });
+    db.close();
+  });
+
+  test("leaves a cancelled year saying so", async () => {
+    const db = tempDb("renew-cancelled");
+    await db.with(async (conn) => {
+      const client = clients.create(conn, sampleClient("Imran Qureshi"));
+      const insurer = insurers.findOrCreate(conn, "Star Health");
+      const first = policies.create(conn, samplePolicy(client, insurer, "C-1", "2027-03-31"));
+      policies.setStatus(conn, first, "cancelled");
+
+      // The client came back and took cover again for the following year.
+      const second = policies.renew(conn, { policyId: first, policyNumber: "C-2" });
+
+      const cancelled = policies.get(conn, first);
+      expect.equal(cancelled.status, "cancelled", "the book still says the cover was ended early");
+      expect.ok(
+        cancelled.isRenewed,
+        "and still knows a later year replaced it, which is what keeps it off the renewals desk",
+      );
+
+      // The sweep must not talk it round either way.
+      policies.syncStatuses(conn);
+      expect.equal(policies.get(conn, first).status, "cancelled");
+
+      const chain = policies.chain(conn, second);
+      expect.equal(chain.filter((policy) => !policy.isRenewed).length, 1, "one open year, as in any chain");
+    });
+    db.close();
+  });
+
+  test("carries the members forward to the new year", () => {
+    const db = tempDb("renew-members");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Sunita Nair"));
+      const insurer = insurers.findOrCreate(conn, "Niva Bupa");
+      const spouse = members.create(conn, { clientId: client, fullName: "Ravi Nair", relationship: "spouse" });
+      const policy = policies.create(conn, {
+        ...samplePolicy(client, insurer, "M-1", "2027-03-31"),
+        memberIds: [spouse],
+      });
+
+      const second = policies.renew(conn, { policyId: policy, policyNumber: "M-2" });
+      expect.deepEqual(policies.membersOf(conn, second), [spouse]);
+    });
+    db.close();
+  });
+
+  test("leaves an edited year in its place in the chain", () => {
+    const db = tempDb("edit");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Kabir Malhotra"));
+      const insurer = insurers.findOrCreate(conn, "ICICI Lombard");
+      const first = policies.create(conn, samplePolicy(client, insurer, "E-1", "2027-03-31"));
+      const second = policies.renew(conn, { policyId: first, policyNumber: "E-2" });
+
+      const before = policies.get(conn, second);
+      policies.update(conn, second, {
+        ...samplePolicy(client, insurer, "E-2-corrected", "2028-03-31"),
+        startDate: before.startDate,
+      });
+
+      const after = policies.get(conn, second);
+      expect.equal(after.policyNumber, "E-2-corrected");
+      expect.equal(after.policyYear, before.policyYear, "still the second year");
+      expect.equal(after.previousPolicyId, first, "and still behind the first");
+      expect.equal(after.chainId, before.chainId);
+      expect.equal(policies.chain(conn, second).length, 2);
+    });
+    db.close();
+  });
+
+  test("leaves the earlier years standing when a year is deleted", () => {
+    const db = tempDb("delete-year");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Leela Menon"));
+      const insurer = insurers.findOrCreate(conn, "Tata AIG");
+      const first = policies.create(conn, samplePolicy(client, insurer, "D-1", "2027-03-31"));
+      const second = policies.renew(conn, { policyId: first, policyNumber: "D-2" });
+
+      policies.remove(conn, second);
+
+      const remaining = policies.get(conn, first);
+      expect.ok(!remaining.isRenewed, "with the successor gone it is the open year again");
+      policies.syncStatuses(conn);
+      expect.equal(
+        policies.get(conn, first).status,
+        "active",
+        "and the sweep puts back the status the renewal took",
+      );
+    });
+    db.close();
+  });
+});
+
+suite("statuses follow the calendar", () => {
+  test("names each policy by where its expiry falls", () => {
+    const db = tempDb("status");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Vikram Rao"));
+      const insurer = insurers.findOrCreate(conn, "HDFC ERGO");
+
+      const lapsed = policies.create(conn, {
+        ...samplePolicy(client, insurer, "A-1", daysFromToday(-90)),
+        startDate: daysFromToday(-455),
+      });
+      const expired = policies.create(conn, {
+        ...samplePolicy(client, insurer, "A-2", daysFromToday(-5)),
+        startDate: daysFromToday(-370),
+      });
+      const active = policies.create(conn, samplePolicy(client, insurer, "A-3", daysFromToday(120)));
+
+      policies.syncStatuses(conn);
+
+      expect.equal(policies.get(conn, lapsed).status, "lapsed");
+      expect.equal(policies.get(conn, expired).status, "expired");
+      expect.equal(policies.get(conn, active).status, "active");
+
+      const summary = dashboard.load(conn);
+      expect.equal(summary.expiredUnrenewed, 2);
+      expect.equal(summary.activePolicies, 1);
+      expect.ok(
+        summary.buckets.some((bucket) => bucket.label === "Overdue" && bucket.count === 2),
+        "and the dashboard counts them where the desk looks",
+      );
+    });
+    db.close();
+  });
+
+  test("holds the grace period exactly where the Rust core holds it", () => {
+    const db = tempDb("grace");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Deepa Krishnan"));
+      const insurer = insurers.findOrCreate(conn, "SBI General");
+
+      // Thirty days is still within grace; thirty-one is not. Getting this off by
+      // one moves a client between two screens.
+      const inside = policies.create(conn, {
+        ...samplePolicy(client, insurer, "G-30", daysFromToday(-30)),
+        startDate: daysFromToday(-395),
+      });
+      const outside = policies.create(conn, {
+        ...samplePolicy(client, insurer, "G-31", daysFromToday(-31)),
+        startDate: daysFromToday(-396),
+      });
+
+      policies.syncStatuses(conn);
+
+      expect.equal(policies.get(conn, inside).status, "expired", "thirty days is still in grace");
+      expect.equal(policies.get(conn, outside).status, "lapsed", "thirty-one is not");
+    });
+    db.close();
+  });
+
+  test("expires nothing on its last day", () => {
+    const db = tempDb("last-day");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Arjun Pillai"));
+      const insurer = insurers.findOrCreate(conn, "Reliance General");
+      const today = policies.create(conn, {
+        ...samplePolicy(client, insurer, "T-0", daysFromToday(0)),
+        startDate: daysFromToday(-365),
+      });
+
+      policies.syncStatuses(conn);
+      expect.equal(
+        policies.get(conn, today).status,
+        "active",
+        "cover that runs until today is cover the client still has",
+      );
+    });
+    db.close();
+  });
+
+  test("leaves a cancelled policy alone in either direction", () => {
+    const db = tempDb("cancelled");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Farah Sheikh"));
+      const insurer = insurers.findOrCreate(conn, "HDFC ERGO");
+
+      const longGone = policies.create(conn, {
+        ...samplePolicy(client, insurer, "X-1", daysFromToday(-90)),
+        startDate: daysFromToday(-455),
+      });
+      const current = policies.create(conn, samplePolicy(client, insurer, "X-2", daysFromToday(120)));
+
+      policies.setStatus(conn, longGone, "cancelled");
+      policies.setStatus(conn, current, "cancelled");
+      policies.syncStatuses(conn);
+
+      // Cancelling is a decision somebody made; the calendar does not overrule it.
+      expect.equal(policies.get(conn, longGone).status, "cancelled");
+      expect.equal(policies.get(conn, current).status, "cancelled");
+      expect.equal(dashboard.load(conn).activePolicies, 0);
+    });
+    db.close();
+  });
+
+  test("brings a policy back when its expiry is corrected", () => {
+    const db = tempDb("revive");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Tara Menon"));
+      const insurer = insurers.findOrCreate(conn, "Bajaj Allianz");
+      const start = daysFromToday(-370);
+      const id = policies.create(conn, {
+        ...samplePolicy(client, insurer, "R-1", daysFromToday(-5)),
+        startDate: start,
+      });
+
+      policies.syncStatuses(conn);
+      expect.equal(policies.get(conn, id).status, "expired");
+
+      // The date was typed wrong and has been corrected.
+      policies.update(conn, id, {
+        ...samplePolicy(client, insurer, "R-1", daysFromToday(120)),
+        startDate: start,
+      });
+      expect.equal(
+        policies.get(conn, id).status,
+        "expired",
+        "an edit that says nothing about status does not decide one",
+      );
+
+      policies.syncStatuses(conn);
+      expect.equal(
+        policies.get(conn, id).status,
+        "active",
+        "the sweep reads the corrected date and puts it back",
+      );
+    });
+    db.close();
+  });
+
+  test("reports how much it changed, so a sweep that does nothing says so", () => {
+    const db = tempDb("sweep-count");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Yusuf Khan"));
+      const insurer = insurers.findOrCreate(conn, "Star Health");
+      policies.create(conn, {
+        ...samplePolicy(client, insurer, "S-1", daysFromToday(-5)),
+        startDate: daysFromToday(-370),
+      });
+
+      expect.equal(policies.syncStatuses(conn), 1);
+      expect.equal(policies.syncStatuses(conn), 0, "and running it twice changes nothing");
+    });
+    db.close();
+  });
+});
+
+suite("policy numbers and statuses", () => {
+  test("refuses the same number twice for one insurer", async () => {
+    const db = tempDb("dupe");
+    await db.with(async (conn) => {
+      const client = clients.create(conn, sampleClient("Meera Iyer"));
+      const insurer = insurers.findOrCreate(conn, "Care Health");
+      policies.create(conn, samplePolicy(client, insurer, "SAME-1", "2027-01-01"));
+
+      const error = await throwsKind("conflict", () =>
+        policies.create(conn, samplePolicy(client, insurer, "SAME-1", "2028-01-01")),
+      );
+      expect.ok(
+        error.message.includes("Use Renew"),
+        "and says what to do instead, because this is how a renewal gets typed by hand",
+      );
+    });
+    db.close();
+  });
+
+  test("lets two insurers each use the same number", () => {
+    const db = tempDb("number-scope");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Ishaan Bose"));
+      const star = insurers.findOrCreate(conn, "Star Health");
+      const care = insurers.findOrCreate(conn, "Care Health");
+      expect.notEqual(star, care);
+
+      policies.create(conn, samplePolicy(client, star, "POL-7", "2027-03-31"));
+      policies.create(conn, samplePolicy(client, care, "POL-7", "2027-03-31"));
+      expect.equal(policies.list(conn, { search: "POL-7" }).total, 2);
+    });
+    db.close();
+  });
+
+  test("accepts only the statuses the app knows", async () => {
+    const db = tempDb("statuses");
+    await db.with(async (conn) => {
+      const client = clients.create(conn, sampleClient("Priya Shah"));
+      const insurer = insurers.findOrCreate(conn, "Star Health");
+      const id = policies.create(conn, samplePolicy(client, insurer, "ST-1", "2027-03-31"));
+
+      for (const status of policies.STATUSES) {
+        policies.setStatus(conn, id, status);
+        expect.equal(policies.get(conn, id).status, status);
+      }
+
+      await throwsKind("validation", () => policies.setStatus(conn, id, "pending"));
+      await throwsKind("not_found", () => policies.setStatus(conn, 9_999, "active"));
+    });
+    db.close();
+  });
+
+  test("refuses a policy the calendar could not make sense of", async () => {
+    const db = tempDb("policy-validation");
+    await db.with(async (conn) => {
+      const client = clients.create(conn, sampleClient("Ganesh Iyer"));
+      const insurer = insurers.findOrCreate(conn, "Star Health");
+
+      await throwsKind("validation", () =>
+        policies.create(conn, { ...samplePolicy(client, insurer, "", "2027-03-31") }),
+      );
+      await throwsKind("validation", () =>
+        policies.create(conn, {
+          ...samplePolicy(client, insurer, "V-1", "2027-03-31"),
+          category: "spaceship",
+        }),
+      );
+      await throwsKind(
+        "validation",
+        () => policies.create(conn, samplePolicy(client, insurer, "V-2", "2026-03-31")),
+        "an expiry before the start is not a policy",
+      );
+      await throwsKind("validation", () =>
+        policies.create(conn, { ...samplePolicy(client, insurer, "V-3", "not a date") }),
+      );
+      await throwsKind(
+        "validation",
+        () => policies.create(conn, samplePolicy(9_999, insurer, "V-4", "2027-03-31")),
+        "and a policy needs a client that exists",
+      );
+    });
+    db.close();
+  });
+});
+
+suite("members", () => {
+  test("attach only to their own client", () => {
+    const db = tempDb("members");
+    db.with((conn) => {
+      const mine = clients.create(conn, sampleClient("Anil Kapoor"));
+      const other = clients.create(conn, sampleClient("Sneha Reddy"));
+      const insurer = insurers.findOrCreate(conn, "Niva Bupa");
+
+      const ours = members.create(conn, { clientId: mine, fullName: "Sonam Kapoor", relationship: "daughter" });
+      const stranger = members.create(conn, { clientId: other, fullName: "Rahul Reddy", relationship: "son" });
+
+      const policy = policies.create(conn, samplePolicy(mine, insurer, "MB-1", "2027-03-31"));
+      policies.setMembers(conn, policy, [ours, stranger]);
+
+      expect.deepEqual(
+        policies.membersOf(conn, policy),
+        [ours],
+        "the stranger is dropped rather than attached to someone else's policy",
+      );
+    });
+    db.close();
+  });
+});

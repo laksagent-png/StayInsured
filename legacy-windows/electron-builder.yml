@@ -6,6 +6,10 @@ directories:
 
 files:
   - out/**/*
+  # The tests read the schema out of the Rust tree, which is not there once this is
+  # installed, and nothing in the app calls them. They stay in the repository.
+  - "!out/tests/**"
+  - dist-ui/**/*
   - src/renderer/**/*
   - package.json
 

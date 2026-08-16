@@ -1,3 +1,5 @@
 node_modules/
 out/
 dist/
+# The interface, built from the app's own src/ by `npm run ui:build`.
+dist-ui/

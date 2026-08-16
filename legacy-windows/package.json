@@ -1,18 +1,22 @@
 {
   "name": "stayinsured-legacy",
   "private": true,
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Windows 7 feasibility probe for a parallel Electron edition of StayInsured",
   "main": "out/main.js",
   "scripts": {
     "build": "tsc -p .",
-    "start": "npm run build && electron .",
+    "ui:build": "node ../node_modules/vite/bin/vite.js build --config vite.config.ts",
+    "test": "npm run build && node scripts/run-tests.js",
+    "start": "npm run build && npm run ui:build && electron .",
     "probe": "npm run build && electron . --probe-only",
-    "package:win": "npm run build && electron-builder --win --x64 --ia32 --publish never",
-    "package:mac": "npm run build && electron-builder --mac --arm64 --x64 --publish never"
+    "probe:window": "npm run build && electron . --probe",
+    "package:win": "npm run build && npm run ui:build && electron-builder --win --x64 --ia32 --publish never",
+    "package:mac": "npm run build && npm run ui:build && electron-builder --mac --arm64 --x64 --publish never"
   },
   "dependencies": {
-    "better-sqlite3": "^8.7.0"
+    "better-sqlite3": "^8.7.0",
+    "hash-wasm": "^4.12.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
