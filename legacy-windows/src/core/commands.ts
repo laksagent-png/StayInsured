@@ -19,6 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { AppError } from "./errors";
+import * as exporter from "./exporter";
 import * as importer from "./importer";
 import * as clients from "./repo/clients";
 import * as dashboard from "./repo/dashboard";
@@ -29,7 +30,7 @@ import * as policies from "./repo/policies";
 import * as products from "./repo/products";
 import * as settings from "./repo/settings";
 import type { Session } from "./session";
-import type { ImportOptions } from "./types";
+import type { Client, ClientFilter, ImportOptions } from "./types";
 import { CATEGORIES, categoryLabel } from "./util";
 
 type Args = Record<string, unknown>;
@@ -185,6 +186,28 @@ export const COMMANDS: Record<string, Handler> = {
     return target;
   },
 
+  // ---------------------------------------------------------------- exports
+  export_policies: (session, args) =>
+    exporter.exportPolicies(
+      session.db().with((conn) => policies.listAll(conn, obj(args, "filter"))),
+      str(args, "path"),
+    ),
+  export_clients: (session, args) => {
+    // A page at a time, the way `export_clients` in `commands.rs` reads them: the
+    // clients list is paginated and clamped at 500 a page, so exporting a book
+    // larger than that is several queries rather than one refused one.
+    const filter: ClientFilter = { ...obj<ClientFilter>(args, "filter"), page: 1, pageSize: 500 };
+    const db = session.db();
+    const rows: Client[] = [];
+    for (;;) {
+      const page = db.with((conn) => clients.list(conn, filter));
+      rows.push(...page.rows);
+      if (rows.length >= page.total || page.rows.length === 0) break;
+      filter.page = (filter.page ?? 1) + 1;
+    }
+    return exporter.exportClients(rows, str(args, "path"));
+  },
+
   // ---------------------------------------------------------------- settings and backups
   get_settings: (session) => session.db().with(settings.all),
   save_settings: (session, args) =>
@@ -196,9 +219,6 @@ export const COMMANDS: Record<string, Handler> = {
   // Each of these has a screen in the interface that will now say plainly that
   // this edition cannot do it. Reminders are the ones that matter most, and they
   // are a sweep of business rules rather than a bridge problem.
-  export_policies: unbuilt("Exporting"),
-  export_clients: unbuilt("Exporting"),
-
   reminder_overview: unbuilt("Reminders"),
   plan_reminders: unbuilt("Reminders"),
   run_reminders: unbuilt("Reminders"),
