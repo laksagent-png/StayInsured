@@ -8,6 +8,17 @@ release that supports them.
 This directory is not that edition. It is the one experiment that decides whether
 the edition is worth building, and nothing more.
 
+## The answer
+
+It passes on Windows 7 SP1. Electron 22 starts, the native SQLite module loads,
+and the app's real schema applies to a plain file with a row written and read
+back.
+
+So the runtime and the storage are settled, and the interface is not: these
+screens are Tailwind 4 on React, and this Chromium is version 108. The probe's
+CSS table says what that Chromium understands, and is the thing to read before
+anyone promises the parallel edition will look like the app.
+
 ## What it answers
 
 | Question | Why it decides anything |
@@ -106,9 +117,11 @@ the app has already quit and means nothing.
 ## What it cannot tell you
 
 GitHub's runners start at Windows Server 2019, so CI proves only that the
-installer builds. The gate itself is answered by running the installer on a
-Windows 7 SP1 virtual machine and reading the window.
+installer builds. The gate was answered the only way it could be, by carrying the
+installer to a Windows 7 SP1 machine and reading the window, and any further claim
+about Windows 7 has to be earned the same way.
 
-It also says nothing about the ~7,400 lines of Rust a parallel edition would have
+Passing says nothing about the ~7,400 lines of Rust a parallel edition would have
 to reimplement, or about the drift between two implementations of renewal chains
-and the reminder outbox. Those are costs to accept, not questions to test.
+and the reminder outbox. Those are costs to accept, not questions to test — and
+they are now the larger part of the decision, since the technical unknown is gone.

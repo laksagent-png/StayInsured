@@ -269,7 +269,18 @@ where `latest.json` is among the assets.
 app needs Windows 10 version 1803 or newer, and reaching older machines would
 mean a parallel edition built on Electron 22 — the last release supporting them —
 with the Rust core reimplemented in TypeScript. Whether that is even possible
-rests on one question, and the probe answers it:
+rested on one question, and the probe has answered it: run on a Windows 7 SP1
+machine, every check passes.
+
+That is a green light for the runtime and the storage, and for nothing else. Two
+questions stand between it and a decision. The screens are Tailwind 4 on React
+and the Chromium in Electron 22 is version 108, which has none of `oklch()`,
+`color-mix()` or `@property`; the probe reports what that Chromium understands,
+and the report is where to look before promising anything about how the app
+looks. Larger than that is the part no probe can settle: a parallel edition means
+every rule in `src-tauri/src/` written a second time — renewal chains, the
+reminder outbox, the lapse sweep, the retry and cap rules — and then kept
+agreeing with the first for as long as both exist.
 
 ```bash
 cd legacy-windows
@@ -289,8 +300,9 @@ Its release is separate from the app's. Pushing a `legacy-v*` tag runs **Build
 the Windows 7 probe** and publishes as a prerelease; the `v*` tags the app
 releases under never match it, and that installer deliberately carries no Windows
 version guard. GitHub's runners start at Windows Server 2019, so CI shows only
-that the installer builds and the schema applies — the Windows 7 answer comes from
-running it on a Windows 7 SP1 virtual machine.
+that the installer builds and the schema applies. The Windows 7 answer came from
+carrying that installer to a Windows 7 SP1 machine, which is the only place it
+could come from, and where any further claim about Windows 7 has to be earned.
 
 The same release carries two Mac disk images, from `npm run package:mac`. They
 answer nothing about Windows 7; they exist so the *packaged* app can be run on a
