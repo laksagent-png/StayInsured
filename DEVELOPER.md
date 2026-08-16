@@ -257,6 +257,38 @@ Without the secrets the build still succeeds and still produces installers; it
 simply publishes no update anyone can take. A release worth announcing is one
 where `latest.json` is among the assets.
 
+## The Windows 7 probe
+
+`legacy-windows/` is a feasibility probe, not a second edition of the app. The
+app needs Windows 10 version 1803 or newer, and reaching older machines would
+mean a parallel edition built on Electron 22 — the last release supporting them —
+with the Rust core reimplemented in TypeScript. Whether that is even possible
+rests on one question, and the probe answers it:
+
+```bash
+cd legacy-windows
+npm install
+npm run probe        # the checks, printed
+npm start            # the same, in a window
+```
+
+It checks that Electron 22 starts, that the `better-sqlite3` native module loads,
+and that all three migrations apply to a plain, unencrypted SQLite file with a
+client row written and read back. The schema comes from
+`src-tauri/src/db/schema` rather than a copy, so the probe cannot pass against a
+schema the core has moved on from. `legacy-windows/README.md` covers what it
+does and does not prove.
+
+Its release is separate from the app's. Pushing a `legacy-v*` tag runs **Build
+the Windows 7 probe** and publishes the installer as a prerelease; the `v*` tags
+the app releases under never match it, and that installer deliberately carries no
+Windows version guard. GitHub's runners start at Windows Server 2019, so CI shows
+only that the installer builds and the schema applies — the Windows 7 answer comes
+from running it on a Windows 7 SP1 virtual machine.
+
+Nothing there is part of the app. `npm run check` at the root does not see it, and
+no user-facing behaviour depends on it.
+
 ## Where the app keeps its data
 
 | Platform | Location |
@@ -295,6 +327,7 @@ src-tauri/src/
   scheduler.rs          the once-a-minute tick behind the daily sweep
   vault.rs              password hashing, key derivation, keychain
   tests.rs              data-layer tests
+legacy-windows/         the Windows 7 probe, not part of the app
 ```
 
 The interface never writes SQL. It calls commands; commands call repositories;

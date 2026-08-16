@@ -1,0 +1,37 @@
+appId: com.stayinsured.legacy
+productName: StayInsured Windows 7 probe
+
+directories:
+  output: dist
+
+files:
+  - out/**/*
+  - src/renderer/**/*
+  - package.json
+
+# The schema travels with the installer rather than being copied into this
+# project, so the probe always tests the schema the Rust core actually ships.
+extraResources:
+  - from: ../src-tauri/src/db/schema
+    to: schema
+    filter:
+      - "*.sql"
+
+# Both architectures, because a Windows 7 machine can be either and asking its
+# owner which one they have is not a reasonable question. NSIS combines them into
+# a single installer that picks the right build; the probe's environment table
+# reports which one actually ran.
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - ia32
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  # Deliberately no Windows version guard here. The main app's installer refuses
+  # anything below Windows 10 1803; this one exists precisely to be run below it.
+  artifactName: StayInsured-Win7-Probe-${version}.${ext}

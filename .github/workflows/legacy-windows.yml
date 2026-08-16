@@ -1,0 +1,73 @@
+name: Build the Windows 7 probe
+
+# Separate from **Build installers** on purpose. This builds the Electron
+# feasibility probe in `legacy-windows/`, which is not the product: it exists to
+# answer whether a parallel Electron edition can run on Windows 7 at all.
+#
+# It has its own tag prefix so it can never be mistaken for an app release.
+# `legacy-v0.0.1` does not match the `v*` trigger the real release uses.
+on:
+  push:
+    tags:
+      - "legacy-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Windows installer
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: legacy-windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # `.npmrc` points native builds at Electron 22's ABI rather than the
+      # runner's Node, which is what makes better-sqlite3 usable here at all.
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # This runner is Windows Server, so it cannot answer the Windows 7
+      # question. It can prove the native module loads and the app's real schema
+      # applies, which is worth knowing before anyone carries an installer to a
+      # virtual machine. The step fails the job on a bad check.
+      - name: Run the probe
+        run: npm run probe
+
+      - name: Build the installer
+        run: npm run package
+
+      - name: Keep the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: StayInsured-Win7-Probe
+          if-no-files-found: error
+          path: legacy-windows/dist/*.exe
+
+      # Marked as a prerelease so nobody browsing the releases page mistakes the
+      # probe for a version of StayInsured they should install.
+      - name: Publish when tagged
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Windows 7 probe ${{ github.ref_name }}
+          prerelease: true
+          files: legacy-windows/dist/*.exe
+          body: |
+            A feasibility probe, not a release of StayInsured.
+
+            Run it on a Windows 7 SP1 machine. It reports whether Electron 22
+            starts, whether the `better-sqlite3` native module loads, and whether
+            the app's real schema applies to a plain SQLite file. It also reports
+            which modern CSS this Chromium understands.
+
+            The window shows the result, and a copy is saved as
+            `probe-report.json` in the app's data folder.

@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Deliberately tight: this page loads nothing but itself, and the script
+         below is inline so the probe stays a single readable file. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
+    <title>StayInsured — Windows 7 probe</title>
+    <style>
+      /* Only CSS that Chromium 108 understands, since that is the engine under
+         test. No oklch, no color-mix, no nesting. */
+      body {
+        margin: 0;
+        padding: 24px 28px 40px;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        font-size: 14px;
+        color: #1e293b;
+        background: #f1f5f9;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 20px;
+      }
+      p.lede {
+        margin: 0 0 20px;
+        color: #475569;
+      }
+      .verdict {
+        padding: 14px 16px;
+        border-radius: 8px;
+        font-weight: 600;
+        margin-bottom: 22px;
+        border: 1px solid transparent;
+      }
+      .verdict.pass {
+        background: #dcfce7;
+        border-color: #86efac;
+        color: #166534;
+      }
+      .verdict.fail {
+        background: #fee2e2;
+        border-color: #fca5a5;
+        color: #991b1b;
+      }
+      h2 {
+        font-size: 15px;
+        margin: 0 0 8px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        margin-bottom: 22px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 9px 12px;
+        border-bottom: 1px solid #eef2f7;
+        vertical-align: top;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      th {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #64748b;
+      }
+      td.state {
+        white-space: nowrap;
+        font-weight: 600;
+      }
+      td.state.ok {
+        color: #15803d;
+      }
+      td.state.no {
+        color: #b91c1c;
+      }
+      td.detail {
+        color: #475569;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+        word-break: break-all;
+      }
+      p.note {
+        color: #64748b;
+        margin: -14px 0 22px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Windows 7 probe</h1>
+    <p class="lede">
+      Whether a parallel Electron edition of StayInsured can run on this machine.
+    </p>
+
+    <div id="verdict" class="verdict">Running…</div>
+
+    <h2>The gate</h2>
+    <table id="checks">
+      <tr>
+        <th>Check</th>
+        <th>Result</th>
+        <th>Detail</th>
+      </tr>
+    </table>
+
+    <h2>What this Chromium supports</h2>
+    <table id="css">
+      <tr>
+        <th>CSS feature</th>
+        <th>Result</th>
+        <th>Used by</th>
+      </tr>
+    </table>
+    <p class="note">
+      The colour functions are expected to be missing on Chromium 108. That is
+      what the build-time fallback is for, and it is not a failure of the gate.
+    </p>
+
+    <h2>This machine</h2>
+    <table id="environment">
+      <tr>
+        <th>Name</th>
+        <th>Value</th>
+      </tr>
+    </table>
+
+    <p class="note" id="reportPath"></p>
+
+    <script>
+      function cell(row, text, className) {
+        var td = row.insertCell();
+        td.textContent = text;
+        if (className) td.className = className;
+        return td;
+      }
+
+      function renderChecks(checks) {
+        var table = document.getElementById("checks");
+        checks.forEach(function (check) {
+          var row = table.insertRow();
+          cell(row, check.name);
+          cell(row, check.ok ? "PASS" : "FAIL", check.ok ? "state ok" : "state no");
+          cell(row, check.detail, "detail");
+        });
+      }
+
+      function renderCss() {
+        var features = [
+          ["oklch() colours", CSS.supports("color", "oklch(0.7 0.1 200)"), "Every Tailwind 4 colour"],
+          [
+            "color-mix()",
+            CSS.supports("color", "color-mix(in oklab, red, blue)"),
+            "Tailwind 4 opacity modifiers such as /20"
+          ],
+          ["@property", typeof CSS.registerProperty === "function", "Tailwind 4 internals"]
+        ];
+
+        var table = document.getElementById("css");
+        features.forEach(function (feature) {
+          var row = table.insertRow();
+          cell(row, feature[0]);
+          cell(row, feature[1] ? "supported" : "missing", feature[1] ? "state ok" : "state no");
+          cell(row, feature[2], "detail");
+        });
+      }
+
+      function renderEnvironment(environment) {
+        var table = document.getElementById("environment");
+        Object.keys(environment).forEach(function (name) {
+          var row = table.insertRow();
+          cell(row, name);
+          cell(row, environment[name], "detail");
+        });
+      }
+
+      window.probe.report().then(function (report) {
+        if (!report) {
+          document.getElementById("verdict").className = "verdict fail";
+          document.getElementById("verdict").textContent = "The probe produced no report at all.";
+          return;
+        }
+
+        renderChecks(report.checks);
+        renderCss();
+        renderEnvironment(report.environment);
+
+        var failed = report.checks.filter(function (check) {
+          return !check.ok;
+        });
+        var verdict = document.getElementById("verdict");
+        if (failed.length === 0) {
+          verdict.className = "verdict pass";
+          verdict.textContent =
+            "Gate passed. Electron started, the native SQLite module loaded, and the app's real schema applied to a plain SQLite file.";
+        } else {
+          verdict.className = "verdict fail";
+          verdict.textContent =
+            "Gate failed on " + failed.length + " check(s): " +
+            failed
+              .map(function (check) {
+                return check.name;
+              })
+              .join(", ");
+        }
+
+        if (report.reportPath) {
+          document.getElementById("reportPath").textContent =
+            "A copy of this report was saved to " + report.reportPath;
+        }
+      });
+    </script>
+  </body>
+</html>
