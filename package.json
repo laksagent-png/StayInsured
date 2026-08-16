@@ -1,7 +1,7 @@
 {
   "name": "stayinsured",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "description": "Client and policy management for insurance providers",
   "scripts": {

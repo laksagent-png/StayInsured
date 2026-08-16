@@ -5,6 +5,8 @@ settings survive every version below.
 
 ## Upcoming
 
+## 0.3.2 — 16 August 2026
+
 ### Changed
 
 - **The Windows installer tells you when a computer is too old.** Windows 10
