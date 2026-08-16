@@ -5,6 +5,8 @@ settings survive every version below.
 
 ## Upcoming
 
+## 0.3.1 — 16 August 2026
+
 ### Fixed
 
 - **Lock app takes you to the unlock screen.** It closed the book but left the
