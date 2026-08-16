@@ -60,10 +60,14 @@ jobs:
 
       - run: npm ci
 
-      # There is no UI test suite; the types are what catches a screen calling a
-      # command that no longer takes those arguments.
+      # The types catch a screen calling a command that no longer takes those
+      # arguments; the suite catches the screen that draws the wrong thing with
+      # arguments that typecheck perfectly.
       - name: Typecheck the interface
         run: npm run typecheck
+
+      - name: Test the interface
+        run: npm test
 
   guide:
     name: Guide screenshots

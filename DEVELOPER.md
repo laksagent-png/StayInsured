@@ -177,7 +177,13 @@ npm run hooks          # points git at .githooks
 `.githooks/pre-push` then runs `npm run check` on every push, and
 `git push --no-verify` skips it when something has to go out regardless. The
 **Checks** workflow runs the same commands on every push to `main`, so a push
-that skipped the hook is still caught.
+that skipped the hook — or came from a clone where it was never enabled — is
+still caught.
+
+Every Node job in CI installs with `npm ci`, which refuses a `package-lock.json`
+that disagrees with `package.json`. Adding a dependency means committing the
+lockfile with it; leaving it behind fails every workflow at the first step,
+before a single check has run.
 
 ## Cutting a release
 
