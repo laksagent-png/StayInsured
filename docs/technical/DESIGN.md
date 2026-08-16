@@ -442,6 +442,14 @@ database in a temporary directory, with no window:
 
 - migrations and seed apply, and the 60/30/15/7/1 reminder ladder is active
 - a wrong key is reported as `bad_password`
+- the vault records 64 MiB over three passes, salts every book differently, and
+  what it writes beside the database contains neither password nor key
+- changing the password re-keys the database: the old one stops working and the
+  book is still there behind the new one
+- a password verifies against its hash without being stored, and two people
+  choosing the same one do not look alike
+- a setting left blank falls back to its default, and a number that is not one
+  falls back rather than failing the sweep
 - client codes increment and deduplication resolves in the documented order
 - matching falls from code to email to phone to name, and an unknown code keeps
   looking rather than deciding there is no such client

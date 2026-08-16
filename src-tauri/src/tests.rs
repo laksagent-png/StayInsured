@@ -19,7 +19,7 @@ use crate::repo::{
 };
 use crate::templating;
 use crate::util;
-use crate::vault::Vault;
+use crate::vault::{self, Vault};
 
 struct TempDb {
     db: Database,
@@ -116,6 +116,201 @@ fn wrong_password_is_rejected() {
     );
 
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn the_vault_carries_the_cost_of_turning_a_password_into_a_key() {
+    let temp = TempDb::new("vault");
+    let vault = Vault::create();
+
+    assert_eq!(vault.version, 1);
+    assert_eq!(
+        (vault.m_cost, vault.t_cost, vault.p_cost),
+        (65_536, 3, 1),
+        "roughly 64 MiB over three passes, which is what the design promises"
+    );
+    assert_eq!(vault.salt_hex.len(), 32, "sixteen bytes of salt");
+
+    let key = vault.derive_key("correct horse battery").unwrap();
+    assert_eq!(key.len(), 64, "a 32-byte key written as hex");
+    assert_eq!(
+        vault.derive_key("correct horse battery").unwrap(),
+        key,
+        "the same password and vault must reach the same key, or nothing opens"
+    );
+
+    // The salt is what stops two books sharing a password sharing a key.
+    let elsewhere = Vault::create();
+    assert_ne!(elsewhere.salt_hex, vault.salt_hex);
+    assert_ne!(elsewhere.derive_key("correct horse battery").unwrap(), key);
+
+    // It sits beside the database in clear text, so it must hold no secret.
+    let path = temp.dir.join("vault.json");
+    vault.save(&path).unwrap();
+    assert!(Vault::exists(&path));
+    let raw = std::fs::read_to_string(&path).unwrap();
+    assert!(!raw.contains("correct horse battery"));
+    assert!(!raw.contains(&key));
+    assert_eq!(
+        Vault::load(&path)
+            .unwrap()
+            .derive_key("correct horse battery")
+            .unwrap(),
+        key,
+        "reloading the parameters reaches the same key"
+    );
+}
+
+#[test]
+fn changing_the_password_leaves_the_book_readable() {
+    let temp = TempDb::new("rekey");
+    let path = temp.dir.join("rekeyed.db");
+
+    let first = Vault::create();
+    let old_key = first.derive_key("the first one").unwrap();
+    let db = Database::open(&path, &old_key).unwrap();
+    db.with(|conn| {
+        clients::create(conn, &sample_client("Ravi Menon"))?;
+        Ok(())
+    })
+    .unwrap();
+
+    let second = Vault::create();
+    let new_key = second.derive_key("the second one").unwrap();
+    db.rekey(&new_key).unwrap();
+    drop(db);
+
+    assert!(
+        matches!(
+            Database::open(&path, &old_key),
+            Err(crate::error::AppError::BadPassword)
+        ),
+        "the old password stops working the moment it is changed"
+    );
+
+    let reopened = Database::open(&path, &new_key).unwrap();
+    reopened
+        .with(|conn| {
+            let book = clients::list(conn, &ClientFilter::default())?;
+            assert_eq!(book.total, 1, "and the book is still there behind it");
+            assert_eq!(book.rows[0].full_name, "Ravi Menon");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_password_is_checked_without_being_kept() {
+    let phc = vault::hash_password("open sesame").unwrap();
+
+    assert!(phc.starts_with("$argon2"));
+    assert!(
+        !phc.contains("open sesame"),
+        "the password itself is never written down"
+    );
+    assert!(vault::verify_password("open sesame", &phc));
+    assert!(!vault::verify_password("Open Sesame", &phc));
+    assert!(!vault::verify_password("", &phc));
+
+    assert_ne!(
+        vault::hash_password("open sesame").unwrap(),
+        phc,
+        "two people choosing one password do not look alike in the table"
+    );
+    assert!(
+        !vault::verify_password("open sesame", "not a hash at all"),
+        "a damaged hash is a failed check rather than a way in"
+    );
+}
+
+#[test]
+fn hex_survives_the_round_trip_and_refuses_nonsense() {
+    assert_eq!(vault::to_hex(&[0x00, 0x0f, 0xff]), "000fff");
+    assert_eq!(vault::from_hex("000fff").unwrap(), vec![0x00, 0x0f, 0xff]);
+    assert_eq!(vault::from_hex("").unwrap(), Vec::<u8>::new());
+
+    assert!(matches!(
+        vault::from_hex("zz"),
+        Err(crate::error::AppError::Other(_))
+    ));
+    assert!(
+        matches!(
+            vault::from_hex("abc"),
+            Err(crate::error::AppError::Other(_))
+        ),
+        "an odd number of digits is not a run of bytes"
+    );
+}
+
+#[test]
+fn a_setting_falls_back_when_it_is_missing_or_left_blank() {
+    let temp = TempDb::new("settings");
+    temp.db
+        .with(|conn| {
+            assert_eq!(settings::get(conn, "nothing_here")?, None);
+            assert_eq!(
+                settings::get_or(conn, "nothing_here", "fallback"),
+                "fallback"
+            );
+
+            settings::put(conn, "provider_name", "Sunrise Insurance")?;
+            assert_eq!(
+                settings::get_or(conn, "provider_name", "fallback"),
+                "Sunrise Insurance"
+            );
+
+            // Clearing the box in Settings writes an empty string, which has to
+            // mean "use the default" rather than "send an empty name".
+            settings::put(conn, "provider_name", "")?;
+            assert_eq!(
+                settings::get_or(conn, "provider_name", "Sunrise"),
+                "Sunrise"
+            );
+            assert_eq!(
+                settings::get(conn, "provider_name")?,
+                Some(String::new()),
+                "though what was written is still what is stored"
+            );
+
+            assert_eq!(
+                settings::get_i64(conn, "daily_send_cap", 200),
+                400,
+                "the seeded cap answers, not the fallback"
+            );
+            assert_eq!(
+                settings::get_i64(conn, "no_such_number", 7),
+                7,
+                "a key nobody has set does fall back"
+            );
+            settings::put(conn, "daily_send_cap", "40")?;
+            assert_eq!(settings::get_i64(conn, "daily_send_cap", 200), 40);
+            settings::put(conn, "daily_send_cap", "as many as it takes")?;
+            assert_eq!(
+                settings::get_i64(conn, "daily_send_cap", 200),
+                200,
+                "a number that is not one falls back instead of failing the sweep"
+            );
+
+            // Saving the Settings screen writes the lot in one go, over whatever
+            // was there before.
+            let mut batch = std::collections::HashMap::new();
+            batch.insert("currency".to_string(), "USD".to_string());
+            batch.insert("date_format".to_string(), "dd MMM yyyy".to_string());
+            settings::put_many(conn, &batch)?;
+
+            let everything = settings::all(conn)?;
+            assert_eq!(everything.get("currency").map(String::as_str), Some("USD"));
+            assert_eq!(
+                everything.get("date_format").map(String::as_str),
+                Some("dd MMM yyyy")
+            );
+            assert!(
+                everything.len() > 2,
+                "the seeded defaults are still alongside them"
+            );
+            Ok(())
+        })
+        .unwrap();
 }
 
 #[test]
