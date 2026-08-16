@@ -70,6 +70,13 @@ ABI rather than the ABI of whatever Node is on the machine, so it pins `runtime`
 `target` and `disturl`. Without it, `better-sqlite3` builds against local Node
 headers and either fails outright or produces a binary Electron cannot load.
 
+`xlsx` comes from `cdn.sheetjs.com` rather than the npm registry, which is how its
+authors now publish it. The copy still on npm is 0.18.5 and carries unfixed
+prototype-pollution and denial-of-service advisories; this app parses spreadsheets
+that arrive from other people's offices, so it takes the patched build. SheetJS
+reads what `calamine` reads on the Rust side — xlsx, xls, xlsm and ods — which is
+what the import screen offers.
+
 That same pinning is why `npm test` does not use `vitest` the way the app does:
 the module cannot be loaded by the machine's own `node` at all. The tests run under
 `ELECTRON_RUN_AS_NODE`, which is Electron's Node with the matching ABI and no

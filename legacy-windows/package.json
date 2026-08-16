@@ -16,11 +16,14 @@
   },
   "dependencies": {
     "better-sqlite3": "^8.7.0",
-    "hash-wasm": "^4.12.0"
+    "hash-wasm": "^4.12.0",
+    "nodemailer": "^6.10.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^16.18.126",
+    "@types/nodemailer": "^6.4.24",
     "electron": "22.3.27",
     "electron-builder": "^24.13.3",
     "typescript": "^5.7.2"

@@ -2,20 +2,32 @@
  * The entry point for `npm test`, which runs under Electron's Node rather than the
  * machine's — see the note in `harness.ts` for why it has to.
  *
- * Registration is by import: each test file calls `suite`/`test` at module scope,
- * so importing it registers its cases and the order here is the order they run.
+ * Registration is by import: each file calls `suite`/`test` at module scope, so
+ * requiring it registers its cases. They are discovered from the directory rather
+ * than listed here, because a list is a line every new test file has to add to the
+ * same place — which is a merge conflict in any work split across more than one
+ * pair of hands, and a test file silently not running if anyone forgets.
  */
 
 import { runAll } from "./harness";
 import { cleanUp, schemaDir } from "./support";
 
 import fs from "node:fs";
+import path from "node:path";
 
-import "./util.test";
-import "./query.test";
-import "./session.test";
-import "./clients.test";
-import "./policies.test";
+/** Alphabetical, so a failure is in the same place on every machine. */
+function loadTestFiles(): string[] {
+  const files = fs
+    .readdirSync(__dirname)
+    .filter((name) => name.endsWith(".test.js"))
+    .sort();
+
+  for (const name of files) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require(path.join(__dirname, name));
+  }
+  return files;
+}
 
 async function main(): Promise<void> {
   // The schema belongs to the Rust core and is read from its tree. Missing, every
@@ -26,8 +38,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const files = loadTestFiles();
+
   console.log("\nStayInsured Windows 7 edition — core tests");
   console.log(`  node ${process.versions.node}, sqlite via better-sqlite3, plain unencrypted file`);
+  console.log(`  ${files.length} test files`);
 
   const started = Date.now();
   const { passed, failed } = await runAll();
