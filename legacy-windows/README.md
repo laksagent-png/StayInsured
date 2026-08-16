@@ -43,7 +43,7 @@ load.
 ## Building the installer
 
 ```bash
-npm run package        # dist/StayInsured-Win7-Probe-0.0.1.exe
+npm run package:win    # dist/StayInsured-Win7-Probe-0.0.2.exe
 ```
 
 One installer covers every Windows 7 machine. It carries both 64-bit and 32-bit
@@ -63,6 +63,45 @@ prerelease.
 Note that this installer carries no Windows version guard, unlike the app's own
 installer. Refusing old Windows is the whole point of that one, and running on old
 Windows is the whole point of this one.
+
+## Building for a Mac
+
+```bash
+npm run package:mac    # dist/StayInsured-Win7-Probe-0.0.2-arm64.dmg, and -x64
+```
+
+A Mac build answers none of the Windows 7 questions. Chromium 108 on macOS says
+nothing about Chromium 108 on Windows 7, and the machine it runs on was never in
+doubt.
+
+What it does is run the app as it is packaged rather than as it is developed. The
+packaged app reads the schema from `Contents/Resources/schema` and loads the
+native module out of the app bundle, and `npm start` uses neither path. Both are
+the paths the Windows installer depends on, so a packaging mistake surfaces here
+in seconds instead of on a virtual machine.
+
+Two builds rather than one universal binary, because a universal app means
+merging better-sqlite3's two native binaries and the only people opening these
+files already know which Mac they own.
+
+Nothing signs these, so a downloaded copy is quarantined and macOS refuses it on
+the grounds that the developer cannot be verified. Right-click the app and choose
+**Open**, or strip the flag:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/StayInsured Windows 7 probe.app"
+```
+
+A build made on your own machine is not quarantined and needs neither. To check
+it without a window:
+
+```bash
+"dist/mac-arm64/StayInsured Windows 7 probe.app/Contents/MacOS/StayInsured Windows 7 probe" --probe-only
+```
+
+That prints the same report and exits non-zero on a failure. It also prints a
+`mach_port_rendezvous` error on the way out, which is a helper process noticing
+the app has already quit and means nothing.
 
 ## What it cannot tell you
 

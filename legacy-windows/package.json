@@ -1,14 +1,15 @@
 {
   "name": "stayinsured-legacy",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Windows 7 feasibility probe for a parallel Electron edition of StayInsured",
   "main": "out/main.js",
   "scripts": {
     "build": "tsc -p .",
     "start": "npm run build && electron .",
     "probe": "npm run build && electron . --probe-only",
-    "package": "npm run build && electron-builder --win --x64 --ia32 --publish never"
+    "package:win": "npm run build && electron-builder --win --x64 --ia32 --publish never",
+    "package:mac": "npm run build && electron-builder --mac --arm64 --x64 --publish never"
   },
   "dependencies": {
     "better-sqlite3": "^8.7.0"

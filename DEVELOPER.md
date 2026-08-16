@@ -286,11 +286,20 @@ schema the core has moved on from. `legacy-windows/README.md` covers what it
 does and does not prove.
 
 Its release is separate from the app's. Pushing a `legacy-v*` tag runs **Build
-the Windows 7 probe** and publishes the installer as a prerelease; the `v*` tags
-the app releases under never match it, and that installer deliberately carries no
-Windows version guard. GitHub's runners start at Windows Server 2019, so CI shows
-only that the installer builds and the schema applies — the Windows 7 answer comes
-from running it on a Windows 7 SP1 virtual machine.
+the Windows 7 probe** and publishes as a prerelease; the `v*` tags the app
+releases under never match it, and that installer deliberately carries no Windows
+version guard. GitHub's runners start at Windows Server 2019, so CI shows only
+that the installer builds and the schema applies — the Windows 7 answer comes from
+running it on a Windows 7 SP1 virtual machine.
+
+The same release carries two Mac disk images, from `npm run package:mac`. They
+answer nothing about Windows 7; they exist so the *packaged* app can be run on a
+machine we already have. A packaged app reads the schema from its resources
+directory and loads the native module from inside the bundle, and `npm start`
+exercises neither. Both are paths the Windows installer depends on, so a mistake
+in either shows up on a Mac in seconds rather than on a virtual machine. Nothing
+signs them, so macOS quarantines a downloaded copy; `legacy-windows/README.md`
+has the one command that clears it.
 
 Nothing there is part of the app. `npm run check` at the root does not see it, and
 no user-facing behaviour depends on it.

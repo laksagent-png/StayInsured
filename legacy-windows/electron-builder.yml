@@ -35,3 +35,24 @@ nsis:
   # Deliberately no Windows version guard here. The main app's installer refuses
   # anything below Windows 10 1803; this one exists precisely to be run below it.
   artifactName: StayInsured-Win7-Probe-${version}.${ext}
+
+# A Mac build answers none of the Windows 7 questions. It earns its place by
+# exercising the packaged app: the schema is read from `process.resourcesPath`
+# and the native module is loaded from an unpacked directory, neither of which
+# `npm start` touches. A packaging mistake shows up here rather than on the
+# virtual machine.
+#
+# Two separate builds rather than one universal binary. Merging a universal app
+# means merging better-sqlite3's two native binaries, which buys nothing when
+# the only readers of these files are developers who know which Mac they own.
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  # Nothing signs this. An unsigned probe needs one Gatekeeper argument on
+  # arrival, which the README spells out; a signing identity in CI for a
+  # throwaway build is the greater cost.
+  artifactName: StayInsured-Win7-Probe-${version}-${arch}.${ext}

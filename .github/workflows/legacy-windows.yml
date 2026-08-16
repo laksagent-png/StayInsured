@@ -5,7 +5,7 @@ name: Build the Windows 7 probe
 # answer whether a parallel Electron edition can run on Windows 7 at all.
 #
 # It has its own tag prefix so it can never be mistaken for an app release.
-# `legacy-v0.0.1` does not match the `v*` trigger the real release uses.
+# `legacy-v0.0.2` does not match the `v*` trigger the real release uses.
 on:
   push:
     tags:
@@ -17,8 +17,25 @@ permissions:
 
 jobs:
   build:
-    name: Windows installer
-    runs-on: windows-latest
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      # One platform failing should not hide what the other would have said.
+      fail-fast: false
+      matrix:
+        include:
+          # The installer the whole probe exists to produce.
+          - platform: windows-latest
+            label: Windows
+            script: package:win
+            files: legacy-windows/dist/*.exe
+          # Answers nothing about Windows 7. It runs the packaged app on a
+          # machine anyone here can reach, which is how a packaging mistake gets
+          # caught before someone carries an installer to a virtual machine.
+          - platform: macos-latest
+            label: macOS
+            script: package:mac
+            files: legacy-windows/dist/*.dmg
     defaults:
       run:
         working-directory: legacy-windows
@@ -30,44 +47,79 @@ jobs:
         with:
           node-version: 20
 
+      # The version ends up in every artifact name, so a tag that disagrees with
+      # it publishes files labelled with the wrong build. Cheaper to stop here.
+      - name: Check the tag matches the version
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          tagged="${GITHUB_REF_NAME#legacy-v}"
+          declared=$(node -p "require('./package.json').version")
+          if [ "$tagged" != "$declared" ]; then
+            echo "Tag $GITHUB_REF_NAME expects version $tagged, but package.json declares $declared." >&2
+            exit 1
+          fi
+
       # `.npmrc` points native builds at Electron 22's ABI rather than the
       # runner's Node, which is what makes better-sqlite3 usable here at all.
       - name: Install
         run: npm ci --no-audit --no-fund
 
-      # This runner is Windows Server, so it cannot answer the Windows 7
-      # question. It can prove the native module loads and the app's real schema
-      # applies, which is worth knowing before anyone carries an installer to a
-      # virtual machine. The step fails the job on a bad check.
+      # Neither runner can answer the Windows 7 question: one is Windows Server,
+      # the other is a Mac. Both can prove the native module loads and the app's
+      # real schema applies. The step fails the job on a bad check.
       - name: Run the probe
         run: npm run probe
 
-      - name: Build the installer
-        run: npm run package
+      - name: Build
+        run: npm run ${{ matrix.script }}
 
-      - name: Keep the installer
+      - name: Keep the build
         uses: actions/upload-artifact@v4
         with:
-          name: StayInsured-Win7-Probe
+          name: StayInsured-Win7-Probe-${{ matrix.label }}
           if-no-files-found: error
-          path: legacy-windows/dist/*.exe
+          path: ${{ matrix.files }}
+
+  # One release built from both jobs, rather than each job editing the same
+  # release as it finishes and racing over the result.
+  publish:
+    name: Publish the prerelease
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Collect both builds
+        uses: actions/download-artifact@v4
+        with:
+          path: builds
 
       # Marked as a prerelease so nobody browsing the releases page mistakes the
       # probe for a version of StayInsured they should install.
-      - name: Publish when tagged
-        if: github.ref_type == 'tag'
+      - name: Publish
         uses: softprops/action-gh-release@v2
         with:
           name: Windows 7 probe ${{ github.ref_name }}
           prerelease: true
-          files: legacy-windows/dist/*.exe
+          fail_on_unmatched_files: true
+          files: builds/*/*
           body: |
             A feasibility probe, not a release of StayInsured.
 
-            Run it on a Windows 7 SP1 machine. It reports whether Electron 22
-            starts, whether the `better-sqlite3` native module loads, and whether
-            the app's real schema applies to a plain SQLite file. It also reports
-            which modern CSS this Chromium understands.
+            Run the `.exe` on a Windows 7 SP1 machine. It reports whether
+            Electron 22 starts, whether the `better-sqlite3` native module
+            loads, and whether the app's real schema applies to a plain SQLite
+            file. It also reports which modern CSS this Chromium understands.
 
             The window shows the result, and a copy is saved as
             `probe-report.json` in the app's data folder.
+
+            The `.dmg` files answer none of that. They are here so the packaged
+            app can be run on a Mac, which catches packaging mistakes without a
+            virtual machine. Nothing signs them, so macOS needs one argument
+            before it will open one:
+
+            ```
+            xattr -dr com.apple.quarantine "/Applications/StayInsured Windows 7 probe.app"
+            ```
