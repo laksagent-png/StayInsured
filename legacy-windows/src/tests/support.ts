@@ -27,7 +27,10 @@ export function schemaDir(): string {
 
 const created: string[] = [];
 
-/** `TempDb::dir` in the Rust tests: somewhere to write a fixture file. */
+/**
+ * `TempDb::dir` in the Rust tests: somewhere to write a fixture to import or
+ * attach, or a file to export to. Removed with the rest at the end of the run.
+ */
 export function tempDir(label: string): string {
   const dir = path.join(os.tmpdir(), `stayinsured-legacy-${label}-${crypto.randomUUID()}`);
   fs.mkdirSync(dir, { recursive: true });

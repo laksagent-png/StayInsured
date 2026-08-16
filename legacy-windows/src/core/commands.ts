@@ -22,6 +22,7 @@ import { AppError } from "./errors";
 import * as importer from "./importer";
 import * as clients from "./repo/clients";
 import * as dashboard from "./repo/dashboard";
+import * as documents from "./repo/documents";
 import * as insurers from "./repo/insurers";
 import * as members from "./repo/members";
 import * as policies from "./repo/policies";
@@ -109,6 +110,21 @@ export const COMMANDS: Record<string, Handler> = {
     session.db().withTx((conn) => members.update(conn, num(args, "id"), obj(args, "input"))),
   delete_member: (session, args) => session.db().withTx((conn) => members.remove(conn, num(args, "id"))),
 
+  // ---------------------------------------------------------------- documents
+  list_documents: (session, args) =>
+    session.db().with((conn) => documents.listForClient(conn, num(args, "clientId"))),
+  attach_document: (session, args) =>
+    session.db().withTx((conn) => documents.attach(conn, obj(args, "input"))),
+  document_content: (session, args) =>
+    session.db().with((conn) => documents.contentForInterface(conn, num(args, "id"))),
+  save_document_copy: (session, args) =>
+    documents.writeCopy(
+      session.db().with((conn) => documents.content(conn, num(args, "id"))),
+      str(args, "path"),
+    ),
+  delete_document: (session, args) =>
+    session.db().withTx((conn) => documents.remove(conn, num(args, "id"))),
+
   // ---------------------------------------------------------------- insurers and plans
   list_insurers: (session, args) =>
     session.db().with((conn) => insurers.list(conn, optBool(args, "includeInactive"))),
@@ -180,12 +196,6 @@ export const COMMANDS: Record<string, Handler> = {
   // Each of these has a screen in the interface that will now say plainly that
   // this edition cannot do it. Reminders are the ones that matter most, and they
   // are a sweep of business rules rather than a bridge problem.
-  list_documents: unbuilt("Attaching documents"),
-  attach_document: unbuilt("Attaching documents"),
-  document_content: unbuilt("Attaching documents"),
-  save_document_copy: unbuilt("Attaching documents"),
-  delete_document: unbuilt("Attaching documents"),
-
   export_policies: unbuilt("Exporting"),
   export_clients: unbuilt("Exporting"),
 

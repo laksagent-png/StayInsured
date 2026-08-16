@@ -325,3 +325,26 @@ export interface Dashboard {
   upcoming: Policy[];
   recentlyLapsed: Policy[];
 }
+
+export interface Document {
+  id: number;
+  clientId: number;
+  policyId: number | null;
+  policyNumber: string | null;
+  title: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+}
+
+/**
+ * Attaching names the file to copy in; the bytes are read by the backend rather
+ * than carried across the bridge.
+ */
+export interface DocumentInput {
+  clientId: number;
+  policyId?: number | null;
+  title?: string | null;
+  path: string;
+}
