@@ -5,6 +5,8 @@ settings survive every version below.
 
 ## Upcoming
 
+## 0.3.3 — 16 August 2026
+
 ### Fixed
 
 A pass over every screen, prompted by writing a test for each one. The tests
