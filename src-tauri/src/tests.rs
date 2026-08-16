@@ -8,11 +8,14 @@ use crate::db::Database;
 use crate::importer::{self, ImportOptions};
 use crate::mail::{self, Outgoing};
 use crate::models::{
-    ClientFilter, ClientInput, DocumentInput, InsurerInput, MemberInput, PolicyFilter, PolicyInput,
-    ProductInput, RenewalInput,
+    ClientFilter, ClientInput, DocumentInput, EmailTemplateInput, InsurerInput, MemberInput,
+    PolicyFilter, PolicyInput, ProductInput, ReminderRuleInput, RenewalInput,
 };
 use crate::reminders::{self, NoAlerts, SweepOptions};
-use crate::repo::{clients, dashboard, documents, insurers, members, policies, products, settings};
+use crate::repo::{
+    clients, dashboard, documents, insurers, members, notifications, policies, products, rules,
+    settings, templates,
+};
 use crate::templating;
 use crate::util;
 use crate::vault::Vault;
@@ -1892,6 +1895,205 @@ fn deleting_a_client_takes_their_documents() {
                     row.get(0)
                 })?;
             assert_eq!((rows, blobs), (0, 0));
+            Ok(())
+        })
+        .unwrap();
+}
+
+fn sample_template(name: &str) -> EmailTemplateInput {
+    EmailTemplateInput {
+        name: name.into(),
+        trigger: "expiry_reminder".into(),
+        subject: "Your policy expires on {{expiry_date}}".into(),
+        body_html: "<p>Dear {{client_name}},</p>".into(),
+        is_active: Some(true),
+    }
+}
+
+fn sample_rule(name: &str, template_id: i64) -> ReminderRuleInput {
+    ReminderRuleInput {
+        name: name.into(),
+        offset_days: 45,
+        category: None,
+        audience: "client".into(),
+        channel: "email".into(),
+        template_id: Some(template_id),
+        is_active: Some(true),
+        sort_order: None,
+    }
+}
+
+#[test]
+fn the_ladder_reads_from_furthest_ahead_to_nearest() {
+    let temp = TempDb::new("ladder");
+    temp.db
+        .with(|conn| {
+            let every: Vec<i64> = rules::list(conn)?.iter().map(|r| r.offset_days).collect();
+            assert_eq!(
+                every,
+                vec![60, 30, 15, 7, 1, -7],
+                "the settings screen shows the ladder in the order it fires"
+            );
+
+            let switched_on: Vec<i64> =
+                rules::active(conn)?.iter().map(|r| r.offset_days).collect();
+            assert_eq!(
+                switched_on,
+                vec![60, 30, 15, 7, 1],
+                "the chase after expiry is seeded but left off until it is wanted"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_template_a_rule_still_sends_cannot_be_deleted() {
+    let temp = TempDb::new("template-guard");
+    temp.db
+        .with(|conn| {
+            let template = templates::create(conn, &sample_template("Renewal due"))?;
+            let spare = templates::create(conn, &sample_template("Renewal due, second try"))?;
+            let rule = rules::create(conn, &sample_rule("45 days before expiry", template))?;
+
+            let message = match templates::delete(conn, template) {
+                Err(crate::error::AppError::Conflict(message)) => message,
+                _ => panic!("a template a rule still sends must not be deletable"),
+            };
+            assert!(
+                message.contains('1'),
+                "the refusal counts the rules in the way: {message}"
+            );
+
+            // Point the rule at another message and the old one can go.
+            rules::update(conn, rule, &sample_rule("45 days before expiry", spare))?;
+            templates::delete(conn, template)?;
+            assert!(matches!(
+                templates::get(conn, template),
+                Err(crate::error::AppError::NotFound("Template"))
+            ));
+
+            let still_there = rules::list(conn)?
+                .into_iter()
+                .find(|r| r.id == rule)
+                .expect("the rule outlives the message it used to send");
+            assert_eq!(still_there.template_id, Some(spare));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_rule_that_writes_to_a_client_needs_something_to_say() {
+    let temp = TempDb::new("rule-validation");
+    temp.db
+        .with(|conn| {
+            let template = templates::create(conn, &sample_template("Renewal due"))?;
+
+            let mut speechless = sample_rule("Nothing to say", template);
+            speechless.template_id = None;
+            assert!(
+                matches!(
+                    rules::create(conn, &speechless),
+                    Err(crate::error::AppError::Validation(_))
+                ),
+                "a rule that writes to a client without a message would send an empty email"
+            );
+
+            // The digest to the agent is assembled rather than templated, so it
+            // is allowed to go without one.
+            let mut digest = sample_rule("Provider digest", template);
+            digest.audience = "provider".into();
+            digest.template_id = None;
+            rules::create(conn, &digest)?;
+
+            let mut nowhere = sample_rule("Points nowhere", template);
+            nowhere.template_id = Some(9_999);
+            assert!(matches!(
+                rules::create(conn, &nowhere),
+                Err(crate::error::AppError::NotFound("Template"))
+            ));
+
+            let mut too_far = sample_rule("Too far out", template);
+            too_far.offset_days = 400;
+            assert!(matches!(
+                rules::create(conn, &too_far),
+                Err(crate::error::AppError::Validation(_))
+            ));
+
+            let mut odd_channel = sample_rule("Odd channel", template);
+            odd_channel.channel = "pigeon".into();
+            assert!(matches!(
+                rules::create(conn, &odd_channel),
+                Err(crate::error::AppError::Validation(_))
+            ));
+
+            let mut odd_category = sample_rule("Odd category", template);
+            odd_category.category = Some("spaceship".into());
+            assert!(matches!(
+                rules::create(conn, &odd_category),
+                Err(crate::error::AppError::Validation(_))
+            ));
+
+            rules::create(conn, &sample_rule("45 days before expiry", template))?;
+            assert!(
+                matches!(
+                    rules::create(conn, &sample_rule("45 days before expiry", template)),
+                    Err(crate::error::AppError::Conflict(_))
+                ),
+                "two rules with one name would be indistinguishable in the list"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn deleting_a_rule_keeps_the_record_of_what_it_sent() {
+    let temp = TempDb::new("rule-history");
+    let (client_id, policy_id) = book_expiring_in(&temp, 30, Some("ananya@example.com"));
+
+    temp.db
+        .with(|conn| {
+            let template = templates::active_for_trigger(conn, "expiry_reminder")?
+                .expect("the seed leaves an expiry reminder switched on");
+            let rule = rules::create(conn, &sample_rule("45 days before expiry", template.id))?;
+
+            notifications::queue(
+                conn,
+                &notifications::NewNotification {
+                    rule_id: rule,
+                    policy_id,
+                    client_id,
+                    policy_period: "2027-03-31".into(),
+                    audience: "client".into(),
+                    channel: "email".into(),
+                    to_address: Some("ananya@example.com".into()),
+                    subject: "Your policy expires soon".into(),
+                    body: "<p>Hello</p>".into(),
+                    scheduled_for: util::today_iso(),
+                },
+            )?;
+
+            rules::delete(conn, rule)?;
+
+            // What was sent to a client is a record of the agency's dealings
+            // with them, so changing the ladder must not erase it.
+            let kept: i64 = conn.query_row("SELECT COUNT(*) FROM notification_log", [], |row| {
+                row.get(0)
+            })?;
+            assert_eq!(kept, 1);
+            let orphaned: Option<i64> =
+                conn.query_row("SELECT rule_id FROM notification_log", [], |row| row.get(0))?;
+            assert_eq!(
+                orphaned, None,
+                "it simply stops pointing at a rule that no longer exists"
+            );
+
+            assert!(matches!(
+                rules::delete(conn, rule),
+                Err(crate::error::AppError::NotFound("Reminder rule"))
+            ));
             Ok(())
         })
         .unwrap();

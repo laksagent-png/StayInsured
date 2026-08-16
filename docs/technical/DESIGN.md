@@ -477,6 +477,13 @@ database in a temporary directory, with no window:
 - a failed send stays queued until it gives up, and the daily cap holds the rest
   back for tomorrow
 - renewing cancels the reminder still waiting to go out
+- the ladder lists furthest ahead first, with the chase after expiry seeded but
+  switched off
+- a template a rule still sends cannot be deleted until the rule points
+  elsewhere
+- a rule writing to a client is refused without a message, while the provider
+  digest may go without one, and timing beyond a year either side is refused
+- deleting a rule leaves the record of what it sent, no longer pointing at it
 - a template fills in the policy, refuses unknown names, and cannot be broken by
   a client name containing an ampersand
 - the plain-text part keeps the shape of the HTML it was derived from
