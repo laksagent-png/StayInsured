@@ -11,7 +11,13 @@ import { Button, Checkbox, Field, Input, useToast } from "../components/ui";
  * gate: it derives the key the database itself is encrypted with, so there is no
  * way past this screen and no copy of the data outside it.
  */
-export function LockScreen({ session }: { session?: SessionState }) {
+export function LockScreen({
+  session,
+  autoUnlock = true,
+}: {
+  session?: SessionState;
+  autoUnlock?: boolean;
+}) {
   const isSetup = session ? !session.initialised : false;
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -47,13 +53,15 @@ export function LockScreen({ session }: { session?: SessionState }) {
     onError: (err: ApiError) => setError(err.message),
   });
 
-  // A trusted device unlocks itself; the password screen is then only a fallback.
+  // A trusted device unlocks itself as the app starts; the password screen is
+  // then only a fallback. `autoUnlock` is off once the book has been open, so a
+  // deliberate lock does not undo itself.
   useEffect(() => {
-    if (session?.canUseKeychain && !session.unlocked && session.initialised) {
+    if (autoUnlock && session?.canUseKeychain && !session.unlocked && session.initialised) {
       keychain.mutate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.canUseKeychain, session?.initialised]);
+  }, [autoUnlock, session?.canUseKeychain, session?.initialised]);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();

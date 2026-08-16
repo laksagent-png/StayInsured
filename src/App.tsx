@@ -1,8 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { api } from "./lib/api";
+import type { SessionState } from "./lib/types";
 import { offerUpdate } from "./lib/updates";
 import { AppShell } from "./components/AppShell";
 import { Spinner } from "./components/ui";
@@ -18,17 +20,43 @@ import { InsurersPage } from "./pages/Insurers";
 import { SettingsPage } from "./pages/Settings";
 
 export default function App() {
+  const queryClient = useQueryClient();
   const session = useQuery({
     queryKey: ["session"],
     queryFn: api.sessionState,
     staleTime: 0,
   });
+  const [hasBeenUnlocked, setHasBeenUnlocked] = useState(false);
+
+  /**
+   * Everything read out of the book goes, but the session stays: it is the query
+   * this component picks the lock screen by. Emptying the whole cache instead
+   * would strip the session query out from under its own observer, and the app
+   * would carry on showing a book it can no longer read.
+   */
+  const onLocked = useCallback(
+    (locked: SessionState) => {
+      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "session" });
+      queryClient.setQueryData(["session"], locked);
+    },
+    [queryClient],
+  );
+
+  // Lock now in the tray menu closes the book without the interface asking it to.
+  useEffect(() => {
+    const unlisten = listen<SessionState>("session:locked", (event) => onLocked(event.payload));
+    return () => {
+      unlisten.then((off) => off());
+    };
+  }, [onLocked]);
 
   // Waiting for the book to be open means the offer reaches someone who is
   // sitting at the machine, rather than a locked screen.
   const unlocked = session.data?.unlocked ?? false;
   useEffect(() => {
-    if (unlocked) void offerUpdate();
+    if (!unlocked) return;
+    setHasBeenUnlocked(true);
+    void offerUpdate();
   }, [unlocked]);
 
   if (session.isLoading) {
@@ -40,11 +68,14 @@ export default function App() {
   }
 
   if (!session.data?.unlocked) {
-    return <LockScreen session={session.data} />;
+    // The keychain opens the book as the app starts. Arriving here after it has
+    // been open means someone closed it on purpose, and asking for the password
+    // is the whole point of their having done so.
+    return <LockScreen session={session.data} autoUnlock={!hasBeenUnlocked} />;
   }
 
   return (
-    <AppShell>
+    <AppShell onLocked={onLocked}>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/clients" element={<ClientsPage />} />

@@ -732,7 +732,7 @@ pub struct ReminderOverview {
 
 // ---------------------------------------------------------------- misc
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionState {
     pub initialised: bool,

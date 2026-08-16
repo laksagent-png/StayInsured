@@ -122,6 +122,14 @@ hash, stamps `last_login_at` and runs `sync_statuses`. Errors: `bad_password`,
 `locked` when no key is stored, `bad_password` when the stored key no longer
 matches.
 
+**`lock`** drops the database handle and returns the locked `SessionState`. The
+interface switches to that session rather than emptying its cache, which would
+leave it holding an unlocked session it can never refetch.
+
+The backend emits `session:locked`, carrying a `SessionState`, when **Lock now**
+in the tray menu closes the book. Nothing in the interface asked for that, so it
+listens and reacts as though it had called `lock` itself.
+
 **`change_password`** verifies `current`, re-keys the database, rewrites the
 vault and updates the stored hash, refreshing the keychain entry if one exists.
 If the vault cannot be written the database is re-keyed back. Errors: `locked`,

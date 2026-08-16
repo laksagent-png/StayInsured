@@ -1,8 +1,9 @@
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+use crate::commands;
 use crate::state::AppState;
 
 /// The tray is what keeps the app alive after the window is closed, which is how
@@ -27,6 +28,9 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             "lock" => {
                 if let Some(state) = app.try_state::<AppState>() {
                     state.lock();
+                    // Nothing in the webview asked for this, so it is told. Left
+                    // alone it would show a book it can no longer read.
+                    let _ = app.emit("session:locked", commands::session_state(state));
                 }
                 show_main_window(app);
             }

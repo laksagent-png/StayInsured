@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   BellRing,
@@ -15,6 +15,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { api } from "../lib/api";
+import type { SessionState } from "../lib/types";
 import { Badge, Button, Input } from "./ui";
 
 const NAV = [
@@ -28,8 +29,13 @@ const NAV = [
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
-export function AppShell({ children }: { children: ReactNode }) {
-  const queryClient = useQueryClient();
+export function AppShell({
+  children,
+  onLocked,
+}: {
+  children: ReactNode;
+  onLocked: (session: SessionState) => void;
+}) {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -38,13 +44,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
   const reminders = useQuery({ queryKey: ["reminderOverview"], queryFn: api.reminderOverview });
 
-  const lock = useMutation({
-    mutationFn: api.lock,
-    onSuccess: () => {
-      queryClient.clear();
-      queryClient.invalidateQueries({ queryKey: ["session"] });
-    },
-  });
+  // The session the command hands back is the one the app is switched over to,
+  // so the lock screen appears in the same tick the database handle is dropped.
+  const lock = useMutation({ mutationFn: api.lock, onSuccess: onLocked });
 
   // Cmd/Ctrl+K focuses search, the one shortcut a data-entry tool really needs.
   useEffect(() => {

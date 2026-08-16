@@ -7,6 +7,13 @@ settings survive every version below.
 
 ### Fixed
 
+- **Lock app takes you to the unlock screen.** It closed the book but left the
+  old screen up, so every list and every save then failed and the only way back
+  in was to quit the app and start it again. Locking now shows the unlock screen
+  straight away, from the sidebar button and from **Lock now** in the tray menu
+  alike, and on a trusted device it asks for your password instead of letting
+  itself back in.
+
 - **A policy comes back to the renewals desk when you delete its renewal.**
   Removing a renewal you had entered by mistake used to leave the year before it
   marked as renewed, so a policy that was still running disappeared from the

@@ -64,8 +64,9 @@ time. You can change your mind either way later.
 
 Type the password and press **Unlock**.
 
-On a trusted device the app unlocks itself as it starts. If you dismissed that,
-**Use the saved key on this device** does it again without typing anything.
+On a trusted device the app unlocks itself as it starts. Lock it by hand and it
+asks for the password instead, so leaving your desk still shuts the book;
+**Use the saved key on this device** opens it again without typing anything.
 
 Unlocking also brings every status in line with today's date, so the renewal
 counts you see are the counts as of this morning.
@@ -77,7 +78,7 @@ counts you see are the counts as of this morning.
 | **Lock app** at the foot of the sidebar | Closes the book and returns to the unlock screen. The app keeps running |
 | Closing the window | The app keeps running in the menu bar (macOS) or system tray (Windows) |
 | **Open StayInsured** in the tray menu | Brings the window back |
-| **Lock now** in the tray menu | Locks without opening the window |
+| **Lock now** in the tray menu | Closes the book and brings the window up on the unlock screen |
 | **Quit StayInsured** in the tray menu | Shuts the app down properly |
 
 Lock the app whenever you leave your desk. It takes one click and one password
