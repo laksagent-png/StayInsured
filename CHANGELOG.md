@@ -5,6 +5,16 @@ settings survive every version below.
 
 ## Upcoming
 
+### Added
+
+- **The Windows 7 edition does most of the job now.** It reads spreadsheets in,
+  writes your book out to Excel or CSV, keeps policy documents beside the client
+  they belong to, and lets you write the reminder ladder and the messages it sends.
+  Two things there still say "not built" when you reach them: working out which
+  reminders are due today, and sending them. It also lives in the notification area
+  now, locks from there, and hands a second launch to the copy already running
+  instead of opening your book twice.
+
 ## 0.3.4 — 17 August 2026
 
 ### Fixed

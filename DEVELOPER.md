@@ -284,10 +284,21 @@ screen that claims encryption must read it rather than assume it.
 
 **It is a port in progress.** Built: the session and password wall, settings,
 clients, members, insurers, products, policies with the renewal chain and the
-status sweep, and the dashboard. Not built: the importer, exporters, documents, the
-reminder outbox and everything that sends mail. Those commands exist and refuse
-with a message naming themselves, because a screen that half works costs an
-operator an hour before it admits anything.
+status sweep, the dashboard, the spreadsheet importer, both exporters, document
+attachments, and the reminder rules, email templates and outbox. Not built: the
+sweep that decides which reminders are due, and everything that sends mail. Those
+five commands exist and refuse with a message naming themselves, because a screen
+that half works costs an operator an hour before it admits anything.
+`npm test` counts what is real: `parity.test.ts` reads the command list out of
+`src-tauri/src/lib.rs`, fails if the two editions disagree about a name, and prints
+how many of the 73 answer for real.
+
+It also has a shell of its own now: a tray icon and menu matching `tray.rs`, a
+window that hides into it on close, and a single-instance guard so a second launch
+focuses the running copy rather than opening a second connection to one book. The
+guard has no counterpart in the Tauri app, which has no such plugin — the same
+hazard is there and unaddressed. `--probe` and `--capture` deliberately skip the
+guard, so the diagnostics still run beside an open app.
 
 ```bash
 cd legacy-windows

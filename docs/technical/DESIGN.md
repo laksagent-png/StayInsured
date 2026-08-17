@@ -637,8 +637,15 @@ an edition its author was not thinking about.
 
 The cost that decides that edition's future is drift: every rule here now exists
 twice. Its `src/tests/` ports the cases in `src-tauri/src/tests.rs` one for one and
-names each original, which is the only mechanism holding the two together.
+names each original, and its `parity.test.ts` reads the `generate_handler!` list out
+of `lib.rs` and fails if the two command surfaces disagree by a single name — a
+command added here and forgotten there is otherwise found by an operator.
 `DEVELOPER.md` carries what is built there and what is not.
+
+One asymmetry runs the other way. That edition refuses a second launch and focuses
+the running window instead; this one has no single-instance plugin, so two processes
+can open one book, and the file being encrypted does nothing about it — both hold
+the key. Worth fixing here rather than treating as a difference.
 
 **An installed copy updates itself.** The same release carries an
 `.app.tar.gz` for macOS and a `.nsis.zip` for Windows, each with a `.sig`, plus

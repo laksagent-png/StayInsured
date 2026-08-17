@@ -17,10 +17,14 @@ or a backup of it, or the disk — can read every client in it. `session_state`
 reports `encrypted: false`, and the lock screen and Settings say so in place of the
 promises they make in the app. Do not quietly reword them.
 
-**It is not finished.** The core is a port in progress. What is not built refuses
-with a message saying so rather than half working: importing a spreadsheet,
-exporting, documents, the reminder outbox and everything that sends mail.
-`src/core/commands.ts` is the list, and the bottom of it is the honest part.
+**It is not finished.** The core is a port in progress, though most of it has
+arrived: clients, policies and their renewal chains, members, insurers, products,
+the dashboard, the spreadsheet importer, both exporters, document attachments, and
+the reminder rules, email templates and outbox. What is left refuses with a message
+saying so rather than half working — the sweep that decides which reminders are due,
+and everything that sends mail. `src/core/commands.ts` is the list, and the bottom
+of it is the honest part. `npm test` prints the count, because a number nobody
+measures drifts.
 
 ## The probe, and what it answered
 
@@ -45,7 +49,8 @@ edition can pass against a schema the app has since moved on from.
 | --- | --- |
 | `src/core/` | The port of `src-tauri/src/`. Imports no Electron, so the tests can run without one |
 | `src/env.ts` | The one place Electron meets the core: paths, `safeStorage` for secrets, revealing a folder |
-| `src/main.ts` | The main process, the IPC bridge, and the probe's four launch modes |
+| `src/main.ts` | The main process, the IPC bridge, the tray, and the four launch modes |
+| `src/shell.ts` | The decisions behind the tray, a second launch and closing a window — kept out of `main.ts` so they can be tested where Electron's `app` does not exist |
 | `src/tests/` | The ported rules held against the cases `src-tauri/src/tests.rs` holds them to |
 | `ui/shims/` | `@tauri-apps/*` reimplemented over Electron IPC, so the app's React source builds unchanged |
 
@@ -103,7 +108,7 @@ the notice that this edition has fallen behind.
 ## Building the installer
 
 ```bash
-npm run package:win    # dist/StayInsured-Win7-Probe-0.0.3.exe
+npm run package:win    # dist/StayInsured-Win7-Probe-0.0.4.exe
 ```
 
 One installer covers every Windows 7 machine. It carries both 64-bit and 32-bit
@@ -127,7 +132,7 @@ Windows is the whole point of this one.
 ## Building for a Mac
 
 ```bash
-npm run package:mac    # dist/StayInsured-Win7-Probe-0.0.3-arm64.dmg, and -x64
+npm run package:mac    # dist/StayInsured-Win7-Probe-0.0.4-arm64.dmg, and -x64
 ```
 
 A Mac build answers none of the Windows 7 questions. Chromium 108 on macOS says
