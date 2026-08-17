@@ -3,10 +3,10 @@
  *
  * There is no `Tray` to build and no window to close under
  * `ELECTRON_RUN_AS_NODE`, so what these check is `src/shell.ts`: the wording an
- * operator reads in the menu, the order the lock item does its two jobs in, and
- * whether a close ends the app. Each is a question `tray.rs` and `lib.rs` already
- * answer, and each is a place the two editions could disagree without anything
- * failing.
+ * operator reads in the menu, the order the lock item does its two jobs in, which
+ * launches give way to the copy already running, and whether a close ends the app.
+ * Each is a question `tray.rs` and `lib.rs` already answer, and each is a place the
+ * two editions could disagree without anything failing.
  *
  * The part left untested is the wiring in `main.ts`, which is why it is kept to
  * naming these answers and doing what they say.
@@ -14,6 +14,8 @@
 
 import {
   closeAction,
+  isDiagnosticLaunch,
+  secondLaunchAction,
   startsHidden,
   trayEffects,
   trayIconPoints,
@@ -59,6 +61,42 @@ suite("the tray menu", () => {
       "the notification area scales the icon itself, so 32 pixels is left as it is",
     );
     expect.equal(trayIconPoints("linux"), null);
+  });
+});
+
+suite("a second launch", () => {
+  test("hands over to the copy already running", () => {
+    expect.equal(
+      secondLaunchAction(["electron", "."]),
+      "focus-running-instance",
+      "two copies on one database file is a book kept in two places",
+    );
+  });
+
+  test("lets the diagnostics run beside a live app", () => {
+    for (const flag of ["--probe", "--probe-only", "--capture"]) {
+      expect.ok(isDiagnosticLaunch(["electron", ".", flag]), `${flag} is a diagnostic`);
+      expect.equal(
+        secondLaunchAction(["electron", ".", flag]),
+        "start",
+        `${flag} is asked on machines where the app is open, often because it is`,
+      );
+    }
+  });
+
+  test("reads the flag wherever it appears, and is not fooled by a value", () => {
+    expect.equal(
+      secondLaunchAction(["electron", ".", "--capture", "/tmp/si.png", "--route", "/settings"]),
+      "start",
+    );
+    expect.equal(
+      secondLaunchAction(["electron", ".", "--user-data-dir=/tmp/scratch"]),
+      "focus-running-instance",
+    );
+    expect.ok(
+      !isDiagnosticLaunch(["electron", ".", "--route", "--probe-only-ish"]),
+      "a flag is a whole argument, so nothing that merely contains one counts",
+    );
   });
 });
 

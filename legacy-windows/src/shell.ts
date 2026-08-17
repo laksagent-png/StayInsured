@@ -6,9 +6,10 @@
  * which is the only environment this edition's tests can run in — see
  * `tests/harness.ts` for why. A tray built in a test is therefore not something
  * that can be built at all, let alone clicked. What can be held to the Rust core
- * is everything worth getting wrong: the menu's items and their wording, and
- * whether closing the window ends the app or parks it. Those live here; `main.ts`
- * wires them to Electron and decides nothing itself.
+ * is everything worth getting wrong: the menu's items and their wording, what a
+ * second launch does with the copy already running, and whether closing the
+ * window ends the app or parks it. Those live here; `main.ts` wires them to
+ * Electron and decides nothing itself.
  */
 
 /** The ids `tray.rs` gives its menu items, which are also what its match reads. */
@@ -65,6 +66,27 @@ export function trayEffects(id: TrayItemId): TrayEffect[] {
  */
 export function trayIconPoints(platform: string): number | null {
   return platform === "darwin" ? 16 : null;
+}
+
+/** The flags that mean a launch is one of the diagnostics rather than the app. */
+const DIAGNOSTIC_FLAGS = ["--probe", "--probe-only", "--capture"];
+
+export function isDiagnosticLaunch(argv: string[]): boolean {
+  return DIAGNOSTIC_FLAGS.some((flag) => argv.includes(flag));
+}
+
+export type LaunchAction = "focus-running-instance" | "start";
+
+/**
+ * Two copies of the app writing one database file is a book being kept in two
+ * places, so a second launch hands over to the first instead of opening its own.
+ *
+ * The diagnostics are exempt, and deliberately so: `--probe` answers a question
+ * about the machine and `--capture` photographs a screen, and both are asked on
+ * machines where the app is already open — often precisely because it is.
+ */
+export function secondLaunchAction(argv: string[]): LaunchAction {
+  return isDiagnosticLaunch(argv) ? "start" : "focus-running-instance";
 }
 
 /**

@@ -17,6 +17,10 @@
  * Chromium 108 cannot parse, the build downlevels it, and whether that worked is a
  * question about pixels — so the app can answer it in a PNG, from the machine in
  * question, without anyone having to describe what they see.
+ *
+ * Only the last of the four is the app: it takes a tray icon and the single
+ * instance lock, and the three diagnostics take neither, so any of them can be run
+ * on a machine where the app is already open — usually the machine in question.
  */
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
@@ -30,6 +34,7 @@ import { electronEnv, trayIconPath } from "./env";
 import { runProbe, type ProbeReport } from "./probe";
 import {
   closeAction,
+  secondLaunchAction,
   startsHidden,
   trayEffects,
   trayIconPoints,
@@ -41,6 +46,13 @@ import {
 // Windows 7 in a virtual machine usually has no usable GPU driver, and Chromium
 // shows a blank window rather than falling back to software rendering by itself.
 app.disableHardwareAcceleration();
+
+// A second launch of the app proper gives way to the copy already running, which
+// is asked to come forward below. The diagnostics never ask for the lock, so they
+// still run beside a live app — which is where they are usually wanted.
+const holdsInstanceLock =
+  secondLaunchAction(process.argv) === "start" || app.requestSingleInstanceLock();
+if (!holdsInstanceLock) app.exit(0);
 
 let report: ProbeReport | undefined;
 let session: Session | undefined;
@@ -56,6 +68,8 @@ let quitting = false;
 app.on("before-quit", () => {
   quitting = true;
 });
+
+app.on("second-instance", () => showMainWindow());
 
 /** `show_main_window` in `tray.rs`, in the same order for the same reasons. */
 function showMainWindow(): void {
@@ -295,6 +309,10 @@ function registerBridge(window: BrowserWindow, session: Session): void {
 }
 
 app.whenReady().then(async () => {
+  // The process is already on its way out when the lock was not ours, and Electron
+  // can reach this before it goes.
+  if (!holdsInstanceLock) return;
+
   const probeOnly = process.argv.includes("--probe-only");
   const probeInWindow = process.argv.includes("--probe");
 
