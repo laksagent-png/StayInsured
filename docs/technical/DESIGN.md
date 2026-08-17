@@ -636,7 +636,9 @@ NASM. The release profile uses LTO, `opt-level = "s"`, symbol stripping and
 
 Pushing a `v*` tag publishes a GitHub release with a universal macOS `.dmg` and
 Windows `.msi` and `.exe`; running the workflow by hand builds the same
-installers and attaches them to the run instead. The workflow refuses to build
+installers without announcing a version. Either way the run keeps a copy of the
+installers, so a release that builds and is then refused by GitHub — which has
+happened once — can be filled in without building again. The workflow refuses to build
 when the tag and `tauri.conf.json` disagree, so installers cannot ship under the
 wrong version. Releases are unsigned, and both installers therefore warn on
 first launch.
