@@ -5,6 +5,8 @@ settings survive every version below.
 
 ## Upcoming
 
+## 0.3.4 — 17 August 2026
+
 ### Fixed
 
 - **Saving a client no longer fails with "database disk image is malformed".**
