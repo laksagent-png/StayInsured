@@ -145,8 +145,13 @@ jobs:
           prerelease: false
           releaseBody: ${{ steps.notes.outputs.body }}
 
-      - name: Keep the installers when there is no release to attach them to
-        if: github.ref_type != 'tag'
+      # A manual run has no release to attach these to. A tag run normally does,
+      # but the step above has been seen to build everything and then be refused
+      # when it asked GitHub to create the release, which threw away an hour of
+      # compiling. Keeping a copy either way means a refusal costs an upload by
+      # hand rather than another build.
+      - name: Keep the installers
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: StayInsured-${{ matrix.label }}

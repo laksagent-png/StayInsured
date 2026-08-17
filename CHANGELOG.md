@@ -3,9 +3,19 @@
 Upgrading replaces the app and never the data: your book, your backups and your
 settings survive every version below.
 
-## Upcoming
+## 0.3.5 — 17 August 2026
 
 ### Fixed
+
+- **Saving a client no longer fails with "database disk image is malformed".**
+  Adding something a client did not have on file — a PAN, an email address, a
+  longer name — could be refused outright with a message about the database being
+  damaged, which it never was. It hit hardest on a book that had just been
+  started, and on filling in a column nobody in the book had filled in yet, and it
+  took an import down with it: a spreadsheet that would have completed the records
+  you already had reported those rows as failures and dropped their policies. That
+  is fixed, and opening the app once rebuilds your client search so it agrees with
+  your book again. Nothing is asked of you and nothing was lost.
 
 - **Attaching a document you already attached says so in plain words.** Picking the
   same scan twice for one client was refused, correctly, but the refusal read
@@ -33,20 +43,6 @@ settings survive every version below.
   lives in the notification area, locks from there, and hands a second launch to the
   copy already running instead of opening your book twice. It still does not encrypt
   the file; that has not changed and is not going to.
-
-## 0.3.4 — 17 August 2026
-
-### Fixed
-
-- **Saving a client no longer fails with "database disk image is malformed".**
-  Adding something a client did not have on file — a PAN, an email address, a
-  longer name — could be refused outright with a message about the database being
-  damaged, which it never was. It hit hardest on a book that had just been
-  started, and on filling in a column nobody in the book had filled in yet, and it
-  took an import down with it: a spreadsheet that would have completed the records
-  you already had reported those rows as failures and dropped their policies. That
-  is fixed, and opening the app once rebuilds your client search so it agrees with
-  your book again. Nothing is asked of you and nothing was lost.
 
 ### Changed
 

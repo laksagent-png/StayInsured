@@ -231,6 +231,12 @@ To test a build without announcing a version, run the **Build installers**
 workflow by hand from the Actions tab; it attaches the installers to the run
 instead of creating a release.
 
+Every run keeps the installers on itself, tagged ones included. GitHub once
+refused to create the release after both platforms had finished building, for no
+reason the log could explain and none that was still true minutes later; the
+copies mean that if it happens again the installers can be attached to the
+release by hand instead of built again.
+
 Releases are unsigned, so macOS and Windows both warn on first launch. The
 workflow attaches instructions to every release, and the [README](README.md)
 covers it too. Signing needs a paid Apple Developer account and a Windows
