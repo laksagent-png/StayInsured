@@ -26,10 +26,14 @@ import * as dashboard from "./repo/dashboard";
 import * as documents from "./repo/documents";
 import * as insurers from "./repo/insurers";
 import * as members from "./repo/members";
+import * as notifications from "./repo/notifications";
 import * as policies from "./repo/policies";
 import * as products from "./repo/products";
+import * as rules from "./repo/rules";
 import * as settings from "./repo/settings";
+import * as templates from "./repo/templates";
 import type { Session } from "./session";
+import * as templating from "./templating";
 import type { Client, ClientFilter, ImportOptions } from "./types";
 import { CATEGORIES, categoryLabel } from "./util";
 
@@ -214,31 +218,46 @@ export const COMMANDS: Record<string, Handler> = {
     session.db().withTx((conn) => settings.putMany(conn, obj(args, "values"))),
   backup_now: (session) => backupNow(session),
 
+  // ---------------------------------------------------------------- templates
+  list_templates: (session) => session.db().with(templates.list),
+  create_template: (session, args) =>
+    session.db().withTx((conn) => templates.create(conn, obj(args, "input"))),
+  update_template: (session, args) =>
+    session.db().withTx((conn) => templates.update(conn, num(args, "id"), obj(args, "input"))),
+  delete_template: (session, args) =>
+    session.db().withTx((conn) => templates.remove(conn, num(args, "id"))),
+  // The catalogue is a constant rather than something read out of the book, so the
+  // editor can list what a template may say while the app is still locked.
+  template_placeholders: () => templating.CATALOGUE,
+  preview_template: (session, args) =>
+    session.db().with((conn) => templating.preview(conn, str(args, "subject"), str(args, "bodyHtml"))),
+
+  // ---------------------------------------------------------------- reminder rules
+  list_rules: (session) => session.db().with(rules.list),
+  create_rule: (session, args) => session.db().withTx((conn) => rules.create(conn, obj(args, "input"))),
+  update_rule: (session, args) =>
+    session.db().withTx((conn) => rules.update(conn, num(args, "id"), obj(args, "input"))),
+  delete_rule: (session, args) => session.db().withTx((conn) => rules.remove(conn, num(args, "id"))),
+
+  // ---------------------------------------------------------------- the outbox
+  list_notifications: (session, args) =>
+    session.db().with((conn) => notifications.list(conn, obj(args, "filter"))),
+  retry_notification: (session, args) =>
+    session.db().withTx((conn) => notifications.requeue(conn, num(args, "id"))),
+  cancel_notification: (session, args) =>
+    session.db().withTx((conn) => notifications.cancel(conn, num(args, "id"))),
+
   // ---------------------------------------------------------------- not built yet
   //
   // Each of these has a screen in the interface that will now say plainly that
-  // this edition cannot do it. Reminders are the ones that matter most, and they
-  // are a sweep of business rules rather than a bridge problem.
+  // this edition cannot do it. The reminder screens read and edit their rules,
+  // messages and outbox; what is left is the sweep that decides what is due and
+  // the connection that sends it.
   reminder_overview: unbuilt("Reminders"),
   plan_reminders: unbuilt("Reminders"),
   run_reminders: unbuilt("Reminders"),
-  list_notifications: unbuilt("Reminders"),
-  retry_notification: unbuilt("Reminders"),
-  cancel_notification: unbuilt("Reminders"),
   set_smtp_password: unbuilt("Sending email"),
   send_test_email: unbuilt("Sending email"),
-
-  list_templates: unbuilt("Email templates"),
-  create_template: unbuilt("Email templates"),
-  update_template: unbuilt("Email templates"),
-  delete_template: unbuilt("Email templates"),
-  preview_template: unbuilt("Email templates"),
-  template_placeholders: unbuilt("Email templates"),
-
-  list_rules: unbuilt("Reminder rules"),
-  create_rule: unbuilt("Reminder rules"),
-  update_rule: unbuilt("Reminder rules"),
-  delete_rule: unbuilt("Reminder rules"),
 };
 
 /**
