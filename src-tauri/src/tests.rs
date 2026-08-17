@@ -3308,3 +3308,32 @@ fn the_plain_text_part_keeps_the_shape_of_the_message() {
         "nested tags should not leave a run of blank lines"
     );
 }
+
+/// The single-instance guard hands a second launch to the copy already running,
+/// and that copy always brings its window forward — which needs a window, and so
+/// is not reachable from here. What is reachable is the reading of the flag the
+/// two halves disagree about: the autostart plugin starts the app at login with
+/// `--background` and it stays in the tray, while a launch someone made
+/// themselves has to arrive on screen. Read that flag too loosely and a login at
+/// the wrong moment leaves an operator watching nothing happen.
+#[test]
+fn only_the_login_item_starts_the_app_into_the_tray() {
+    let launch = |args: &[&str]| {
+        crate::starts_hidden(args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>())
+    };
+
+    assert!(launch(&["stayinsured", "--background"]));
+    assert!(
+        !launch(&["stayinsured"]),
+        "a launch with nothing to say is someone opening the app"
+    );
+
+    // The OS decides where in the command line its argument goes, so the flag is
+    // looked for rather than expected in a position.
+    assert!(launch(&["stayinsured", "--other", "--background"]));
+
+    // A whole argument, not a resemblance: neither of these is the login item.
+    assert!(!launch(&["stayinsured", "--background-check"]));
+    assert!(!launch(&["stayinsured", "--no-background"]));
+    assert!(!launch(&["stayinsured", "background"]));
+}

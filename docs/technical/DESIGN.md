@@ -78,9 +78,19 @@ The app is a tray-resident background application, not a document window.
   brings the window up on it.
 - Launched with `--background` (how the autostart plugin starts it at login) the
   window stays hidden and the app goes straight to the tray.
-- Startup order in `run()`: tracing, plugins, resolve `AppPaths` and create the
-  data directories, register `AppState`, build the tray, start the reminder
-  scheduler, register commands.
+- A second launch never becomes a second app. `tauri-plugin-single-instance` is
+  registered before every other plugin, which is what the plugin requires, so a
+  launch that finds a copy already running is turned away inside plugin setup —
+  before it reaches `AppPaths`, let alone the book — and the copy already running
+  does what the tray's **Open** does. The second launch's own arguments are
+  deliberately not read: an autostart launch arriving while the operator has the
+  window open would otherwise hide it on them.
+- What that guard does not cover is a book reached twice from different machines,
+  a synced or shared data folder among them. It is one lock per machine, held on
+  the bundle identifier, not a lock on the database file.
+- Startup order in `run()`: tracing, the single-instance guard, the rest of the
+  plugins, resolve `AppPaths` and create the data directories, register
+  `AppState`, build the tray, start the reminder scheduler, register commands.
 
 Everything the app writes lives under one directory, so a backup or a move to a
 new machine is a single folder copy.
@@ -166,6 +176,13 @@ change cannot survive an error.
 
 Connection pragmas on open: `journal_mode = WAL`, `foreign_keys = ON`,
 `busy_timeout = 5000`, `synchronous = NORMAL`.
+
+`busy_timeout` has less to do now that one machine runs one copy of the app, and
+it stays anyway. The guard is a lock per machine on the bundle identifier, not on
+the database file: a book kept in a synced or shared folder can still be opened
+from a second machine, and WAL — which wants a shared-memory file beside the
+database — is worse than useless there. Waiting five seconds for a lock is the
+cheapest thing left between that arrangement and a corrupt book.
 
 **Migrations are append-only.** `MIGRATIONS` is an ordered list of
 `(version, sql)` compiled in with `include_str!`, applied inside one transaction
@@ -653,10 +670,13 @@ of `lib.rs` and fails if the two command surfaces disagree by a single name — 
 command added here and forgotten there is otherwise found by an operator.
 `DEVELOPER.md` carries what is built there and what is not.
 
-One asymmetry runs the other way. That edition refuses a second launch and focuses
-the running window instead; this one has no single-instance plugin, so two processes
-can open one book, and the file being encrypted does nothing about it — both hold
-the key. Worth fixing here rather than treating as a difference.
+Both editions now refuse a second launch and bring the running window forward
+instead, and they answer it the same way, because the hazard is the same one: two
+processes on one book, with encryption no help at all since both hold the key. The
+one difference is what each exempts. That edition is also the Windows 7 probe, so
+`--probe`, `--probe-only` and `--capture` never ask for the lock and still run
+beside an open app; this one has no diagnostics to exempt, and every launch of it
+is the app.
 
 **An installed copy updates itself.** The same release carries an
 `.app.tar.gz` for macOS and a `.nsis.zip` for Windows, each with a `.sig`, plus

@@ -52,6 +52,9 @@ multi-user logins are the next phases; the schema for them is already in place.
   is the point of encryption; keep a copy of the password somewhere safe.
 - The SMTP password lives in the same keychain, never in the database, so a
   backup copied to a cloud folder carries no working credential.
+- One copy of the app runs per machine: a second launch hands over to the one
+  already running rather than opening the same book twice. Encryption is no help
+  against that particular fault, since both copies hold the key.
 
 ## Requirements
 
@@ -305,9 +308,10 @@ off for a week catches up once rather than sending a week of reminders.
 It also has a shell of its own now: a tray icon and menu matching `tray.rs`, a
 window that hides into it on close, and a single-instance guard so a second launch
 focuses the running copy rather than opening a second connection to one book. The
-guard has no counterpart in the Tauri app, which has no such plugin — the same
-hazard is there and unaddressed. `--probe` and `--capture` deliberately skip the
-guard, so the diagnostics still run beside an open app.
+app answers a second launch the same way, through
+`tauri-plugin-single-instance`. `--probe` and `--capture` deliberately skip the
+guard here, so the diagnostics still run beside an open app; the app has no
+diagnostics to skip it.
 
 ```bash
 cd legacy-windows

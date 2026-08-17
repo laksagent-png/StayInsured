@@ -25,6 +25,15 @@ use tauri_plugin_autostart::MacosLauncher;
 use crate::paths::AppPaths;
 use crate::state::AppState;
 
+/// Whether a launch belongs in the tray rather than on screen. `--background` is
+/// the argument the autostart plugin is registered with, so it means the OS
+/// started the app at login and nobody is waiting for a window. It has to be a
+/// whole argument: anything that merely resembles the flag was typed by someone
+/// who is waiting for one.
+pub fn starts_hidden<I: IntoIterator<Item = String>>(args: I) -> bool {
+    args.into_iter().any(|arg| arg == "--background")
+}
+
 pub fn run() {
     tracing_subscriber::fmt()
         .with_max_level(if cfg!(debug_assertions) {
@@ -36,6 +45,19 @@ pub fn run() {
         .init();
 
     tauri::Builder::default()
+        // Registered before anything else, as the plugin requires: a launch that
+        // finds the app already running is turned away here, in plugin setup,
+        // before this process reaches the data directory or the book. Two
+        // processes on one database is a book kept in two places, and the file
+        // being encrypted does nothing about it — both launches hold the key.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // Someone reached for the app, so the window comes forward exactly as
+            // the tray's Open does — which is the whole answer for a copy that
+            // started at login and is sitting in the tray. The second launch's
+            // own arguments are deliberately not read: a login item firing while
+            // the operator has the window open would otherwise hide it on them.
+            tray::show_main_window(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -53,7 +75,7 @@ pub fn run() {
             scheduler::start(app.handle().clone());
 
             // Launched by the OS at login: stay in the tray rather than popping up.
-            if std::env::args().any(|arg| arg == "--background") {
+            if starts_hidden(std::env::args()) {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
                 }

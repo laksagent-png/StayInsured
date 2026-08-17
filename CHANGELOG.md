@@ -13,6 +13,14 @@ settings survive every version below.
   nothing about what you did or what to do next. It now says the file is already
   attached to this client. Both editions were affected and both are fixed.
 
+- **Opening StayInsured twice brings you back to the copy you already have.**
+  Double-clicking the shortcut while the app was running — or opening it yourself
+  after it had started itself at login and gone to the tray — used to give you a
+  second app on the same book. Two of them saving the same clients is how a
+  client added in one goes missing in the other, and how a morning's reminders
+  go out twice. A second launch now brings the window you already have forward,
+  whether it was on screen or waiting in the tray, and nothing else opens.
+
 ### Added
 
 - **The Windows 7 edition does the whole job now.** It reads spreadsheets in, writes
