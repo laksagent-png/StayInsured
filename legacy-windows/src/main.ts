@@ -28,7 +28,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { dispatch } from "./core/commands";
+import type { Database } from "./core/db";
 import { toWire } from "./core/errors";
+import * as mail from "./core/mail";
+import * as reminders from "./core/reminders";
+import * as settings from "./core/repo/settings";
 import { Session } from "./core/session";
 import { electronEnv, trayIconPath } from "./env";
 import { runProbe, type ProbeReport } from "./probe";
@@ -36,6 +40,8 @@ import {
   closeAction,
   secondLaunchAction,
   startsHidden,
+  sweepIsDue,
+  SWEEP_TICK_MS,
   trayEffects,
   trayIconPoints,
   trayMenu,
@@ -234,6 +240,83 @@ function runTrayCommand(id: TrayItemId, session: Session): void {
   }
 }
 
+/**
+ * A sweep already under way. The Rust core's tick is a thread that sleeps between
+ * runs and so cannot overlap itself; a timer can, on a slow mail server, so a run
+ * in progress skips the tick rather than starting a second sweep beside it.
+ */
+let sweeping = false;
+
+/**
+ * The daily sweep, from `scheduler.rs`.
+ *
+ * A timer asks once a minute whether today's sweep has already run, rather than
+ * waking at the send time, so a machine that was asleep at nine sweeps as soon as
+ * it is opened and one that was open all day still sweeps once. `sweepIsDue` in
+ * `shell.ts` holds that decision.
+ */
+function startSweepTimer(session: Session): void {
+  setInterval(() => void sweepTick(session), SWEEP_TICK_MS);
+}
+
+async function sweepTick(session: Session): Promise<void> {
+  if (sweeping) return;
+
+  // Locked means there is nothing to read and nothing to send. The sweep resumes
+  // after the next unlock.
+  let db: Database;
+  try {
+    db = session.db();
+  } catch {
+    return;
+  }
+
+  const due = db.with((conn) =>
+    sweepIsDue({
+      enabled: settings.getOr(conn, "reminders_enabled", "false") === "true",
+      sendTime: settings.getOr(conn, "reminder_send_time", "09:00"),
+      lastSweepAt: settings.get(conn, "last_sweep_at"),
+      now: new Date(),
+    }),
+  );
+  if (!due) return;
+
+  const config = db.with((conn) => mail.load(conn, session.env.secrets));
+  let mailer: mail.Mailer | null = null;
+  if (mail.isUsable(config)) {
+    try {
+      mailer = mail.Mailer.connect(config);
+    } catch (error) {
+      // Unsendable settings are not a reason to skip the sweep: what is due is
+      // still worked out and queued, and `dispatch` reports that nothing went.
+      console.warn(`the mail server could not be reached: ${describeError(error)}`);
+    }
+  }
+
+  sweeping = true;
+  try {
+    const run = await db.with((conn) =>
+      reminders.sweep(conn, mailer, reminders.alerts(session.env), reminders.liveOptions()),
+    );
+    console.log(
+      `reminder sweep finished: ${run.queued} queued, ${run.sent} sent, ` +
+        `${run.failed} failed, ${run.skipped} skipped`,
+    );
+    // The reminders screen refreshes itself rather than showing yesterday's
+    // numbers until someone reloads it.
+    emitAppEvent("reminders:swept", run);
+  } catch (error) {
+    console.warn(`the reminder sweep could not run: ${describeError(error)}`);
+  } finally {
+    sweeping = false;
+    mailer?.close();
+  }
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function registerBridge(window: BrowserWindow, session: Session): void {
   // One channel for all 73 command names. The renderer sends a name; the table in
   // core/commands.ts decides whether it means anything.
@@ -382,10 +465,15 @@ app.whenReady().then(async () => {
   mainWindow = window;
   registerBridge(window, session);
 
-  // The capture takes its picture and exits, so it gets no tray: an icon that
-  // appears for a second and a half, and a window that then refuses to close, are
-  // both the wrong shape for a diagnostic.
-  if (!capture) tray = createTray(session);
+  // The capture takes its picture and exits, so it gets neither a tray nor the
+  // sweep: an icon that appears for a second and a half, and a window that then
+  // refuses to close, are both the wrong shape for a diagnostic — and a diagnostic
+  // that photographs a screen has no business writing to an agency's clients on
+  // the way past.
+  if (!capture) {
+    tray = createTray(session);
+    startSweepTimer(session);
+  }
 
   if (capture) {
     // A second and a half of settling after first paint: the interface asks for the

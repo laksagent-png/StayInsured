@@ -4,9 +4,10 @@
  * There is no `Tray` to build and no window to close under
  * `ELECTRON_RUN_AS_NODE`, so what these check is `src/shell.ts`: the wording an
  * operator reads in the menu, the order the lock item does its two jobs in, which
- * launches give way to the copy already running, and whether a close ends the app.
- * Each is a question `tray.rs` and `lib.rs` already answer, and each is a place the
- * two editions could disagree without anything failing.
+ * launches give way to the copy already running, whether a close ends the app, and
+ * when the day's reminder sweep is due. Each is a question `tray.rs`, `lib.rs` and
+ * `scheduler.rs` already answer, and each is a place the two editions could
+ * disagree without anything failing.
  *
  * The part left untested is the wiring in `main.ts`, which is why it is kept to
  * naming these answers and doing what they say.
@@ -15,8 +16,10 @@
 import {
   closeAction,
   isDiagnosticLaunch,
+  parseSendTime,
   secondLaunchAction,
   startsHidden,
+  sweepIsDue,
   trayEffects,
   trayIconPoints,
   trayMenu,
@@ -126,5 +129,44 @@ suite("closing the window", () => {
 
   test("closes when there is no tray to bring the window back from", () => {
     expect.equal(closeAction({ tray: false, quitting: false }), "close");
+  });
+});
+
+suite("the daily tick", () => {
+  const at = (hour: number, minute: number) => new Date(2027, 2, 31, hour, minute, 0);
+  const due = (over: Partial<Parameters<typeof sweepIsDue>[0]>) =>
+    sweepIsDue({
+      enabled: true,
+      sendTime: "09:00",
+      lastSweepAt: null,
+      now: at(9, 30),
+      ...over,
+    });
+
+  test("does nothing while automatic sending is switched off", () => {
+    expect.ok(!due({ enabled: false }));
+  });
+
+  test("waits for the send time to pass", () => {
+    expect.ok(!due({ now: at(8, 59) }));
+    expect.ok(due({ now: at(9, 0) }), "the send time itself counts as passed");
+  });
+
+  test("sweeps once a day, however long the app stays open", () => {
+    expect.ok(!due({ lastSweepAt: "2027-03-31T09:00:04+05:30" }));
+  });
+
+  test("catches up on the day it is opened rather than skipping it", () => {
+    expect.ok(
+      due({ lastSweepAt: "2027-03-24T09:00:04+05:30" }),
+      "a machine that was off for a week sweeps as soon as it comes back",
+    );
+  });
+
+  test("falls back to nine when the send time cannot be read", () => {
+    expect.equal(parseSendTime("09:00"), 9 * 3_600);
+    expect.equal(parseSendTime(" 18:30:15 "), 18 * 3_600 + 30 * 60 + 15);
+    expect.equal(parseSendTime("half past six"), 9 * 3_600);
+    expect.equal(parseSendTime("25:00"), 9 * 3_600);
   });
 });

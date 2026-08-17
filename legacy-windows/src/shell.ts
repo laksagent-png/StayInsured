@@ -7,9 +7,9 @@
  * `tests/harness.ts` for why. A tray built in a test is therefore not something
  * that can be built at all, let alone clicked. What can be held to the Rust core
  * is everything worth getting wrong: the menu's items and their wording, what a
- * second launch does with the copy already running, and whether closing the
- * window ends the app or parks it. Those live here; `main.ts` wires them to
- * Electron and decides nothing itself.
+ * second launch does with the copy already running, whether closing the window
+ * ends the app or parks it, and whether the day's reminder sweep is due. Those
+ * live here; `main.ts` wires them to Electron and decides nothing itself.
  */
 
 /** The ids `tray.rs` gives its menu items, which are also what its match reads. */
@@ -120,4 +120,61 @@ export type CloseAction = "hide" | "close";
 export function closeAction({ tray, quitting }: CloseContext): CloseAction {
   if (quitting) return "close";
   return tray ? "hide" : "close";
+}
+
+/**
+ * How often the tick asks whether today's sweep has run. `TICK` in
+ * `scheduler.rs`, and a minute rather than a day for the reason below.
+ */
+export const SWEEP_TICK_MS = 60_000;
+
+/** 09:00, the seeded `reminder_send_time` and what an unreadable one falls back to. */
+const DEFAULT_SEND_TIME = 9 * 3_600;
+
+/** Seconds since midnight, or the default when the setting cannot be read. */
+export function parseSendTime(raw: string): number {
+  const match = /^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/.exec(raw.trim());
+  if (!match) return DEFAULT_SEND_TIME;
+
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const second = match[3] === undefined ? 0 : Number(match[3]);
+  if (hour > 23 || minute > 59 || second > 59) return DEFAULT_SEND_TIME;
+
+  return hour * 3_600 + minute * 60 + second;
+}
+
+export interface SweepDueContext {
+  /** The `reminders_enabled` setting. */
+  enabled: boolean;
+  /** The `reminder_send_time` setting, as it was typed. */
+  sendTime: string;
+  /** The `last_sweep_at` setting, which the sweep stamps with the local time. */
+  lastSweepAt: string | null;
+  now: Date;
+}
+
+/**
+ * True when reminders are switched on, the send time has passed, and today has
+ * not been swept yet. `is_due` in `scheduler.rs`.
+ *
+ * Asking whether today has been swept, rather than waking at nine, is what makes
+ * a missed slot harmless: a laptop that was asleep at nine sweeps as soon as it is
+ * opened, one that was open all day sweeps exactly once, and one that was off for
+ * a week catches up on the day it comes back rather than sending seven days of
+ * reminders at once — the outbox has the older ones recorded and will not repeat
+ * them.
+ */
+export function sweepIsDue({ enabled, sendTime, lastSweepAt, now }: SweepDueContext): boolean {
+  if (!enabled) return false;
+
+  const intoDay = now.getHours() * 3_600 + now.getMinutes() * 60 + now.getSeconds();
+  if (intoDay < parseSendTime(sendTime)) return false;
+
+  return lastSweepAt === null || !lastSweepAt.startsWith(localDay(now));
+}
+
+function localDay(now: Date): string {
+  const pad = (value: number) => `${value}`.padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
