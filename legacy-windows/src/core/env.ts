@@ -35,6 +35,12 @@ export interface CoreEnv {
   secrets: SecretStore;
   /** Shows a folder to the operator. `reveal_data_dir` in the Rust core. */
   reveal(target: string): void;
+  /**
+   * Raises a desktop notification, which the sweep does for a rule that alerts
+   * rather than emails. `DesktopAlerts` in `alerts.rs`, and as there a failure to
+   * show one is swallowed: the reminder matters more than the banner.
+   */
+  notify(title: string, body: string): void;
 }
 
 /** A port of `src-tauri/src/paths.rs`. */

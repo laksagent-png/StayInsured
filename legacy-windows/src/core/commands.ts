@@ -9,10 +9,6 @@
  * Commands the Rust core allows while locked are the ones that do not call
  * `session.db()`. Everything else refuses with `locked`, which is what sends the
  * interface back to its lock screen.
- *
- * What is not built yet is listed at the bottom and fails saying so. A screen
- * that half works is worse than one that admits it: an operator who cannot
- * import a spreadsheet needs to know that now, not after typing for an hour.
  */
 
 import fs from "node:fs";
@@ -21,6 +17,9 @@ import path from "node:path";
 import { AppError } from "./errors";
 import * as exporter from "./exporter";
 import * as importer from "./importer";
+import * as mail from "./mail";
+import { Mailer } from "./mail";
+import * as reminders from "./reminders";
 import * as clients from "./repo/clients";
 import * as dashboard from "./repo/dashboard";
 import * as documents from "./repo/documents";
@@ -34,8 +33,8 @@ import * as settings from "./repo/settings";
 import * as templates from "./repo/templates";
 import type { Session } from "./session";
 import * as templating from "./templating";
-import type { Client, ClientFilter, ImportOptions } from "./types";
-import { CATEGORIES, categoryLabel } from "./util";
+import type { Client, ClientFilter, ImportOptions, ReminderRun } from "./types";
+import { CATEGORIES, categoryLabel, looksLikeEmail, todayIso } from "./util";
 
 type Args = Record<string, unknown>;
 type Handler = (session: Session, args: Args) => unknown | Promise<unknown>;
@@ -63,11 +62,14 @@ function optBool(args: Args, key: string): boolean {
   return args[key] === true;
 }
 
-/** Something is not built. Said in the words of someone using the app. */
-function unbuilt(what: string): Handler {
-  return () => {
-    throw AppError.other(`${what} is not built in the Windows 7 edition yet.`);
-  };
+/**
+ * A flag that may be left unanswered, which is not the same as false: `dryRun`
+ * arrives as null when the screen wants whatever Settings says. `Option<bool>` in
+ * the Rust handler.
+ */
+function triStateBool(args: Args, key: string): boolean | null {
+  const value = args[key];
+  return typeof value === "boolean" ? value : null;
 }
 
 export const COMMANDS: Record<string, Handler> = {
@@ -239,6 +241,12 @@ export const COMMANDS: Record<string, Handler> = {
     session.db().withTx((conn) => rules.update(conn, num(args, "id"), obj(args, "input"))),
   delete_rule: (session, args) => session.db().withTx((conn) => rules.remove(conn, num(args, "id"))),
 
+  // ---------------------------------------------------------------- the sweep
+  reminder_overview: (session) =>
+    session.db().with((conn) => reminders.overview(conn, session.env.secrets)),
+  plan_reminders: (session) => session.db().with((conn) => reminders.plan(conn, todayIso())),
+  run_reminders: (session, args) => runReminders(session, triStateBool(args, "dryRun")),
+
   // ---------------------------------------------------------------- the outbox
   list_notifications: (session, args) =>
     session.db().with((conn) => notifications.list(conn, obj(args, "filter"))),
@@ -247,18 +255,91 @@ export const COMMANDS: Record<string, Handler> = {
   cancel_notification: (session, args) =>
     session.db().withTx((conn) => notifications.cancel(conn, num(args, "id"))),
 
-  // ---------------------------------------------------------------- not built yet
-  //
-  // Each of these has a screen in the interface that will now say plainly that
-  // this edition cannot do it. The reminder screens read and edit their rules,
-  // messages and outbox; what is left is the sweep that decides what is due and
-  // the connection that sends it.
-  reminder_overview: unbuilt("Reminders"),
-  plan_reminders: unbuilt("Reminders"),
-  run_reminders: unbuilt("Reminders"),
-  set_smtp_password: unbuilt("Sending email"),
-  send_test_email: unbuilt("Sending email"),
+  // ---------------------------------------------------------------- the mail server
+  set_smtp_password: (session, args) => {
+    // Reading state proves the app is unlocked before touching the keychain.
+    session.db();
+    const given = args["password"];
+    const secret = typeof given === "string" && given !== "" ? given : null;
+
+    if (secret === null) {
+      session.env.secrets.clear("smtp-password");
+      return;
+    }
+    if (!session.env.secrets.save("smtp-password", secret)) {
+      throw AppError.other(
+        "could not save to the OS keychain: this machine has no way to encrypt it.",
+      );
+    }
+  },
+  send_test_email: (session, args) => sendTestEmail(session, str(args, "to")),
 };
+
+/**
+ * Runs the sweep now. `dryRun` overrides the setting for this run only, which is
+ * how the operator tries it out before switching sending on.
+ */
+async function runReminders(session: Session, dryRun: boolean | null): Promise<ReminderRun> {
+  const db = session.db();
+  const options: reminders.SweepOptions = {
+    today: todayIso(),
+    dryRun: dryRun ?? db.with((conn) => settings.getOr(conn, "dry_run", "true") === "true"),
+  };
+
+  let mailer: Mailer | null = null;
+  if (!options.dryRun) {
+    const config = db.with((conn) => mail.load(conn, session.env.secrets));
+    if (!mail.isUsable(config)) {
+      throw AppError.mail("Add your mail server details in Settings before sending.");
+    }
+    mailer = Mailer.connect(config);
+  }
+
+  try {
+    return await db.with((conn) =>
+      reminders.sweep(conn, mailer, reminders.alerts(session.env), options),
+    );
+  } finally {
+    mailer?.close();
+  }
+}
+
+/**
+ * Opens a connection and sends one message, so the operator finds out about a
+ * wrong password here rather than through a queue full of failures.
+ */
+async function sendTestEmail(session: Session, to: string): Promise<void> {
+  const address = to.trim();
+  if (!looksLikeEmail(address)) {
+    throw AppError.validation("Enter an email address to test with");
+  }
+
+  const db = session.db();
+  const config = db.with((conn) => mail.load(conn, session.env.secrets));
+  if (!mail.isUsable(config)) {
+    throw AppError.mail("Add the mail server and the address to send from first.");
+  }
+  const provider = db.with(templating.providerContext);
+
+  const mailer = Mailer.connect(config);
+  try {
+    await mailer.check();
+    await mailer.send({
+      toName: provider.name,
+      toEmail: address,
+      subject: "StayInsured test message",
+      html:
+        '<div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:15px">' +
+        "<p>This is a test from StayInsured.</p>" +
+        `<p>Mail is going out through <strong>${templating.escapeHtml(config.host)}</strong> as ` +
+        `<strong>${templating.escapeHtml(config.fromEmail)}</strong>, ` +
+        "so reminders will reach your clients.</p>" +
+        `<p>— ${templating.escapeHtml(provider.name)}</p></div>`,
+    });
+  } finally {
+    mailer.close();
+  }
+}
 
 /**
  * A snapshot, old ones pruned, mirrored to the configured folder if there is one.

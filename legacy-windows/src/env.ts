@@ -11,7 +11,7 @@
  * matters. A machine that cannot encrypt simply asks for the password every time.
  */
 
-import { app, safeStorage, shell } from "electron";
+import { app, Notification, safeStorage, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -95,6 +95,15 @@ export function electronEnv(): CoreEnv {
     secrets: secretStore(path.join(root, "secrets")),
     reveal: (target) => {
       void shell.openPath(target);
+    },
+    notify: (title, body) => {
+      try {
+        if (Notification.isSupported()) new Notification({ title, body }).show();
+      } catch (error) {
+        // A desktop with nothing listening for notifications should not cost the
+        // reminder that raised one.
+        console.warn(`could not show a desktop notification: ${String(error)}`);
+      }
     },
   };
 }

@@ -7,9 +7,6 @@
  * drift this whole edition has to live with, so the rule is: when a model changes
  * in Rust, it changes in both places, and `tests/` is where the disagreement is
  * meant to surface.
- *
- * Only what is built so far appears here. The unbuilt commands in `commands.ts`
- * have no shapes yet on purpose, so nothing looks finished that is not.
  */
 
 export interface Page<T> {
@@ -442,4 +439,55 @@ export interface NotificationFilter {
   descending?: boolean | null;
   page?: number | null;
   pageSize?: number | null;
+}
+
+/** A reminder the sweep would queue, shown before anything is written. */
+export interface PlannedReminder {
+  ruleId: number;
+  ruleName: string;
+  policyId: number;
+  policyNumber: string;
+  clientId: number;
+  clientName: string;
+  toAddress: string | null;
+  expiryDate: string;
+  daysToExpiry: number;
+  channel: string;
+  subject: string;
+  /** Set when the reminder will not go out, saying why. */
+  blockedReason: string | null;
+}
+
+export interface ReminderRun {
+  dryRun: boolean;
+  queued: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  /** Reminders left queued because the daily cap was reached. */
+  heldByCap: number;
+  desktopAlerts: number;
+  digestSent: boolean;
+  issues: string[];
+}
+
+/** What the reminders screen needs to describe the current state in a sentence. */
+export interface ReminderOverview {
+  enabled: boolean;
+  dryRun: boolean;
+  smtpConfigured: boolean;
+  smtpPasswordSet: boolean;
+  fromEmail: string;
+  sendTime: string;
+  dailyCap: number;
+  digestEnabled: boolean;
+  desktopAlerts: boolean;
+  activeRules: number;
+  dueToday: number;
+  queued: number;
+  failed: number;
+  sentToday: number;
+  lastSweep: string | null;
+  clientsOptedOut: number;
+  expiringWithoutEmail: number;
 }

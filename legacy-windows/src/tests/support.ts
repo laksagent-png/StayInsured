@@ -74,16 +74,21 @@ export interface TestEnv extends CoreEnv {
   secrets: ReturnType<typeof fakeSecrets>;
   /** What `reveal_data_dir` was asked to show, for the one test that checks it. */
   revealed: string[];
+  /** The desktop notifications the sweep raised, title and body. */
+  alerted: [string, string][];
 }
 
 export function tempEnv(label: string): TestEnv {
   const revealed: string[] = [];
+  const alerted: [string, string][] = [];
   return {
     paths: appPaths(tempDir(label)),
     schemaDir: schemaDir(),
     secrets: fakeSecrets(),
     revealed,
+    alerted,
     reveal: (target) => revealed.push(target),
+    notify: (title, body) => alerted.push([title, body]),
   };
 }
 
