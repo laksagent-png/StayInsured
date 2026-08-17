@@ -177,9 +177,10 @@ suite("opting out and missing addresses", () => {
     const db = tempDb("blocked-reasons");
     const { clientId } = bookExpiringIn(db, 30, "ananya@example.com");
 
-    // Written with SQL rather than through `clients::update`, which trips the
-    // search index triggers when a blank field is filled in — the fault the
-    // importer suite records, and being fixed in the schema the two editions share.
+    // Written with SQL rather than through `clients.update`, because one of the
+    // states under test is an address the form would refuse to save. The sweep has
+    // to cope with it regardless: books imported from a spreadsheet hold text that
+    // no screen would have accepted.
     db.with((conn) => {
       expect.equal(plan(conn, todayIso())[0]!.blockedReason, null);
 
