@@ -20,6 +20,14 @@ extraResources:
     to: schema
     filter:
       - "*.sql"
+  # The tray icon travels the same way and for the same reason: it is the app's
+  # own, not a second drawing of it, so both editions sit in the tray looking like
+  # one program.
+  - from: ../src-tauri/icons
+    to: icons
+    filter:
+      - tray.png
+      - tray@2x.png
 
 # Both architectures, because a Windows 7 machine can be either and asking its
 # owner which one they have is not a reasonable question. NSIS combines them into

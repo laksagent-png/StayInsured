@@ -27,6 +27,18 @@ export function schemaDir(): string {
     : path.join(__dirname, "..", "..", "src-tauri", "src", "db", "schema");
 }
 
+/**
+ * The app's own tray icon, travelling the same way the schema does rather than
+ * being copied here: one tray, one picture of it, and no chance of the two
+ * editions sitting in a menu bar looking like different programs. The `@2x`
+ * companion beside it is picked up by name on a high-density screen.
+ */
+export function trayIconPath(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "icons", "tray.png")
+    : path.join(__dirname, "..", "..", "src-tauri", "icons", "tray.png");
+}
+
 function secretStore(secretsDir: string): SecretStore {
   fs.mkdirSync(secretsDir, { recursive: true });
   const fileFor = (name: SecretName) => path.join(secretsDir, `${name}.bin`);

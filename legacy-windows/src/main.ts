@@ -19,15 +19,24 @@
  * question, without anyone having to describe what they see.
  */
 
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 
 import { dispatch } from "./core/commands";
 import { toWire } from "./core/errors";
 import { Session } from "./core/session";
-import { electronEnv } from "./env";
+import { electronEnv, trayIconPath } from "./env";
 import { runProbe, type ProbeReport } from "./probe";
+import {
+  closeAction,
+  startsHidden,
+  trayEffects,
+  trayIconPoints,
+  trayMenu,
+  TRAY_TOOLTIP,
+  type TrayItemId,
+} from "./shell";
 
 // Windows 7 in a virtual machine usually has no usable GPU driver, and Chromium
 // shows a blank window rather than falling back to software rendering by itself.
@@ -35,6 +44,38 @@ app.disableHardwareAcceleration();
 
 let report: ProbeReport | undefined;
 let session: Session | undefined;
+let mainWindow: BrowserWindow | undefined;
+let tray: Tray | undefined;
+
+/**
+ * Set on the way out so the window's own close handler stops parking the app in
+ * the tray and lets it close. Anything that quits goes through `before-quit`,
+ * including the tray's own Quit and the relaunch the Settings screen asks for.
+ */
+let quitting = false;
+app.on("before-quit", () => {
+  quitting = true;
+});
+
+/** `show_main_window` in `tray.rs`, in the same order for the same reasons. */
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.show();
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+}
+
+/**
+ * What `app.emit` is in the Rust core: something the interface did not ask for and
+ * has to be told. `preload.ts` listens on these channel names and
+ * `ui/shims/event.ts` hands them to the screens as the `listen()` they already
+ * call, so an event sent from here needs nothing added on the other side. The
+ * tray's lock sends `session:locked`; a reminder sweep sends `reminders:swept`.
+ */
+function emitAppEvent(event: string, payload: unknown): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send(`app:event:${event}`, payload);
+}
 
 /**
  * Plain hyphens and no colour: this has to stay readable in the Windows console,
@@ -71,7 +112,7 @@ function probeWindow(): void {
   void window.loadFile(path.join(__dirname, "..", "src", "renderer", "index.html"));
 }
 
-function appWindow(route = "/"): BrowserWindow {
+function appWindow(route = "/", showWhenReady = true): BrowserWindow {
   const window = new BrowserWindow({
     width: 1_280,
     height: 860,
@@ -88,7 +129,13 @@ function appWindow(route = "/"): BrowserWindow {
     },
   });
 
-  window.once("ready-to-show", () => window.show());
+  if (showWhenReady) window.once("ready-to-show", () => window.show());
+
+  window.on("close", (event) => {
+    if (closeAction({ tray: tray !== undefined, quitting }) === "close") return;
+    event.preventDefault();
+    window.hide();
+  });
 
   // On the machines this edition is for there is no devtools window worth opening
   // and often no console either, so what the interface says goes to the log beside
@@ -117,6 +164,60 @@ function appWindow(route = "/"): BrowserWindow {
   });
 
   return window;
+}
+
+/**
+ * The tray is what keeps the app alive after the window is closed, which is how
+ * reminders can fire without a visible window.
+ *
+ * The icon is a template image, which is how a Mac menu bar knows to tint it for a
+ * light or a dark bar — `icon_as_template` in `tray.rs`, and ignored elsewhere.
+ * The one thing here that cannot be matched is `show_menu_on_left_click(false)`: a
+ * Mac status item with a menu attached opens it on any click, so the left click
+ * that brings the window up is a Windows behaviour, which is the platform this
+ * edition exists for.
+ */
+function createTray(session: Session): Tray {
+  const points = trayIconPoints(process.platform);
+  const drawn = nativeImage.createFromPath(trayIconPath());
+  const icon = points === null ? drawn : drawn.resize({ width: points, height: points });
+  icon.setTemplateImage(true);
+
+  const trayIcon = new Tray(icon);
+  trayIcon.setToolTip(TRAY_TOOLTIP);
+  trayIcon.setContextMenu(
+    Menu.buildFromTemplate(
+      trayMenu().map((item) =>
+        item.kind === "separator"
+          ? { type: "separator" as const }
+          : { label: item.label, click: () => runTrayCommand(item.id, session) },
+      ),
+    ),
+  );
+  trayIcon.on("click", () => showMainWindow());
+
+  return trayIcon;
+}
+
+function runTrayCommand(id: TrayItemId, session: Session): void {
+  for (const effect of trayEffects(id)) {
+    switch (effect) {
+      case "lock":
+        // Nothing in the webview asked for this, so it is told. Left alone it
+        // would show a book it can no longer read.
+        emitAppEvent("session:locked", session.lock());
+        break;
+      case "show":
+        showMainWindow();
+        break;
+      case "quit":
+        // `app.exit(0)` is what the Rust core does here, but this edition closes
+        // its database on the way out rather than leaving it to the process
+        // ending, so it takes the orderly route through `window-all-closed`.
+        app.quit();
+        break;
+    }
+  }
 }
 
 function registerBridge(window: BrowserWindow, session: Session): void {
@@ -180,7 +281,10 @@ function registerBridge(window: BrowserWindow, session: Session): void {
 
   ipcMain.handle("app:autostart", (_event, action: "status" | "enable" | "disable") => {
     if (action === "status") return app.getLoginItemSettings().openAtLogin;
-    app.setLoginItemSettings({ openAtLogin: action === "enable" });
+    // `--background` is the argument the Rust core's autostart plugin registers
+    // with, and the reason a login does not put a window in front of someone who
+    // was logging in rather than opening the app.
+    app.setLoginItemSettings({ openAtLogin: action === "enable", args: ["--background"] });
     return undefined;
   });
 
@@ -252,8 +356,18 @@ app.whenReady().then(async () => {
     }
   }
 
-  const window = appWindow(capture?.route ?? "/");
+  // `--background` and a capture do not mix: the capture has a picture to take and
+  // needs a painted window to take it from.
+  const hidden = capture === null && startsHidden(process.argv);
+
+  const window = appWindow(capture?.route ?? "/", !hidden);
+  mainWindow = window;
   registerBridge(window, session);
+
+  // The capture takes its picture and exits, so it gets no tray: an icon that
+  // appears for a second and a half, and a window that then refuses to close, are
+  // both the wrong shape for a diagnostic.
+  if (!capture) tray = createTray(session);
 
   if (capture) {
     // A second and a half of settling after first paint: the interface asks for the
