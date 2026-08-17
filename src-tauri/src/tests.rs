@@ -98,6 +98,123 @@ fn migrations_and_seed_apply() {
         .unwrap();
 }
 
+/// The 004 trigger keeps a fresh book right; this is the book that is not fresh.
+/// An agency running 0.0.3 has been editing clients against the old trigger, so
+/// what has to be shown is that opening the app once puts their index back in
+/// agreement with their client list.
+#[test]
+fn a_book_edited_before_the_fix_has_its_search_index_put_right() {
+    const OLD_TRIGGER: &str = "CREATE TRIGGER clients_fts_au AFTER UPDATE ON clients BEGIN \
+         INSERT INTO clients_fts (clients_fts, rowid, full_name, email, phone, client_code, pan) \
+         VALUES ('delete', old.id, old.full_name, old.email, old.phone, old.client_code, old.pan); \
+         INSERT INTO clients_fts (rowid, full_name, email, phone, client_code, pan) \
+         VALUES (new.id, new.full_name, new.email, new.phone, new.client_code, new.pan); \
+         END;";
+
+    let temp = TempDb::new("damaged-index");
+    let id = temp
+        .db
+        .with(|conn| {
+            let id = clients::create(
+                conn,
+                &ClientInput {
+                    full_name: "Rohit Bose".into(),
+                    ..Default::default()
+                },
+            )?;
+
+            // Wind the book back to what 0.0.3 wrote: the update trigger without
+            // the WHEN clause, the version stamp that went with it, and an index
+            // left disagreeing with the client list the way an edit under that
+            // trigger could leave it.
+            conn.execute_batch(&format!(
+                "DROP TRIGGER clients_fts_au; \
+                 UPDATE clients SET full_name = 'Rohit Kumar Sharma' WHERE id = {id}; \
+                 {OLD_TRIGGER} \
+                 PRAGMA user_version = 3;"
+            ))?;
+            Ok(id)
+        })
+        .unwrap();
+
+    let found = |term: &str| -> i64 {
+        temp.db
+            .with(|conn| {
+                Ok(clients::list(
+                    conn,
+                    &ClientFilter {
+                        search: Some(term.into()),
+                        ..Default::default()
+                    },
+                )?
+                .total)
+            })
+            .unwrap()
+    };
+
+    assert_eq!(
+        found("Sharma"),
+        0,
+        "the index has not heard of the new name"
+    );
+    assert_eq!(found("Bose"), 1, "and still answers to the old one");
+    temp.db
+        .with(|conn| {
+            // Nothing reports this. FTS5's integrity-check reads the index against
+            // itself, so a book in this state looks well, which is the reason 004
+            // rebuilds every book rather than trying to find the bad ones.
+            conn.execute_batch("INSERT INTO clients_fts(clients_fts) VALUES('integrity-check')")?;
+
+            // And the fault itself: filling in a field the book holds nowhere.
+            let refused = clients::update(
+                conn,
+                id,
+                &ClientInput {
+                    full_name: "Rohit Kumar Sharma".into(),
+                    pan: Some("abcde1234f".into()),
+                    ..Default::default()
+                },
+            );
+            assert!(
+                matches!(refused, Err(crate::error::AppError::Db(_))),
+                "the old trigger refuses this edit, which is what 0.0.3 does to an agency"
+            );
+            Ok(())
+        })
+        .unwrap();
+
+    temp.db.with_tx(crate::db::migrations::apply).unwrap();
+
+    temp.db
+        .with(|conn| {
+            let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+            assert_eq!(version, crate::db::migrations::latest_version());
+
+            clients::update(
+                conn,
+                id,
+                &ClientInput {
+                    full_name: "Rohit Kumar Verma".into(),
+                    email: Some("rohit@example.com".into()),
+                    pan: Some("abcde1234f".into()),
+                    ..Default::default()
+                },
+            )?;
+            conn.execute_batch("INSERT INTO clients_fts(clients_fts) VALUES('integrity-check')")?;
+            Ok(())
+        })
+        .unwrap();
+
+    assert_eq!(found("Verma"), 1, "the edit the book used to refuse");
+    assert_eq!(found("ABCDE1234F"), 1);
+    assert_eq!(
+        found("Bose"),
+        0,
+        "and the name the index was stuck on is gone with the rebuild"
+    );
+    assert_eq!(found("Sharma"), 0);
+}
+
 #[test]
 fn wrong_password_is_rejected() {
     let dir = std::env::temp_dir().join(format!("stayinsured-key-{}", uuid::Uuid::new_v4()));
@@ -649,6 +766,83 @@ fn a_blank_field_is_stored_as_nothing_rather_than_as_empty_text() {
                 },
             )?;
             assert_eq!(missing.total, 1);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_client_renamed_or_filled_in_is_still_the_one_the_search_finds() {
+    let temp = TempDb::new("client-edit-search");
+    temp.db
+        .with(|conn| {
+            // A book of one client, with no email and no pan anywhere in it, is
+            // the shape 004 was written for. FTS5 counts words a column at a time
+            // across the whole table, and until that migration an edit asked it to
+            // take the saved row's words away twice, which a column holding none
+            // cannot survive.
+            let id = clients::create(
+                conn,
+                &ClientInput {
+                    full_name: "Rohit Bose".into(),
+                    ..Default::default()
+                },
+            )?;
+
+            clients::update(
+                conn,
+                id,
+                &ClientInput {
+                    full_name: "Rohit Kumar Sharma".into(),
+                    email: Some("rohit@example.com".into()),
+                    phone: Some("98765 43210".into()),
+                    pan: Some("abcde1234f".into()),
+                    ..Default::default()
+                },
+            )?;
+
+            let saved = clients::get(conn, id)?;
+            assert_eq!(saved.full_name, "Rohit Kumar Sharma");
+            assert_eq!(saved.email.as_deref(), Some("rohit@example.com"));
+            assert_eq!(saved.pan.as_deref(), Some("ABCDE1234F"));
+
+            let found = |term: &str| -> crate::error::AppResult<i64> {
+                Ok(clients::list(
+                    conn,
+                    &ClientFilter {
+                        search: Some(term.into()),
+                        ..Default::default()
+                    },
+                )?
+                .total)
+            };
+            assert_eq!(found("Sharma")?, 1, "the name they now go by finds them");
+            assert_eq!(
+                found("ABCDE1234F")?,
+                1,
+                "and so does a field just filled in"
+            );
+            assert_eq!(found("9876543210")?, 1);
+            assert_eq!(
+                found("Bose")?,
+                0,
+                "the name they no longer go by does not still find them"
+            );
+
+            // This reads the index against itself rather than against the clients
+            // table, so on its own it would pass an index that had drifted; it is
+            // the searches above that say the index is right, and this that says
+            // it is also sound.
+            conn.execute_batch("INSERT INTO clients_fts(clients_fts) VALUES('integrity-check')")?;
+
+            // The WHEN clause 004 adds is on the index trigger and not on
+            // clients_touch, so an edit still stamps the row.
+            conn.execute_batch("UPDATE clients SET created_at = '2000-01-01 00:00:00'")?;
+            let (created, updated): (String, String) =
+                conn.query_row("SELECT created_at, updated_at FROM clients", [], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })?;
+            assert!(updated > created, "an edit still moves updated_at");
             Ok(())
         })
         .unwrap();
@@ -1223,6 +1417,77 @@ fn editing_a_policy_leaves_its_place_in_the_chain_alone() {
             cancelling.status = Some("cancelled".into());
             policies::update(conn, second, &cancelling)?;
             assert_eq!(policies::get(conn, second)?.status, "cancelled");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_policy_renumbered_or_filled_in_is_still_the_one_the_lists_find() {
+    let temp = TempDb::new("policy-edit-search");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(
+                conn,
+                &ClientInput {
+                    full_name: "Ravi Bose".into(),
+                    ..Default::default()
+                },
+            )?;
+            let insurer = insurers::find_or_create(conn, "Star Health")?;
+            let id = policies::create(
+                conn,
+                &sample_policy(client, insurer, "SH/2026/1", "2027-03-31"),
+            )?;
+
+            // policies_touch nests an update the same way clients_touch does, but
+            // there is no search index on policies for it to disturb: policy
+            // search is a LIKE over policy_overview. This is the proof of that,
+            // and of the client index surviving a policy edited beside it.
+            let mut edit = sample_policy(client, insurer, "SH/2026/1-A", "2027-03-31");
+            edit.vehicle_number = Some("MH 12 AB 3456".into());
+            policies::update(conn, id, &edit)?;
+
+            let found = |term: &str| -> crate::error::AppResult<i64> {
+                Ok(policies::list(
+                    conn,
+                    &PolicyFilter {
+                        search: Some(term.into()),
+                        ..Default::default()
+                    },
+                )?
+                .total)
+            };
+            assert_eq!(policies::get(conn, id)?.policy_number, "SH/2026/1-A");
+            assert_eq!(found("SH/2026/1-A")?, 1, "the number it now carries");
+            assert_eq!(found("MH 12 AB 3456")?, 1, "and the vehicle just recorded");
+
+            // The lists read the client's name through the view, so renaming the
+            // client has to move the policy with them.
+            clients::update(
+                conn,
+                client,
+                &ClientInput {
+                    full_name: "Ravi Kumar Sharma".into(),
+                    email: Some("ravi@example.com".into()),
+                    pan: Some("abcde1234f".into()),
+                    ..Default::default()
+                },
+            )?;
+            assert_eq!(found("Sharma")?, 1);
+            assert_eq!(found("Bose")?, 0);
+            assert_eq!(
+                clients::list(
+                    conn,
+                    &ClientFilter {
+                        search: Some("Sharma".into()),
+                        ..Default::default()
+                    }
+                )?
+                .total,
+                1
+            );
+            conn.execute_batch("INSERT INTO clients_fts(clients_fts) VALUES('integrity-check')")?;
             Ok(())
         })
         .unwrap();

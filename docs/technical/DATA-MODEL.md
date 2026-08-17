@@ -4,8 +4,9 @@ The schema lives in `src-tauri/src/db/schema/`, applied by
 `src-tauri/src/db/migrations.rs`. Everything below is one encrypted SQLite
 database, `stayinsured.db`, opened through SQLCipher.
 
-Current schema version: **3** — `001_init.sql` (structure), `002_seed.sql`
-(defaults) and `003_documents.sql` (stored files).
+Current schema version: **4** — `001_init.sql` (structure), `002_seed.sql`
+(defaults), `003_documents.sql` (stored files) and `004_search_index.sql` (the
+client search triggers, and a rebuild of the index behind them).
 `session_state.schemaVersion` reports it at runtime.
 
 ## Migration policy
@@ -184,9 +185,33 @@ and `pan`, tokenised with `unicode61 remove_diacritics 2`. Three triggers
 builds a prefix query from the search terms and falls back to a `LIKE` scan when
 no searchable token survives.
 
+`_au` carries a `WHEN` clause naming those five columns, added by
+`004_search_index.sql`; see the touch triggers below for why it has to. Note that
+FTS5's `integrity-check` reads the index against itself and not against
+`clients`, so it will pass an index that has drifted out of agreement with the
+book. The tests that matter therefore assert what a search returns, not only that
+the check is clean.
+
 ### Touch triggers
 
 `clients_touch` and `policies_touch` maintain `updated_at` on update.
+
+**A trigger on a table that has an FTS mirror must not update that table.**
+`clients_touch` does exactly that, and SQLite fires the two `AFTER UPDATE ON
+clients` triggers in an order it does not promise — newest first, in practice, so
+the touch goes first. Its nested `UPDATE clients SET updated_at` re-enters
+`clients_fts_au`, whose `old` and `new` then both hold the row as it already
+stands, and the index is told to delete a row image it never held. FTS5 keeps a
+per-column word count for the whole table and subtracts the deleted image from
+it; when the saved row has more words in some column than the entire book has
+recorded there, the count would go negative and the save is refused with
+`SQLITE_CORRUPT` — "database disk image is malformed". That made editing a client
+fail outright on a small book, or on any book where the column being filled in
+was empty throughout (`pan`, most often), while passing unnoticed on a large one.
+The `WHEN` clause on `_au` is what closes it: a touch changes no indexed column,
+so it can no longer re-enter the trigger. `policies_touch` has the same shape and
+is harmless only because nothing indexes `policies`; a `policies_fts` would need
+the same `WHEN` clause from the start.
 
 ## Supporting tables
 

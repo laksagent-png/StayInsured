@@ -5,6 +5,18 @@ settings survive every version below.
 
 ## Upcoming
 
+### Fixed
+
+- **Saving a client no longer fails with "database disk image is malformed".**
+  Adding something a client did not have on file — a PAN, an email address, a
+  longer name — could be refused outright with a message about the database being
+  damaged, which it never was. It hit hardest on a book that had just been
+  started, and on filling in a column nobody in the book had filled in yet, and it
+  took an import down with it: a spreadsheet that would have completed the records
+  you already had reported those rows as failures and dropped their policies. That
+  is fixed, and opening the app once rebuilds your client search so it agrees with
+  your book again. Nothing is asked of you and nothing was lost.
+
 ### Changed
 
 - **The setup and security screens only promise encryption where there is some.**

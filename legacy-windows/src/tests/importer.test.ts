@@ -430,12 +430,12 @@ suite("a client the book already has", () => {
     db.close();
   });
 
-  test("cannot be given an email it did not have, and the row says so", () => {
+  test("is given the email it did not have, and keeps their policy too", () => {
     const file = fileWith(
       "import-fts",
       "book.csv",
-      "Customer Name,Email ID,Policy No,Insurance Company,Valid Till\n" +
-        "Rohit Sharma,rohit@example.com,HS/2026/1,Star Health,31/03/2027\n",
+      "Customer Name,Email ID,PAN,Policy No,Insurance Company,Valid Till\n" +
+        "Rohit Sharma,rohit@example.com,ABCDE1234F,HS/2026/1,Star Health,31/03/2027\n",
     );
     const mapping = importer.preview(file, null).suggestedMapping;
     const db = tempDb("import-fts");
@@ -444,27 +444,26 @@ suite("a client the book already has", () => {
 
     const report = db.with((conn) => importer.run(conn, options(file, mapping, false)));
 
-    // Filling a blank full_name, email, phone, client_code or pan fails, and the
-    // rest of the row goes down with it. `clients_touch` is created after
-    // `clients_fts_au`, so it fires first, and its `UPDATE clients SET updated_at`
-    // runs the search index trigger a second time against a row that has already
-    // been changed: the index is asked to delete words it never held. FTS5 notices
-    // when a field goes from empty to filled, because the word count moves, and
-    // refuses with SQLITE_CORRUPT.
-    //
-    // The schema belongs to the Rust core and behaves the same way there, so this
-    // is recorded rather than worked around: a fix in one edition only would put
-    // the two out of step, and the fix belongs in the triggers.
-    expect.equal(report.failed, 1);
-    expect.equal(report.clientsUpdated, 0);
-    expect.ok(
-      report.issues[0]!.message.startsWith("Database error:"),
-      `the row is blamed on the database rather than on the operator: ${report.issues[0]!.message}`,
-    );
+    // This case used to record the fault rather than the promise: an email or a
+    // PAN arriving for a client who had neither is exactly the edit the old update
+    // trigger refused, and it took the row's policy down with it. Filling those
+    // gaps is a good part of what an agency runs an import for, and 004 is what
+    // lets it happen.
+    expect.equal(report.failed, 0);
+    expect.deepEqual(report.issues, []);
+    expect.equal(report.clientsUpdated, 1);
+    expect.equal(report.clientsCreated, 0, "the name matched the client already in the book");
 
     db.with((conn) => {
-      expect.equal(clients.get(conn, id).email, null, "and nothing of the row is kept");
-      expect.equal(scalar<number>(conn, "SELECT COUNT(*) AS n FROM policies"), 0);
+      const client = clients.get(conn, id);
+      expect.equal(client.email, "rohit@example.com");
+      expect.equal(client.pan, "ABCDE1234F");
+      expect.equal(scalar<number>(conn, "SELECT COUNT(*) AS n FROM policies"), 1);
+      expect.equal(
+        clients.list(conn, { search: "ABCDE1234F" }).total,
+        1,
+        "and the search knows what the import filled in",
+      );
     });
     db.close();
   });

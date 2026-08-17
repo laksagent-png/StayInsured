@@ -3,8 +3,9 @@
  * `matching_prefers_the_code_then_the_email_then_the_phone`,
  * `archiving_puts_a_client_away_without_losing_them`,
  * `deleting_a_client_takes_their_policies_and_members_with_them`,
- * `a_client_code_belongs_to_one_client` and
- * `a_blank_field_is_stored_as_nothing_rather_than_as_empty_text`.
+ * `a_client_code_belongs_to_one_client`,
+ * `a_blank_field_is_stored_as_nothing_rather_than_as_empty_text` and
+ * `a_client_renamed_or_filled_in_is_still_the_one_the_search_finds`.
  *
  * The matching order is the one the importer depends on, and a client code is
  * what an agency writes on paper, so both have to behave the same in either
@@ -177,6 +178,51 @@ suite("a client's record", () => {
       // A filter for a missing email has to find it, which it cannot if the column
       // holds two spaces.
       expect.equal(clients.list(conn, { missingEmail: true }).total, 1);
+    });
+    db.close();
+  });
+
+  test("can be renamed and filled in, and the search follows", () => {
+    // Ported from `a_client_renamed_or_filled_in_is_still_the_one_the_search_finds`.
+    // This edition is where the fault showed: on SQLite 3.43 as on 3.51, an edit
+    // that gave a client words in a column the whole book held none of was refused
+    // with "database disk image is malformed", because the old update trigger ran
+    // twice and took those words off the index's count before they were ever on
+    // it. 004 is what stops the second run.
+    const db = tempDb("client-edit-search");
+    db.with((conn) => {
+      const id = clients.create(conn, { fullName: "Rohit Bose" });
+
+      clients.update(conn, id, {
+        fullName: "Rohit Kumar Sharma",
+        email: "rohit@example.com",
+        phone: "98765 43210",
+        pan: "abcde1234f",
+      });
+
+      const saved = clients.get(conn, id);
+      expect.equal(saved.fullName, "Rohit Kumar Sharma");
+      expect.equal(saved.email, "rohit@example.com");
+      expect.equal(saved.pan, "ABCDE1234F");
+
+      const found = (search: string) => clients.list(conn, { search }).total;
+      expect.equal(found("Sharma"), 1, "the name they now go by finds them");
+      expect.equal(found("ABCDE1234F"), 1, "and so does a field just filled in");
+      expect.equal(found("9876543210"), 1);
+      expect.equal(found("Bose"), 0, "the name they no longer go by does not");
+
+      // Reads the index against itself and not against the clients table, so the
+      // searches above are the half that says it is right and this is the half
+      // that says it is sound.
+      conn.exec("INSERT INTO clients_fts(clients_fts) VALUES('integrity-check')");
+
+      // The WHEN clause is on the index trigger, not on clients_touch.
+      conn.exec("UPDATE clients SET created_at = '2000-01-01 00:00:00'");
+      const stamps = conn.prepare("SELECT created_at, updated_at FROM clients").get() as {
+        created_at: string;
+        updated_at: string;
+      };
+      expect.ok(stamps.updated_at > stamps.created_at, "an edit still moves updated_at");
     });
     db.close();
   });

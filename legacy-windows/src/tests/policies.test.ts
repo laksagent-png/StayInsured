@@ -5,6 +5,7 @@
  * `renewing_a_cancelled_year_leaves_it_cancelled`,
  * `an_expiry_moved_forward_brings_a_policy_back`,
  * `editing_a_policy_leaves_its_place_in_the_chain_alone`,
+ * `a_policy_renumbered_or_filled_in_is_still_the_one_the_lists_find`,
  * `a_chain_keeps_exactly_one_open_year`, `deleting_a_year_leaves_the_earlier_ones_standing`,
  * `duplicate_policy_number_for_same_insurer_is_rejected`,
  * `two_insurers_may_each_use_the_same_policy_number`,
@@ -153,6 +154,43 @@ suite("renewal", () => {
       expect.equal(after.previousPolicyId, first, "and still behind the first");
       expect.equal(after.chainId, before.chainId);
       expect.equal(policies.chain(conn, second).length, 2);
+    });
+    db.close();
+  });
+
+  test("is still the one the lists find after it is renumbered", () => {
+    // Ported from `a_policy_renumbered_or_filled_in_is_still_the_one_the_lists_find`.
+    // `policies_touch` nests an update the way `clients_touch` does, so it is worth
+    // saying where the difference is: there is no search index on policies for it
+    // to disturb, policy search being a LIKE over policy_overview. What this holds
+    // is that, and the client index surviving a policy edited beside it.
+    const db = tempDb("policy-edit-search");
+    db.with((conn) => {
+      const client = clients.create(conn, { fullName: "Ravi Bose" });
+      const insurer = insurers.findOrCreate(conn, "Star Health");
+      const id = policies.create(conn, samplePolicy(client, insurer, "SH/2026/1", "2027-03-31"));
+
+      policies.update(conn, id, {
+        ...samplePolicy(client, insurer, "SH/2026/1-A", "2027-03-31"),
+        vehicleNumber: "MH 12 AB 3456",
+      });
+
+      const found = (search: string) => policies.list(conn, { search }).total;
+      expect.equal(policies.get(conn, id).policyNumber, "SH/2026/1-A");
+      expect.equal(found("SH/2026/1-A"), 1, "the number it now carries");
+      expect.equal(found("MH 12 AB 3456"), 1, "and the vehicle just recorded");
+
+      // The lists read the client's name through the view, so a rename has to
+      // bring the policy with it.
+      clients.update(conn, client, {
+        fullName: "Ravi Kumar Sharma",
+        email: "ravi@example.com",
+        pan: "abcde1234f",
+      });
+      expect.equal(found("Sharma"), 1);
+      expect.equal(found("Bose"), 0);
+      expect.equal(clients.list(conn, { search: "Sharma" }).total, 1);
+      conn.exec("INSERT INTO clients_fts(clients_fts) VALUES('integrity-check')");
     });
     db.close();
   });

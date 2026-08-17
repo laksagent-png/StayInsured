@@ -16,7 +16,12 @@ import type BetterSqlite3 from "better-sqlite3";
 import { AppError, describe } from "./errors";
 
 /** In the order `db/migrations.rs` applies them. Never reorder a shipped entry. */
-export const MIGRATIONS = ["001_init.sql", "002_seed.sql", "003_documents.sql"];
+export const MIGRATIONS = [
+  "001_init.sql",
+  "002_seed.sql",
+  "003_documents.sql",
+  "004_search_index.sql",
+];
 
 export const LATEST_VERSION = MIGRATIONS.length;
 
