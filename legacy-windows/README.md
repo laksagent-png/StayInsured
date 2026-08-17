@@ -17,14 +17,19 @@ or a backup of it, or the disk — can read every client in it. `session_state`
 reports `encrypted: false`, and the lock screen and Settings say so in place of the
 promises they make in the app. Do not quietly reword them.
 
-**It is not finished.** The core is a port in progress, though most of it has
-arrived: clients, policies and their renewal chains, members, insurers, products,
-the dashboard, the spreadsheet importer, both exporters, document attachments, and
-the reminder rules, email templates and outbox. What is left refuses with a message
-saying so rather than half working — the sweep that decides which reminders are due,
-and everything that sends mail. `src/core/commands.ts` is the list, and the bottom
-of it is the honest part. `npm test` prints the count, because a number nobody
-measures drifts.
+**It is finished, apart from that.** Every one of the app's 73 commands answers
+here: clients, policies and their renewal chains, members, insurers, products, the
+dashboard, the spreadsheet importer, both exporters, document attachments, and the
+whole reminder side — the ladder, the messages, the outbox, the daily sweep and the
+mail server. Nothing is left refusing. `npm test` proves it rather than this
+sentence: `parity.test.ts` reads the command list out of `src-tauri/src/lib.rs` and
+fails if the two editions disagree by a name.
+
+What is not the same is how three things work. The file is not encrypted. Mail goes
+through `nodemailer` rather than `lettre`. And the sweep is a timer that asks once a
+minute whether today's run has happened, rather than a thread asleep until the send
+time, so a machine that was off at nine sweeps when it comes back — once, not once
+per missed day, because the outbox already holds what was recorded.
 
 ## The probe, and what it answered
 
@@ -108,7 +113,7 @@ the notice that this edition has fallen behind.
 ## Building the installer
 
 ```bash
-npm run package:win    # dist/StayInsured-Win7-Probe-0.0.4.exe
+npm run package:win    # dist/StayInsured-Win7-Probe-0.0.5.exe
 ```
 
 One installer covers every Windows 7 machine. It carries both 64-bit and 32-bit
@@ -132,7 +137,7 @@ Windows is the whole point of this one.
 ## Building for a Mac
 
 ```bash
-npm run package:mac    # dist/StayInsured-Win7-Probe-0.0.4-arm64.dmg, and -x64
+npm run package:mac    # dist/StayInsured-Win7-Probe-0.0.5-arm64.dmg, and -x64
 ```
 
 A Mac build answers none of the Windows 7 questions. Chromium 108 on macOS says

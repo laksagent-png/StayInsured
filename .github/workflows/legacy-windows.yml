@@ -3,7 +3,7 @@ name: Build the Windows 7 probe
 # Separate from **Build installers** on purpose. This builds the Electron edition
 # in `legacy-windows/`, for the Windows versions the app itself refuses. It is a
 # different application with a different core and no encryption, and its own tag
-# prefix keeps it from ever being mistaken for an app release: `legacy-v0.0.4` does
+# prefix keeps it from ever being mistaken for an app release: `legacy-v0.0.5` does
 # not match the `v*` trigger the real release uses.
 #
 # The name still says probe because the artifacts do. Renaming the product moves the
@@ -137,14 +137,15 @@ jobs:
             disk — can read every client in it. The setup and security screens say
             so. Keep the machine itself secure.
 
-            **It is unfinished, but less so.** Clients, policies, renewals, the
-            dashboard, importing a spreadsheet, exporting, documents, and the
-            reminder rules, message templates and outbox all work. What is left is
-            the sweep that decides which reminders are due and the sending of them:
-            those screens say so when you reach them rather than half working.
+            **Everything the app does, this now does too** — clients, policies,
+            renewals, the dashboard, importing a spreadsheet, exporting, documents,
+            and the whole reminder side, including sending them from your own mail
+            server. Nothing is left saying "not built". Reminders stay switched off
+            and in dry-run until you fill in Settings, so nothing reaches a client
+            before you have read what it would say.
 
-            It now sits in the notification area, locks from there, and hands a
-            second launch to the copy already running.
+            It sits in the notification area, locks from there, and hands a second
+            launch to the copy already running.
 
             Run the `.exe` on Windows 7 SP1 or newer. It installs both the 64-bit
             and 32-bit builds and picks the one that fits. Launch it with

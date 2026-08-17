@@ -7,13 +7,16 @@ settings survive every version below.
 
 ### Added
 
-- **The Windows 7 edition does most of the job now.** It reads spreadsheets in,
-  writes your book out to Excel or CSV, keeps policy documents beside the client
-  they belong to, and lets you write the reminder ladder and the messages it sends.
-  Two things there still say "not built" when you reach them: working out which
-  reminders are due today, and sending them. It also lives in the notification area
-  now, locks from there, and hands a second launch to the copy already running
-  instead of opening your book twice.
+- **The Windows 7 edition does the whole job now.** It reads spreadsheets in, writes
+  your book out to Excel or CSV, keeps policy documents beside the client they belong
+  to, and sends the renewal reminders itself from your own mail server. Nothing in it
+  says "not built" any more. Reminders stay switched off and in dry-run until you
+  fill in the mail server, so nothing reaches a client before you have read what it
+  would say — and a machine that was switched off on the day a reminder was due
+  sweeps once when it comes back, rather than sending every day it missed. It also
+  lives in the notification area, locks from there, and hands a second launch to the
+  copy already running instead of opening your book twice. It still does not encrypt
+  the file; that has not changed and is not going to.
 
 ## 0.3.4 — 17 August 2026
 

@@ -282,16 +282,25 @@ they otherwise promise an encrypted database. That flag is the whole mechanism b
 which the shared interface stays honest about which core it is talking to, so a
 screen that claims encryption must read it rather than assume it.
 
-**It is a port in progress.** Built: the session and password wall, settings,
-clients, members, insurers, products, policies with the renewal chain and the
-status sweep, the dashboard, the spreadsheet importer, both exporters, document
-attachments, and the reminder rules, email templates and outbox. Not built: the
-sweep that decides which reminders are due, and everything that sends mail. Those
-five commands exist and refuse with a message naming themselves, because a screen
-that half works costs an operator an hour before it admits anything.
-`npm test` counts what is real: `parity.test.ts` reads the command list out of
-`src-tauri/src/lib.rs`, fails if the two editions disagree about a name, and prints
-how many of the 73 answer for real.
+**The port is complete, except for encryption.** All 73 commands answer for real:
+the session and password wall, settings, clients, members, insurers, products,
+policies with the renewal chain and the status sweep, the dashboard, the spreadsheet
+importer, both exporters, document attachments, and the whole reminder side — rules,
+templates, the outbox, the daily sweep and SMTP. `npm test` counts it rather than
+trusting this paragraph: `parity.test.ts` reads the command list out of
+`src-tauri/src/lib.rs`, fails if the two editions disagree about a single name, and
+prints how many answer.
+
+Three differences remain, and they are differences in kind rather than gaps.
+Encryption, as above. Sending, which is `nodemailer` where the app has `lettre`, and
+which forces the sweep into two phases: a better-sqlite3 transaction cannot span an
+`await`, so deciding and queueing hold the transaction and each delivery commits its
+own result. A run cut short therefore leaves what it sent marked as sent, rather
+than rolling those marks back and writing to the same clients twice — the safer half
+of that trade, and the reason the outbox is written before anything leaves. And the
+sweep is a timer asking once a minute whether today's run has happened, not a thread
+sleeping until nine, so a laptop asleep at nine sweeps when it opens and a machine
+off for a week catches up once rather than sending a week of reminders.
 
 It also has a shell of its own now: a tray icon and menu matching `tray.rs`, a
 window that hides into it on close, and a single-instance guard so a second launch
