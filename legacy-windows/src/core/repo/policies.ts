@@ -16,6 +16,7 @@ import { Conditions, inClause, likePattern, orderBy, paginate, type Bind } from 
 import { blankToNull, numberOrNull, toModel, toModels } from "../rows";
 import type { Page, Policy, PolicyFilter, PolicyInput, RenewalInput } from "../types";
 import { CATEGORIES, addDays, defaultExpiry, parseDate } from "../util";
+import * as notifications from "./notifications";
 import { count, isConstraintViolation } from "./shared";
 
 export const STATUSES = ["active", "expired", "renewed", "lapsed", "cancelled"] as const;
@@ -315,12 +316,7 @@ export function renew(conn: Conn, input: RenewalInput): number {
 
   // A client who has just renewed should not receive this morning's queued
   // "your policy is about to expire" message this evening.
-  conn
-    .prepare(
-      "UPDATE notification_log SET status = 'cancelled', last_error = 'The policy was renewed' " +
-        "WHERE policy_id = ? AND status = 'queued'",
-    )
-    .run(previous.id);
+  notifications.cancelForPolicy(conn, previous.id);
 
   return newId;
 }
