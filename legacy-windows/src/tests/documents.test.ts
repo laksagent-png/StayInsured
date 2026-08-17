@@ -1,5 +1,6 @@
 /**
- * Ported from `documents_are_copied_into_the_book_and_survive_the_policy` and
+ * Ported from `documents_are_copied_into_the_book_and_survive_the_policy`,
+ * `the_same_file_attached_twice_is_refused_in_words_the_operator_can_act_on` and
  * `deleting_a_client_takes_their_documents`, with one case of this edition's own
  * for the bytes on their way to the shared viewer.
  *
@@ -73,6 +74,29 @@ suite("documents", () => {
         0,
         "the bytes go with the row",
       );
+    });
+    db.close();
+  });
+
+  test("refuse a second copy of themselves in words the operator can act on", async () => {
+    // Ported from `the_same_file_attached_twice_is_refused_in_words_the_operator_can_act_on`.
+    const dir = tempDir("documents-duplicate");
+    const source = path.join(dir, "schedule.pdf");
+    fs.writeFileSync(source, Buffer.from("%PDF-1.7 the same schedule, picked twice"));
+
+    const db = tempDb("documents-duplicate");
+    await db.with(async (conn) => {
+      const clientId = clients.create(conn, sampleClient("Rohit Deshpande"));
+      documents.attach(conn, { clientId, path: source });
+
+      const refusal = await throwsKind("conflict", () =>
+        documents.attach(conn, { clientId, path: source }),
+      );
+      // The Documents panel prints whatever comes back, so the refusal has to be
+      // a sentence about the client's paperwork rather than SQLite explaining its
+      // own index. better-sqlite3 words that explanation exactly as rusqlite
+      // does, table-qualified, which is why both editions had the same fault.
+      expect.equal(refusal.message, "That file is already attached to this client.");
     });
     db.close();
   });

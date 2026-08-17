@@ -29,3 +29,23 @@ export function isConstraintViolation(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
   return typeof code === "string" && code.startsWith("SQLITE_CONSTRAINT");
 }
+
+/**
+ * Whether a broken constraint names every one of these columns, so that the
+ * repositories can tell which rule was broken and answer with advice instead of
+ * with SQLite's own wording.
+ *
+ * SQLite writes the columns table-qualified and in the order the index declares
+ * them — `UNIQUE constraint failed: documents.client_id, documents.sha256` —
+ * which makes the whole phrase a bad thing to look for: a renamed table or a
+ * reordered index turns a sentence written for an operator back into that one,
+ * and nothing fails until somebody reads it off a screen. Each column is matched
+ * on its own and as a whole identifier, so `sha256` is not found inside a
+ * `sha256_prefix` added later. The two editions link different SQLite builds and
+ * this edition's, 3.43.1 through better-sqlite3, words it exactly as the
+ * SQLCipher build the Rust core bundles does.
+ */
+export function constraintNames(message: string, columns: string[]): boolean {
+  const words = message.split(/[^\p{L}\p{N}_]+/u);
+  return columns.every((column) => words.includes(column));
+}

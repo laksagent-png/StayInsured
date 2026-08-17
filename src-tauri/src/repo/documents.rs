@@ -145,7 +145,7 @@ fn map_constraint_error(err: rusqlite::Error) -> AppError {
         rusqlite::Error::SqliteFailure(e, Some(msg))
             if e.code == rusqlite::ErrorCode::ConstraintViolation =>
         {
-            if msg.contains("client_id, sha256") {
+            if super::constraint_names(msg, &["client_id", "sha256"]) {
                 AppError::Conflict("That file is already attached to this client.".into())
             } else if msg.contains("FOREIGN KEY") {
                 AppError::validation("Attach the document to an existing client and policy")

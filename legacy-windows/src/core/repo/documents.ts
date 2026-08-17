@@ -16,7 +16,7 @@ import type { Conn } from "../db";
 import { AppError, describe } from "../errors";
 import { blankToNull, toModels } from "../rows";
 import type { Document, DocumentInput } from "../types";
-import { isConstraintViolation } from "./shared";
+import { constraintNames, isConstraintViolation } from "./shared";
 
 const COLUMNS =
   "d.id, d.client_id, d.policy_id, p.policy_number, d.title, " +
@@ -160,7 +160,7 @@ function humanSize(bytes: number): string {
 function mapConstraintError(error: unknown): AppError {
   if (!isConstraintViolation(error)) return AppError.database(error);
   const message = describe(error);
-  if (message.includes("client_id, sha256")) {
+  if (constraintNames(message, ["client_id", "sha256"])) {
     return AppError.conflict("That file is already attached to this client.");
   }
   if (message.includes("FOREIGN KEY")) {

@@ -5,6 +5,14 @@ settings survive every version below.
 
 ## Upcoming
 
+### Fixed
+
+- **Attaching a document you already attached says so in plain words.** Picking the
+  same scan twice for one client was refused, correctly, but the refusal read
+  "UNIQUE constraint failed: documents.client_id, documents.sha256", which tells you
+  nothing about what you did or what to do next. It now says the file is already
+  attached to this client. Both editions were affected and both are fixed.
+
 ### Added
 
 - **The Windows 7 edition does the whole job now.** It reads spreadsheets in, writes

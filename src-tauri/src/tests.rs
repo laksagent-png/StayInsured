@@ -2453,6 +2453,36 @@ fn documents_are_copied_into_the_book_and_survive_the_policy() {
 }
 
 #[test]
+fn the_same_file_attached_twice_is_refused_in_words_the_operator_can_act_on() {
+    let temp = TempDb::new("documents-duplicate");
+    let source = temp.dir.join("schedule.pdf");
+    std::fs::write(&source, b"%PDF-1.7 the same schedule, picked twice").unwrap();
+
+    temp.db
+        .with(|conn| {
+            let client_id = clients::create(conn, &sample_client("Rohit Deshpande"))?;
+            let input = DocumentInput {
+                client_id,
+                policy_id: None,
+                title: None,
+                path: source.to_string_lossy().to_string(),
+            };
+            documents::attach(conn, &input)?;
+
+            let message = match documents::attach(conn, &input) {
+                Err(crate::error::AppError::Conflict(message)) => message,
+                _ => panic!("the same file twice on one client is a mis-click"),
+            };
+            // The Documents panel prints whatever comes back, so the refusal has
+            // to be a sentence about the client's paperwork rather than SQLite
+            // explaining its own index.
+            assert_eq!(message, "That file is already attached to this client.");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
 fn deleting_a_client_takes_their_documents() {
     let temp = TempDb::new("documents-cascade");
     let source = temp.dir.join("proposal.png");

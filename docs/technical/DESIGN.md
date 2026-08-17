@@ -464,9 +464,18 @@ for a log file.
 
 Constraint violations are translated at the repository boundary, so a duplicate
 policy number reads "That policy number already exists for this insurer. Use
-Renew to add the next year." instead of surfacing SQLite text. An insurer that
-still carries policies cannot be deleted at all — deactivating is the intended
-way to retire one.
+Renew to add the next year." instead of surfacing SQLite text, and the same file
+attached twice to one client reads "That file is already attached to this
+client." An insurer that still carries policies cannot be deleted at all —
+deactivating is the intended way to retire one.
+
+Which rule was broken is decided by the columns the message names rather than by
+the phrase it names them in: `repo::constraint_names` looks for each column on
+its own, because SQLite writes them table-qualified and in index order and a
+translation matched on the whole phrase goes quietly back to SQLite's wording the
+day a table is renamed or an index reordered. Nothing fails when it does — the
+`kind` is still right and the screen still behaves — so only somebody reading a
+message off a screen would notice.
 
 ## Testing strategy
 
@@ -558,6 +567,8 @@ database in a temporary directory, with no window:
 - the plain-text part keeps the shape of the HTML it was derived from
 - a document copies into the book byte for byte, refuses a second copy of itself,
   refuses a type that is not a scan, and outlives the policy it was filed under
+- the same file attached twice is refused in the words the panel prints, not in
+  SQLite's
 - deleting a client takes their documents and the bytes with them
 
 Run them with `cd src-tauri && cargo test --lib`.

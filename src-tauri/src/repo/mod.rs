@@ -33,3 +33,21 @@ pub fn count(conn: &Connection, sql: &str, params: &[rusqlite::types::Value]) ->
     let total = conn.query_row(sql, rusqlite::params_from_iter(params), |row| row.get(0))?;
     Ok(total)
 }
+
+/// Whether a broken constraint names every one of these columns, so that the
+/// repositories can tell which rule was broken and answer with advice instead of
+/// with SQLite's own wording.
+///
+/// SQLite writes the columns table-qualified and in the order the index declares
+/// them — `UNIQUE constraint failed: documents.client_id, documents.sha256` —
+/// which makes the whole phrase a bad thing to look for: a renamed table or a
+/// reordered index turns a sentence written for an operator back into that one,
+/// and nothing fails until somebody reads it off a screen. Each column is
+/// matched on its own and as a whole identifier, so `sha256` is not found inside
+/// a `sha256_prefix` added later.
+pub fn constraint_names(message: &str, columns: &[&str]) -> bool {
+    let words: Vec<&str> = message
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .collect();
+    columns.iter().all(|column| words.contains(column))
+}
