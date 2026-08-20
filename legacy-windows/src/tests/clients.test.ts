@@ -2,7 +2,11 @@
  * Ported from `client_codes_increment_and_dedupe_matching`,
  * `matching_prefers_the_code_then_the_email_then_the_phone`,
  * `archiving_puts_a_client_away_without_losing_them`,
- * `deleting_a_client_takes_their_policies_and_members_with_them`,
+ * `deleting_a_client_takes_their_policies_but_leaves_their_family_standing`,
+ * `deleting_a_family_reaches_one_step_and_stops`,
+ * `archiving_a_family_moves_the_household_and_stops`,
+ * `a_dependent_stops_being_one_by_holding_a_policy`,
+ * `the_dashboard_counts_policyholders_not_people`,
  * `a_client_code_belongs_to_one_client`,
  * `a_blank_field_is_stored_as_nothing_rather_than_as_empty_text` and
  * `a_client_renamed_or_filled_in_is_still_the_one_the_search_finds`.
@@ -13,9 +17,10 @@
  */
 
 import * as clients from "../core/repo/clients";
+import * as dashboard from "../core/repo/dashboard";
 import * as insurers from "../core/repo/insurers";
-import * as members from "../core/repo/members";
 import * as policies from "../core/repo/policies";
+import * as relations from "../core/repo/relations";
 import { expect, suite, test, throwsKind } from "./harness";
 import { sampleClient, samplePolicy, scalar, tempDb } from "./support";
 
@@ -240,30 +245,195 @@ suite("a client's record", () => {
     db.close();
   });
 
-  test("takes their policies and members when deleted", () => {
+  test("takes their policies when deleted, and leaves their family standing", () => {
     const db = tempDb("cascade");
     db.with((conn) => {
       const id = clients.create(conn, sampleClient("Sana Khan"));
       const insurer = insurers.findOrCreate(conn, "Star Health");
-      const member = members.create(conn, { clientId: id, fullName: "Imran Khan", relationship: "spouse" });
+      const husband = clients.create(conn, sampleClient("Imran Khan"));
+      relations.link(conn, {
+        clientId: id,
+        relatedClientId: husband,
+        relationship: "spouse",
+      });
       const policy = policies.create(conn, {
         ...samplePolicy(id, insurer, "CS-1", "2027-03-31"),
-        memberIds: [member],
+        insuredClientIds: [id, husband],
       });
 
       clients.remove(conn, id);
 
       expect.equal(scalar<number>(conn, "SELECT COUNT(*) AS n FROM policies"), 0);
-      expect.equal(scalar<number>(conn, "SELECT COUNT(*) AS n FROM insured_members"), 0);
+      expect.equal(
+        scalar<number>(conn, "SELECT COUNT(*) AS n FROM client_relations"),
+        0,
+        "the relationship goes with the client it was recorded on",
+      );
       expect.equal(
         scalar<number>(conn, "SELECT COUNT(*) AS n FROM policy_members WHERE policy_id = ?", policy),
         0,
         "and nothing is left pointing at a policy that has gone",
       );
+      // The husband is a client, not a detail of his wife's record. Losing him
+      // with her is what the old member table did, and what a book that has his
+      // own motor policy next year cannot afford to do.
+      expect.equal(
+        clients.get(conn, husband).fullName,
+        "Imran Khan",
+        "the family stay in the book when the client they were listed under goes",
+      );
       expect.equal(
         scalar<number>(conn, "SELECT COUNT(*) AS n FROM insurers WHERE id = ?", insurer),
         1,
         "the insurer is not the client's to delete",
+      );
+    });
+    db.close();
+  });
+
+  test("can take the household with them, one step out and no further", () => {
+    const db = tempDb("family-delete");
+    db.with((conn) => {
+      const holder = clients.create(conn, sampleClient("Rajesh Kumar"));
+      const wife = clients.create(conn, sampleClient("Priya Kumar"));
+      const son = clients.create(conn, sampleClient("Aarav Kumar"));
+      // One step further out: the wife's father, connected to the holder only
+      // through her.
+      const fatherInLaw = clients.create(conn, sampleClient("Suresh Rao"));
+
+      for (const [a, b, relationship] of [
+        [holder, wife, "spouse"],
+        [holder, son, "son"],
+        [wife, fatherInLaw, "father"],
+      ] as [number, number, string][]) {
+        relations.link(conn, { clientId: a, relatedClientId: b, relationship });
+      }
+
+      const deleted = clients.removeWithImmediateFamily(conn, holder);
+      expect.equal(deleted.length, 3, "the holder, the wife and the son");
+
+      // The whole family is reachable from the holder, so a walk would have taken
+      // the father-in-law too. Recording an in-law must not widen what a delete
+      // removes.
+      expect.equal(
+        clients.get(conn, fatherInLaw).fullName,
+        "Suresh Rao",
+        "one step out, so an in-law reached only through the wife stays",
+      );
+    });
+    db.close();
+  });
+
+  test("moves the household in and out of the archive together", () => {
+    const db = tempDb("family-archive");
+    db.with((conn) => {
+      const holder = clients.create(conn, sampleClient("Rajesh Kumar"));
+      const wife = clients.create(conn, sampleClient("Priya Kumar"));
+      const fatherInLaw = clients.create(conn, sampleClient("Suresh Rao"));
+      relations.link(conn, { clientId: holder, relatedClientId: wife, relationship: "spouse" });
+      relations.link(conn, {
+        clientId: wife,
+        relatedClientId: fatherInLaw,
+        relationship: "father",
+      });
+
+      expect.equal(clients.setFamilyArchived(conn, holder, true), 2, "the holder and his wife");
+      expect.ok(clients.get(conn, holder).isArchived, "the holder is put away");
+      expect.ok(clients.get(conn, wife).isArchived, "and so is his wife");
+      expect.ok(
+        !clients.get(conn, fatherInLaw).isArchived,
+        "one step out, so the in-law is left where he is",
+      );
+
+      expect.equal(clients.setFamilyArchived(conn, holder, false), 2, "and it reverses");
+      expect.ok(!clients.get(conn, holder).isArchived, "the holder comes back");
+    });
+    db.close();
+  });
+
+  test("shows the policyholders when browsing and everybody when asked by name", () => {
+    const db = tempDb("dependents");
+    db.with((conn) => {
+      const holder = clients.create(conn, sampleClient("Rajesh Kumar"));
+      const wife = clients.create(conn, sampleClient("Priya Kumar"));
+      const insurer = insurers.findOrCreate(conn, "Niva Bupa");
+      policies.create(conn, samplePolicy(holder, insurer, "NB-1", "2027-06-30"));
+      relations.link(conn, { clientId: holder, relatedClientId: wife, relationship: "spouse" });
+
+      expect.deepEqual(
+        clients.list(conn, {}).rows.map((row) => row.fullName),
+        ["Rajesh Kumar"],
+        "browsing the book shows the policyholder, not the life on his floater",
+      );
+
+      // But asked for by name she is there. A book that held her and would not
+      // admit it would be worse than one that never held her.
+      const searched = clients.list(conn, { search: "Priya" });
+      expect.equal(searched.rows.length, 1);
+      expect.ok(searched.rows[0]?.isDependent, "and the row says why she was hidden");
+      expect.equal(searched.rows[0]?.relatives, 1);
+
+      expect.equal(
+        clients.list(conn, { includeFamily: true }).total,
+        2,
+        "the toggle brings her into the list",
+      );
+
+      // Her own term plan makes her a policyholder, and nothing had to be
+      // corrected for that to be true.
+      policies.create(conn, samplePolicy(wife, insurer, "NB-2", "2027-09-30"));
+      expect.equal(
+        clients.list(conn, {}).total,
+        2,
+        "a dependent who buys cover appears without being reclassified",
+      );
+      expect.ok(!clients.get(conn, wife).isDependent);
+    });
+    db.close();
+  });
+
+  test("are what the dashboard counts, so a child is not a client to chase", () => {
+    const db = tempDb("dashboard-holders");
+    db.with((conn) => {
+      const holder = clients.create(conn, sampleClient("Rajesh Kumar"));
+      const insurer = insurers.findOrCreate(conn, "Niva Bupa");
+      policies.create(conn, samplePolicy(holder, insurer, "NB-1", "2027-06-30"));
+
+      const before = dashboard.load(conn);
+
+      // A wife and a son on his floater. Both are clients, neither has an email
+      // address, and neither is somebody the agency is failing to reach — so the
+      // one figure on this screen meant to be acted on must not move.
+      for (const [name, relationship] of [
+        ["Priya Kumar", "spouse"],
+        ["Aarav Kumar", "son"],
+      ]) {
+        const relative = clients.create(conn, { fullName: name as string });
+        relations.link(conn, {
+          clientId: holder,
+          relatedClientId: relative,
+          relationship: relationship as string,
+        });
+      }
+
+      const after = dashboard.load(conn);
+      expect.equal(after.totalClients, before.totalClients);
+      expect.equal(after.activeClients, before.activeClients);
+      expect.equal(after.clientsWithoutEmail, before.clientsWithoutEmail);
+
+      // Until one of them buys cover of her own.
+      const wife = scalar<number>(
+        conn,
+        "SELECT id AS n FROM clients WHERE full_name = 'Priya Kumar'",
+      );
+      policies.create(conn, samplePolicy(wife, insurer, "NB-2", "2027-09-30"));
+
+      const counted = dashboard.load(conn);
+      expect.equal(counted.totalClients, before.totalClients + 1);
+      expect.equal(
+        counted.clientsWithoutEmail,
+        before.clientsWithoutEmail + 1,
+        "a policyholder with no email address is worth chasing",
       );
     });
     db.close();

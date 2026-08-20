@@ -1,7 +1,7 @@
 # API specification
 
 StayInsured has no HTTP API. Its API is the set of Tauri commands the Rust core
-exposes to the webview — 73 commands that are the only way the interface reaches
+exposes to the webview — 74 commands that are the only way the interface reaches
 data.
 
 The contract is defined in four files that must always agree:
@@ -63,8 +63,8 @@ try {
 **Any command that reads or writes data returns `locked` until the session is
 unlocked.** These commands work while locked: `session_state`, `setup`,
 `unlock`, `unlock_with_keychain`, `lock`, `forget_device`, `category_options`,
-`import_fields`, `preview_import`, `write_import_template` and
-`template_placeholders`.
+`import_fields`, `preview_import`, `write_import_template`,
+`template_placeholders` and `reveal_data_dir`.
 
 ## Conventions
 
@@ -174,45 +174,86 @@ in `secondary`. It needs no database.
 | `create_client` | `input: ClientInput` | `number` |
 | `update_client` | `id: number`, `input: ClientInput` | `void` |
 | `set_client_archived` | `id: number`, `archived: boolean` | `void` |
-| `delete_client` | `id: number` | `void` |
+| `set_family_archived` | `id: number`, `archived: boolean` | `number` |
+| `delete_client` | `id: number`, `scope?: DeleteScope` | `number[]` |
 | `next_client_code` | — | `string` |
 
 `ClientFilter`: `search`, `city`, `state`, `category`, `includeArchived`,
-`missingEmail`, `sort`, `descending`, `page`, `pageSize`. Archived clients are
-excluded unless `includeArchived` is true. `search` runs against the FTS5 index
-over name, email, phone, client code and PAN, falling back to a `LIKE` scan when
-the term has no searchable tokens. Sort keys: `name` (default), `code`, `city`,
-`created`, `updated`, `policies`, `nextExpiry`.
+`includeFamily`, `missingEmail`, `sort`, `descending`, `page`, `pageSize`.
+Archived clients are excluded unless `includeArchived` is true. `search` runs
+against the FTS5 index over name, email, phone, client code and PAN, falling back
+to a `LIKE` scan when the term has no searchable tokens. Sort keys: `name`
+(default), `code`, `city`, `created`, `updated`, `policies`, `nextExpiry`.
+
+**Dependents are excluded from browse but never from search.** A client with no
+policy of their own who is named as somebody's relative is a dependent; the list
+drops them unless `includeFamily` is true, and includes them whenever `search` is
+non-empty regardless. The dashboard's people counts apply the same rule, so
+`totalClients` and `clientsWithoutEmail` are counts of policyholders.
 
 `ClientInput` requires `fullName`; everything else is optional. `clientCode` is
 allocated as the next `CL-000NN` when omitted. Names are title-cased without
 mangling initials, phones are reduced to digits with an optional leading `+`,
 PAN and GSTIN are upper-cased, and email is rejected if malformed.
 
-`Client` responses add `activePolicies`, `totalPolicies` and `nextExpiry`.
+`Client` responses add `activePolicies`, `totalPolicies`, `nextExpiry`,
+`relatives` (edges in either direction) and `isDependent`.
 
-**`delete_client`** cascades to that client's policies and members.
-`set_client_archived` is the reversible alternative and what the UI offers first.
+**`delete_client`** takes `scope`, which is `linksOnly` (the default) or
+`immediateFamily`, and answers with every id it removed. `linksOnly` cascades to
+that client's policies, documents and relationship edges, and leaves the people on
+the other end of those edges alone — they are clients. `immediateFamily` deletes
+the client and the people one step out from them, and no further.
+
+**`set_family_archived`** archives or restores the client together with the people
+one step out, answering with how many rows moved. `set_client_archived` is the
+single-client version, and both are the reversible alternative the UI offers
+first.
 
 Errors: `validation` (missing name, bad email, bad date of birth), `conflict`
 (client code in use), `not_found`.
 
-## Insured members
+## Family
 
 | Command | Arguments | Returns |
 | --- | --- | --- |
-| `list_members` | `clientId: number` | `InsuredMember[]` |
-| `create_member` | `input: MemberInput` | `number` |
-| `update_member` | `id: number`, `input: MemberInput` | `void` |
-| `delete_member` | `id: number` | `void` |
+| `list_relatives` | `clientId: number` | `Relative[]` |
+| `client_family` | `clientId: number` | `Family` |
+| `link_clients` | `input: RelationInput` | `void` |
+| `unlink_clients` | `clientId: number`, `relatedClientId: number` | `void` |
 
-`MemberInput` requires `clientId` and `fullName`. `relationship` is normalised
-onto `self | spouse | son | daughter | father | mother | other` — "wife" and
-"husband" become `spouse`, anything unrecognised becomes `other`. Lists come back
-ordered self, spouse, then everyone else by name.
+There is no member entity and no family id. A family is the set of clients
+reachable through `client_relations` in either direction, which is what lets one
+person belong to two families at once — see
+[DATA-MODEL](DATA-MODEL.md) for the invariants.
 
-A member can only be attached to a policy belonging to their own client;
-`create_policy` and `update_policy` silently ignore ids from another client.
+`RelationInput` is `clientId`, `relatedClientId` and `relationship`, read as "the
+related client is the `relationship` of the client". `relationship` must be one of
+`spouse | son | daughter | father | mother | brother | sister | other`; anything
+else is `validation`, because the interface picks from a fixed list. The importer
+is the lenient path — `util::normalise_relationship` maps "wife" and "husband"
+onto `spouse` and files an unrecognised word under `other`.
+
+**The pair is unique, not the direction.** Linking two clients who are already
+linked rewrites the single edge, including the direction it is stored in, so
+recording "father" from the son's page corrects rather than contradicts "son"
+recorded from the father's. `Relative` therefore carries `outgoing`, saying which
+way round the stored edge is, and the interface reads the stored word aloud — "Son"
+one way, "Son of" the other — rather than guessing its opposite.
+
+An edge that would make somebody their own ancestor is refused with `validation`.
+Only parent and child edges are checked: a spouse or sibling edge that closes a
+loop is a family with two ways through it, not a broken one.
+
+`Relative` rows come back spouse first, then children, then parents, then everyone
+else, by name within each. `Family` is `{ members, edges }`, where each
+`FamilyMember` carries `steps` — the shortest walk from the client asked about, so
+the interface can lay out the tree without repeating the traversal. The walk stops
+at 12 steps.
+
+**`unlink_clients`** removes the edge whichever way round it is stored, and
+`not_found` when there is none. The people stay; one of them holding cover of
+their own is the ordinary case.
 
 ## Documents
 
@@ -283,7 +324,7 @@ retire one.
 | `list_policies` | `filter: PolicyFilter` | `Page<Policy>` |
 | `get_policy` | `id: number` | `Policy` |
 | `policy_chain` | `id: number` | `Policy[]` |
-| `policy_member_ids` | `id: number` | `number[]` |
+| `policy_insured_ids` | `id: number` | `number[]` |
 | `create_policy` | `input: PolicyInput` | `number` |
 | `update_policy` | `id: number`, `input: PolicyInput` | `void` |
 | `renew_policy` | `input: RenewalInput` | `number` |
@@ -308,8 +349,10 @@ number), `clientId`, `insurerId`, `productId`, `categories[]`, `statuses[]`,
 `startDate` and `expiryDate`; expiry must be after start. `status` defaults to
 `active` on create and is left unchanged on update when omitted.
 `premiumFrequency` defaults to `annual`. Vehicle numbers are upper-cased.
-`memberIds` replaces the covered-member set; omitting it on update leaves the set
-alone.
+`insuredClientIds` replaces the set of lives covered; omitting it on update leaves
+the set alone. Only the policyholder and the clients related to them can be named
+— any other id is dropped by the `INSERT ... WHERE` that writes the set, so a
+stale or hostile id cannot put a stranger on the cover.
 
 `Policy` responses are read from the `policy_overview` view, so they carry the
 client and insurer names alongside `daysToExpiry`, `isRenewed`, `chainId`,
@@ -323,7 +366,7 @@ takes `policyId` plus optional `policyNumber`, `startDate`, `expiryDate`,
 `sumInsured`, `premiumAmount`, `gstAmount`, `commissionRate`,
 `commissionExpected` and `notes`. Anything omitted is carried forward from the
 policy being renewed; the term defaults to the day after expiry through a year
-minus a day; covered members are copied; the expiring year becomes `renewed`,
+minus a day; the lives covered are copied; the expiring year becomes `renewed`,
 unless it is `cancelled`, which stands — see the invariant in
 [DATA-MODEL](DATA-MODEL.md). A year that already has a successor returns
 `conflict`: renew the latest year in the chain instead.
@@ -578,7 +621,8 @@ through `set_smtp_password`.
 | --- | --- |
 | Category | `health`, `life`, `motor`, `travel`, `home`, `personal_accident`, `critical_illness`, `other` |
 | Policy status | `active`, `expired`, `renewed`, `lapsed`, `cancelled` |
-| Relationship | `self`, `spouse`, `son`, `daughter`, `father`, `mother`, `other` |
+| Relationship | `spouse`, `son`, `daughter`, `father`, `mother`, `brother`, `sister`, `other` |
+| Delete scope | `linksOnly`, `immediateFamily` |
 | Premium frequency | `annual`, `half_yearly`, `quarterly`, `monthly`, `single` |
 | Gender | `male`, `female`, `other` |
 | Template trigger | `expiry_reminder`, `post_expiry`, `welcome`, `renewal_confirmation`, `annual_summary`, `provider_digest`, `custom` |

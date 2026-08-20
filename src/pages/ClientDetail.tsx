@@ -1,11 +1,18 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, MailWarning, Pencil, Plus, Trash2, UserPlus } from "lucide-react";
+import { ArrowLeft, MailWarning, Pencil, Plus, Trash2, Unlink, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, ApiError } from "../lib/api";
-import type { InsuredMember, MemberInput, Policy, PolicyFilter } from "../lib/types";
-import { date, initials, titleCase } from "../lib/format";
+import type {
+  Client,
+  DeleteScope,
+  Policy,
+  PolicyFilter,
+  Relationship,
+  Relative,
+} from "../lib/types";
+import { date, initials, plural, relationshipLabel, titleCase } from "../lib/format";
 import { ClientForm } from "../components/ClientForm";
 import { DocumentsPanel } from "../components/DocumentsPanel";
 import { PolicyForm } from "../components/PolicyForm";
@@ -26,7 +33,17 @@ import {
   useToast,
 } from "../components/ui";
 
-const RELATIONSHIPS = ["self", "spouse", "son", "daughter", "father", "mother", "other"];
+/** The words the core records, in the order a family is described in. */
+const RELATIONSHIPS: Relationship[] = [
+  "spouse",
+  "son",
+  "daughter",
+  "father",
+  "mother",
+  "brother",
+  "sister",
+  "other",
+];
 
 export function ClientDetailPage() {
   const { id } = useParams();
@@ -38,7 +55,8 @@ export function ClientDetailPage() {
   const [policyOpen, setPolicyOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<Policy | undefined>();
   const [renewing, setRenewing] = useState<Policy | undefined>();
-  const [memberDraft, setMemberDraft] = useState<InsuredMember | "new" | undefined>();
+  const [linking, setLinking] = useState<Relative | "new" | undefined>();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const [filter, setFilter] = useState<PolicyFilter>({
     clientId,
@@ -52,15 +70,15 @@ export function ClientDetailPage() {
     queryKey: ["client", clientId],
     queryFn: () => api.getClient(clientId),
   });
-  const members = useQuery({
-    queryKey: ["members", clientId],
-    queryFn: () => api.listMembers(clientId),
+  const relatives = useQuery({
+    queryKey: ["relatives", clientId],
+    queryFn: () => api.listRelatives(clientId),
   });
 
-  const removeMember = useMutation({
-    mutationFn: (memberId: number) => api.deleteMember(memberId),
+  const unlink = useMutation({
+    mutationFn: (relatedClientId: number) => api.unlinkClients(clientId, relatedClientId),
     onSuccess: () => {
-      toast.success("Member removed");
+      toast.success("Relationship removed. They are still in the book.");
     },
     onError: (err: ApiError) => toast.error(err.message),
   });
@@ -73,10 +91,22 @@ export function ClientDetailPage() {
     onError: (err: ApiError) => toast.error(err.message),
   });
 
+  const setFamilyArchived = useMutation({
+    mutationFn: (archived: boolean) => api.setFamilyArchived(clientId, archived),
+    onSuccess: (moved, archived) => {
+      toast.success(
+        `${plural(moved, "client")} ${archived ? "archived" : "restored"}`,
+      );
+    },
+    onError: (err: ApiError) => toast.error(err.message),
+  });
+
   const removeClient = useMutation({
-    mutationFn: () => api.deleteClient(clientId),
-    onSuccess: () => {
-      toast.success("Client deleted");
+    mutationFn: (scope: DeleteScope) => api.deleteClient(clientId, scope),
+    onSuccess: (deleted) => {
+      toast.success(
+        deleted.length === 1 ? "Client deleted" : `${plural(deleted.length, "client")} deleted`,
+      );
       navigate("/clients");
     },
     onError: (err: ApiError) => toast.error(err.message),
@@ -132,6 +162,13 @@ export function ClientDetailPage() {
                 {data.activePolicies} active
               </Badge>
               <Badge tone="muted">{data.totalPolicies} total</Badge>
+              {data.relatives > 0 && (
+                <Badge tone="muted">{plural(data.relatives, "relative")}</Badge>
+              )}
+              {/* A client with no cover of their own, listed under somebody
+                  else's. Worth saying on the page, because it is why they do not
+                  appear when the book is browsed. */}
+              {data.isDependent && <Badge tone="muted">Family member</Badge>}
               {data.remindersOptedOut && <Badge tone="warning">Reminders off</Badge>}
               {data.isArchived && <Badge tone="warning">Archived</Badge>}
             </div>
@@ -189,62 +226,72 @@ export function ClientDetailPage() {
         </Card>
 
         <Card
-          title="Members covered"
+          title="Family"
           action={
             <Button
               size="sm"
               variant="ghost"
               icon={<UserPlus className="size-3.5" />}
-              onClick={() => setMemberDraft("new")}
+              onClick={() => setLinking("new")}
             >
-              Add
+              Link relative
             </Button>
           }
           bodyClassName=""
         >
-          <AsyncPanel query={members} errorTitle="The members could not be read">
-            {(members.data?.length ?? 0) === 0 ? (
+          <AsyncPanel query={relatives} errorTitle="The family could not be read">
+            {(relatives.data?.length ?? 0) === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-slate-400">
-                Add family members to attach them to health and travel policies.
+                Link a spouse, child or parent to cover them on a floater. Everybody in a family is
+                a client in their own right.
               </p>
             ) : (
               <ul className="divide-y divide-slate-100">
-                {members.data?.map((member) => (
-                  <li key={member.id} className="flex items-center gap-2 px-4 py-2.5">
-                    <button
-                      type="button"
-                      className="group min-w-0 flex-1 cursor-pointer text-left focus-visible:ring-2 focus-visible:ring-brand-500/40 focus-visible:outline-none"
-                      onClick={() => setMemberDraft(member)}
+                {relatives.data?.map((relative) => (
+                  <li key={relative.clientId} className="flex items-center gap-2 px-4 py-2.5">
+                    {/* A relative is a client, so their name goes to their own
+                        page rather than opening a sub-form of this one. */}
+                    <Link
+                      to={`/clients/${relative.clientId}`}
+                      className="group min-w-0 flex-1 focus-visible:ring-2 focus-visible:ring-brand-500/40 focus-visible:outline-none"
                     >
                       <p className="truncate text-sm font-medium text-slate-700 group-hover:underline">
-                        {member.fullName}
+                        {relative.fullName}
                       </p>
                       <p className="text-xs text-slate-400">
-                        {titleCase(member.relationship)}
-                        {member.dateOfBirth ? ` · ${date(member.dateOfBirth)}` : ""}
+                        {relationshipLabel(relative.relationship, relative.outgoing)}
+                        {relative.dateOfBirth ? ` · ${date(relative.dateOfBirth)}` : ""}
+                        {relative.ownPolicies > 0
+                          ? ` · ${plural(relative.ownPolicies, "own policy", "own policies")}`
+                          : ""}
                       </p>
-                    </button>
+                    </Link>
+                    {relative.isArchived && <Badge tone="warning">Archived</Badge>}
                     <Button
                       size="sm"
                       variant="ghost"
-                      aria-label={`Edit ${member.fullName}`}
-                      title={`Edit ${member.fullName}`}
-                      onClick={() => setMemberDraft(member)}
+                      aria-label={`Change how ${relative.fullName} is related`}
+                      title={`Change how ${relative.fullName} is related`}
+                      onClick={() => setLinking(relative)}
                     >
                       <Pencil className="size-3.5 text-slate-400" />
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
-                      aria-label={`Remove ${member.fullName}`}
-                      title={`Remove ${member.fullName}`}
+                      aria-label={`Unlink ${relative.fullName}`}
+                      title={`Unlink ${relative.fullName}`}
                       onClick={() => {
-                        if (window.confirm(`Remove ${member.fullName}?`)) {
-                          removeMember.mutate(member.id);
+                        if (
+                          window.confirm(
+                            `Unlink ${relative.fullName} from ${data.fullName}? They stay in the book as a client.`,
+                          )
+                        ) {
+                          unlink.mutate(relative.clientId);
                         }
                       }}
                     >
-                      <Trash2 className="size-3.5 text-slate-400" />
+                      <Unlink className="size-3.5 text-slate-400" />
                     </Button>
                   </li>
                 ))}
@@ -267,19 +314,23 @@ export function ClientDetailPage() {
             >
               {data.isArchived ? "Restore client" : "Archive client"}
             </Button>
+            {/* A household usually leaves together, and doing them one at a time
+                is how half a family is left behind. This reaches the people
+                linked to this client and stops there. */}
+            {data.relatives > 0 && (
+              <Button
+                variant="ghost"
+                className="w-full justify-start"
+                onClick={() => setFamilyArchived.mutate(!data.isArchived)}
+              >
+                {data.isArchived ? "Restore family" : "Archive family"}
+              </Button>
+            )}
             <Button
               variant="ghost"
               className="w-full justify-start text-rose-600 hover:bg-rose-50"
               icon={<Trash2 className="size-4" />}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Delete ${data.fullName} and all ${data.totalPolicies} policy records? This cannot be undone.`,
-                  )
-                ) {
-                  removeClient.mutate();
-                }
-              }}
+              onClick={() => setDeleteOpen(true)}
             >
               Delete permanently
             </Button>
@@ -312,11 +363,16 @@ export function ClientDetailPage() {
         onClose={() => setPolicyOpen(false)}
       />
       <RenewModal policy={renewing} onClose={() => setRenewing(undefined)} />
-      {memberDraft && (
-        <MemberModal
-          draft={memberDraft}
-          clientId={clientId}
-          onClose={() => setMemberDraft(undefined)}
+      {linking && (
+        <RelativeModal draft={linking} client={data} onClose={() => setLinking(undefined)} />
+      )}
+      {deleteOpen && (
+        <DeleteClientModal
+          client={data}
+          relatives={relatives.data ?? []}
+          pending={removeClient.isPending}
+          onConfirm={(scope) => removeClient.mutate(scope)}
+          onClose={() => setDeleteOpen(false)}
         />
       )}
     </div>
@@ -332,96 +388,249 @@ function Detail({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
-/** Mounted only while it is open, so every opening starts from the member it
- * was opened on rather than from the last draft. */
-function MemberModal({
+/**
+ * Records how somebody is related to this client, or corrects the word on a
+ * relationship already recorded.
+ *
+ * A relative is a client, so the modal either finds one already in the book or
+ * opens a client for them — it never stores a person inside another person.
+ * Mounted only while it is open, so every opening starts from the row it was
+ * opened on rather than from the last draft.
+ */
+function RelativeModal({
   draft,
-  clientId,
+  client,
   onClose,
 }: {
-  draft: InsuredMember | "new";
-  clientId: number;
+  draft: Relative | "new";
+  client: Client;
   onClose: () => void;
 }) {
   const toast = useToast();
   const existing = draft === "new" ? undefined : draft;
 
-  const [form, setForm] = useState<MemberInput>({
-    clientId,
-    fullName: existing?.fullName ?? "",
-    relationship: existing?.relationship ?? "spouse",
-    dateOfBirth: existing?.dateOfBirth ?? "",
-    gender: existing?.gender ?? "",
-    notes: existing?.notes ?? "",
+  const [name, setName] = useState(existing?.fullName ?? "");
+  const [picked, setPicked] = useState<Client | undefined>();
+  const [relationship, setRelationship] = useState(existing?.relationship ?? "spouse");
+  const [error, setError] = useState<string | null>(null);
+
+  const search = name.trim();
+  // Only once there is enough to narrow on: a single letter matches most of the
+  // book and reads as noise under the box.
+  const matches = useQuery({
+    queryKey: ["clientSearch", search],
+    queryFn: () =>
+      api.listClients({ search, includeFamily: true, page: 1, pageSize: 6, sort: "name" }),
+    enabled: !existing && !picked && search.length >= 2,
   });
+  const candidates = (matches.data?.rows ?? []).filter((row) => row.id !== client.id);
 
   const save = useMutation({
     mutationFn: async () => {
-      if (existing) await api.updateMember(existing.id, form);
-      else await api.createMember(form);
+      const relatedClientId = existing?.clientId ?? picked?.id ?? (await addPerson());
+      await api.linkClients({ clientId: client.id, relatedClientId, relationship });
+      return relatedClientId;
     },
     onSuccess: () => {
-      toast.success(existing ? "Member updated" : "Member added");
+      toast.success(existing ? "Relationship updated" : "Relative linked");
       onClose();
     },
-    onError: (err: ApiError) => toast.error(err.message),
+    onError: (err: ApiError) => setError(err.message),
   });
+
+  /** A relative nobody has entered yet lives where the policyholder lives. */
+  const addPerson = () =>
+    api.createClient({
+      fullName: search,
+      addressLine1: client.addressLine1,
+      addressLine2: client.addressLine2,
+      city: client.city,
+      state: client.state,
+      pincode: client.pincode,
+      preferredLanguage: client.preferredLanguage,
+    });
+
+  const chosen = existing?.fullName ?? picked?.fullName;
+  const ready = Boolean(existing || picked || search.length > 1);
 
   return (
     <Modal
       open
       onClose={onClose}
       width="sm"
-      title={existing ? `Edit ${existing.fullName}` : "Add member"}
+      title={existing ? `How is ${existing.fullName} related?` : "Link a relative"}
+      description={
+        existing
+          ? undefined
+          : "Everybody in a family is a client. Search for them, or type a name to open a client for them."
+      }
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
-            Save
+          <Button
+            variant="primary"
+            disabled={!ready}
+            loading={save.isPending}
+            onClick={() => {
+              setError(null);
+              save.mutate();
+            }}
+          >
+            {existing || picked ? "Save" : "Add and link"}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <Field label="Full name" required>
-          <Input
-            value={form.fullName}
-            onChange={(event) => setForm({ ...form, fullName: event.target.value })}
-            autoFocus
-          />
-        </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Relationship">
-            <Select
-              value={form.relationship ?? "other"}
-              onChange={(event) => setForm({ ...form, relationship: event.target.value })}
-            >
-              {RELATIONSHIPS.map((value) => (
-                <option key={value} value={value}>
-                  {titleCase(value)}
-                </option>
-              ))}
-            </Select>
+        {chosen ? (
+          <Field label="Relative">
+            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              <span>{chosen}</span>
+              {!existing && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setPicked(undefined);
+                    setName("");
+                  }}
+                >
+                  Change
+                </Button>
+              )}
+            </div>
           </Field>
-          <Field label="Date of birth">
+        ) : (
+          <Field label="Name" required hint="An existing client, or somebody new to the book">
             <Input
-              type="date"
-              value={form.dateOfBirth ?? ""}
-              onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Priya Sharma"
+              autoFocus
             />
           </Field>
-        </div>
-        <Field label="Gender">
+        )}
+
+        {!chosen && candidates.length > 0 && (
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+            {candidates.map((row) => (
+              <li key={row.id}>
+                <button
+                  type="button"
+                  className="w-full cursor-pointer px-3 py-2 text-left hover:bg-slate-50"
+                  onClick={() => setPicked(row)}
+                >
+                  <p className="text-sm text-slate-700">{row.fullName}</p>
+                  <p className="text-xs text-slate-400">
+                    {row.clientCode}
+                    {row.city ? ` · ${row.city}` : ""}
+                    {` · ${plural(row.totalPolicies, "policy", "policies")}`}
+                  </p>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <Field
+          label="Relationship"
+          hint={`Read as "${titleCase(relationship)}: ${chosen || search || "…"}" on ${client.fullName}'s page`}
+        >
           <Select
-            value={form.gender ?? ""}
-            onChange={(event) => setForm({ ...form, gender: event.target.value })}
+            value={relationship}
+            onChange={(event) => setRelationship(event.target.value as Relationship)}
           >
-            <option value="">Not recorded</option>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-            <option value="other">Other</option>
+            {RELATIONSHIPS.map((value) => (
+              <option key={value} value={value}>
+                {titleCase(value)}
+              </option>
+            ))}
           </Select>
         </Field>
+
+        {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Deleting a client asks what else goes with them, because the family is now
+ * made of clients and the answer is no longer obvious.
+ *
+ * The wide choice reaches the people linked to this client and stops there. It
+ * does not follow the family outwards: an in-law's parents are their own
+ * household, and a delete that walked the whole graph would take them too.
+ */
+function DeleteClientModal({
+  client,
+  relatives,
+  pending,
+  onConfirm,
+  onClose,
+}: {
+  client: Client;
+  relatives: Relative[];
+  pending: boolean;
+  onConfirm: (scope: DeleteScope) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      width="sm"
+      title={`Delete ${client.fullName}?`}
+      description={`This removes the client and ${plural(client.totalPolicies, "policy record", "policy records")}, along with any documents. It cannot be undone.`}
+      footer={<Button onClick={onClose}>Cancel</Button>}
+    >
+      <div className="space-y-3">
+        {relatives.length > 0 && (
+          <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
+            <p className="font-medium text-slate-700">Family on file</p>
+            <ul className="mt-1 space-y-0.5">
+              {relatives.map((relative) => (
+                <li key={relative.clientId}>
+                  {relative.fullName} —{" "}
+                  {relationshipLabel(relative.relationship, relative.outgoing).toLowerCase()}
+                  {relative.ownPolicies > 0
+                    ? `, ${plural(relative.ownPolicies, "policy", "policies")} of their own`
+                    : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <Button
+          className="w-full justify-start text-rose-600 hover:bg-rose-50"
+          variant="ghost"
+          icon={<Trash2 className="size-4" />}
+          loading={pending}
+          onClick={() => onConfirm("linksOnly")}
+        >
+          {relatives.length > 0
+            ? "Delete this client only, and keep the family"
+            : "Delete this client"}
+        </Button>
+
+        {relatives.length > 0 && (
+          <>
+            <Button
+              className="w-full justify-start text-rose-600 hover:bg-rose-50"
+              variant="ghost"
+              icon={<Trash2 className="size-4" />}
+              loading={pending}
+              onClick={() => onConfirm("immediateFamily")}
+            >
+              {`Delete this client and ${plural(relatives.length, "relative")}`}
+            </Button>
+            <p className="text-xs text-slate-400">
+              Keeping the family leaves everybody above as clients with their own policies; only the
+              link to {client.fullName} goes.
+            </p>
+          </>
+        )}
       </div>
     </Modal>
   );

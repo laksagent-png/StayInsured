@@ -144,6 +144,7 @@ export function ClientsPage() {
       align: "right",
       render: (row) => (
         <div className="flex items-center justify-end gap-1.5">
+          {row.isDependent && <Badge tone="muted">Family member</Badge>}
           {row.remindersOptedOut && <Badge tone="muted">No reminders</Badge>}
           {row.isArchived && <Badge tone="warning">Archived</Badge>}
           <Button
@@ -256,6 +257,15 @@ export function ClientsPage() {
               label="Include archived"
               checked={filter.includeArchived ?? false}
               onChange={(value) => setFilter({ includeArchived: value, page: 1 })}
+            />
+            {/* Family members are clients, so the book holds a spouse and three
+                children for every policyholder. Browsing shows the people who
+                hold the cover; search reaches everybody either way. */}
+            <Checkbox
+              label="Include family members"
+              hint="People covered on someone else's policy, with none of their own"
+              checked={filter.includeFamily ?? false}
+              onChange={(value) => setFilter({ includeFamily: value, page: 1 })}
             />
           </div>
         </div>

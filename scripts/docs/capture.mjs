@@ -124,17 +124,14 @@ const shots = [
   },
   {
     name: "client-detail",
-    caption: "Client page: contact details, members covered, every policy held and the paperwork behind them",
+    caption: "Client page: contact details, the family, every policy held and the paperwork behind them",
     route: "/clients/1",
   },
   {
-    name: "client-member",
-    caption: "Adding a family member to attach to health and travel policies",
+    name: "client-relative",
+    caption: "Linking a relative: everybody in a family is a client in their own right",
     route: "/clients/1",
-    prepare: async (page) => {
-      await page.getByRole("button", { name: "Add", exact: true }).first().click();
-      await page.waitForTimeout(500);
-    },
+    prepare: click("Link relative"),
   },
   {
     name: "client-documents",

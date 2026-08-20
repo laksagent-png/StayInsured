@@ -75,10 +75,16 @@ put it right.
 | **Any policy type** | Narrows to clients holding that kind of cover. A screen reader calls it Policy type |
 | **Missing email** | Only clients who cannot be emailed |
 | **Include archived** | Brings archived clients back into view |
+| **Include family members** | Brings in the people covered on somebody else's policy, with none of their own |
 | Column headings | Sort by client, by number of policies, or by next expiry |
 
 Filters combine, so "Mumbai, health, missing email" is one click each. The list
 pages at the foot when there is more than a screenful.
+
+Everybody in a [family](families.md) is a client, so browsing shows the people who
+hold the cover and marks anybody else **Family member** when you ask for them.
+Searching reaches the whole book either way: a child's name finds the child
+whether the box is ticked or not.
 
 Each row shows the client's contact details, how many of their policies are
 active out of the total, and when the next one expires — enough to decide who to
@@ -97,14 +103,14 @@ Click a client's name.
 
 ![Client page](screenshots/client-detail.png)
 
-Everything about them is on one page: contact details, the
-[members they cover](insured-members.md), every policy they hold with its status
-and expiry date, and the [documents](documents.md) you have attached.
+Everything about them is on one page: contact details, their
+[family](families.md), every policy they hold with its status and expiry date,
+and the [documents](documents.md) you have attached.
 
 From here you can **Edit** the client, **Add policy** without choosing the client
-again, add or remove members, and renew or edit any policy on the list. A client
-with no email address carries an amber line across the top of their page saying
-they cannot receive renewal reminders.
+again, link or unlink a relative, and renew or edit any policy on the list. A
+client with no email address carries an amber line across the top of their page
+saying they cannot receive renewal reminders.
 
 An address that names nobody — a deleted client, or a mistyped one — says
 **Client not found** rather than an empty page. A client the book could not read
@@ -119,8 +125,10 @@ never touches their policies.
 ## Archive a client
 
 **Archive** on the client's row takes them out of the working list without
-deleting anything. Their policies, history and members stay exactly as they are.
-The same thing sits on their own page as **Archive client**.
+deleting anything. Their policies, history and family stay exactly as they are.
+The same thing sits on their own page as **Archive client**, with **Archive
+family** beside it when anybody is linked to them — a household usually leaves
+together.
 
 Archive is the right answer when someone stops buying from you: the record stays
 for reference, and the client stops cluttering your day.
@@ -132,8 +140,13 @@ archived**. The button that put them there then reads **Restore** on the row and
 ## Delete a client
 
 **Delete permanently** on the client's page removes the client and every policy
-record belonging to them. It asks first, naming the client and counting the
-policy records that go with them, and nothing brings them back.
+record belonging to them. It asks first, counting the policy records that go with
+them and listing the [family](families.md) on file, and nothing brings them back.
+
+The dialog offers two answers where there is a family. Deleting this client only
+leaves their relatives standing as clients with their own policies — just the
+links to them go. Deleting the client and their relatives reaches the people
+linked to this one and stops there.
 
 Use it for a duplicate or a record created in error. For a real client who has
 left, archive instead.
@@ -146,5 +159,4 @@ and then one button.
 
 ---
 
-Next: [record the members they cover](insured-members.md) or
-[add their policies](policies.md).
+Next: [record their family](families.md) or [add their policies](policies.md).

@@ -48,6 +48,8 @@ export interface Client {
   activePolicies: number;
   totalPolicies: number;
   nextExpiry: string | null;
+  relatives: number;
+  isDependent: boolean;
 }
 
 export interface ClientInput {
@@ -77,6 +79,7 @@ export interface ClientFilter {
   state?: string | null;
   category?: string | null;
   includeArchived?: boolean | null;
+  includeFamily?: boolean | null;
   missingEmail?: boolean | null;
   sort?: string | null;
   descending?: boolean | null;
@@ -84,24 +87,63 @@ export interface ClientFilter {
   pageSize?: number | null;
 }
 
-export interface InsuredMember {
-  id: number;
+/** One client related to another, as a row of the family panel. */
+export interface Relative {
   clientId: number;
+  clientCode: string;
   fullName: string;
   relationship: string;
+  /**
+   * Which side of the stored edge this person sits on: true where they are the
+   * client's `relationship`, false where the client is theirs. The word is never
+   * inverted, because choosing between father and mother needs a gender the book
+   * may not hold.
+   */
+  outgoing: boolean;
   dateOfBirth: string | null;
   gender: string | null;
+  isArchived: boolean;
+  ownPolicies: number;
   notes: string | null;
 }
 
-export interface MemberInput {
-  clientId: number;
-  fullName: string;
-  relationship?: string | null;
-  dateOfBirth?: string | null;
-  gender?: string | null;
-  notes?: string | null;
+/**
+ * A whole family: everybody reachable from one client, and the edges between
+ * them. There is no family record — this is what a walk over the relationships
+ * found.
+ */
+export interface Family {
+  members: FamilyMember[];
+  edges: FamilyEdge[];
 }
+
+export interface FamilyMember {
+  clientId: number;
+  clientCode: string;
+  fullName: string;
+  dateOfBirth: string | null;
+  gender: string | null;
+  isArchived: boolean;
+  ownPolicies: number;
+  /** Edges walked to reach this person; zero is the client asked about. */
+  steps: number;
+}
+
+/** Stored in one direction: the related client is the `relationship` of the client. */
+export interface FamilyEdge {
+  clientId: number;
+  relatedClientId: number;
+  relationship: string;
+}
+
+export interface RelationInput {
+  clientId: number;
+  relatedClientId: number;
+  relationship: string;
+}
+
+/** What a client delete takes with it besides the client. */
+export type DeleteScope = "linksOnly" | "immediateFamily";
 
 export interface Insurer {
   id: number;
@@ -206,7 +248,8 @@ export interface PolicyInput {
   nomineeRelation?: string | null;
   vehicleNumber?: string | null;
   notes?: string | null;
-  memberIds?: number[] | null;
+  /** The clients this policy year covers, which may include the holder. */
+  insuredClientIds?: number[] | null;
 }
 
 export interface RenewalInput {

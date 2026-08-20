@@ -3,6 +3,7 @@
 import type { Conn } from "../db";
 import { toModels } from "../rows";
 import type { CategoryBreakdown, Dashboard, ExpiryBucket, Policy } from "../types";
+import { IS_DEPENDENT } from "./clients";
 
 /** Windows the renewal desk works in, in days from today. */
 const BUCKETS: [label: string, from: number, to: number][] = [
@@ -54,9 +55,15 @@ export function load(conn: Conn): Dashboard {
       unknown
     >[]);
 
+  // The counts of people are counts of policyholders. A family member is a client,
+  // so counting rows would say the book holds half again as many people as it has
+  // cover for, and would report every child as a client with no email address —
+  // which is the one figure on this screen meant to be acted on.
+  const holders = `FROM clients c WHERE NOT (${IS_DEPENDENT})`;
+
   return {
-    totalClients: scalar("SELECT COUNT(*) AS n FROM clients"),
-    activeClients: scalar("SELECT COUNT(*) AS n FROM clients WHERE is_archived = 0"),
+    totalClients: scalar(`SELECT COUNT(*) AS n ${holders}`),
+    activeClients: scalar(`SELECT COUNT(*) AS n ${holders} AND c.is_archived = 0`),
     activePolicies: scalar("SELECT COUNT(*) AS n FROM policies WHERE status = 'active'"),
     expiringThisWeek: scalar(
       "SELECT COUNT(*) AS n FROM policy_overview WHERE status = 'active' AND days_to_expiry BETWEEN 0 AND 7",
@@ -74,7 +81,7 @@ export function load(conn: Conn): Dashboard {
       "SELECT IFNULL(SUM(commission_expected), 0) AS n FROM policies WHERE status = 'active'",
     ),
     clientsWithoutEmail: scalar(
-      "SELECT COUNT(*) AS n FROM clients WHERE is_archived = 0 AND (email IS NULL OR email = '')",
+      `SELECT COUNT(*) AS n ${holders} AND c.is_archived = 0 AND (c.email IS NULL OR c.email = '')`,
     ),
     buckets,
     byCategory: toModels<CategoryBreakdown>(byCategory),

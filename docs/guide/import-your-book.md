@@ -165,7 +165,7 @@ the words is used. Anything it cannot place is left for you to map by hand.
 | Category is inferred from your wording | "Mediclaim" and "family floater" become Health, "term plan" Life, "two wheeler" Motor, "overseas" Travel |
 | An unknown insurer or plan is created | You do not have to set up [insurers](insurers-and-plans.md) before importing |
 | A start date you leave out is taken as one year less a day before expiry | Files that only carry renewal dates still import |
-| Covered members split on commas, semicolons, slashes and pipes | "Priya; Aarav" records two members against the client |
+| Covered members split on commas, semicolons, slashes and pipes | "Priya; Aarav" records two [relatives](families.md) of the client and covers them on the policy |
 
 ## When a row fails
 

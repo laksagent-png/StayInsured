@@ -237,7 +237,9 @@ describe("dashboard", () => {
       const commission = total(activePolicies(), "commissionExpected");
       expect(moneyCompact(commission)).toBe("₹27.2K");
 
-      const clients = book().clients.filter((row) => !row.isArchived);
+      // Policyholders, not people: the family members the book holds as clients
+      // are covered under somebody else and are not counted here.
+      const clients = book().clients.filter((row) => !row.isArchived && !row.isDependent);
       expect(clients).toHaveLength(8);
 
       const expected = tile("Commission expected");
@@ -507,7 +509,9 @@ describe("dashboard", () => {
       renderWithProviders(<DashboardPage />);
       await screen.findByRole("heading", { name: "Today at a glance" });
 
-      const missing = book().clients.filter((row) => !row.email);
+      // A child with no email address is not a client the agency is failing to
+      // reach, so the warning counts policyholders only.
+      const missing = book().clients.filter((row) => !row.email && !row.isDependent);
       expect(missing).toHaveLength(1);
 
       const warning = screen.getByRole("link", { name: /no email address/ });

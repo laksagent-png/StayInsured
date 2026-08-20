@@ -4,7 +4,7 @@ import { Search } from "lucide-react";
 
 import { api, ApiError } from "../lib/api";
 import type { Policy, PolicyInput, PolicyStatus } from "../lib/types";
-import { categoryLabels, date, money, statusLabels } from "../lib/format";
+import { categoryLabels, date, money, relationshipLabel, statusLabels } from "../lib/format";
 import { Badge, Button, Field, Input, Modal, Select, Textarea, useToast } from "./ui";
 
 /** Adds a year minus a day, which is what an annual policy term means in practice. */
@@ -55,7 +55,7 @@ const EMPTY: PolicyInput = {
   nomineeRelation: "",
   vehicleNumber: "",
   notes: "",
-  memberIds: [],
+  insuredClientIds: [],
 };
 
 export function PolicyForm({
@@ -92,9 +92,9 @@ export function PolicyForm({
     queryFn: () => api.getClient(form.clientId),
     enabled: form.clientId > 0,
   });
-  const members = useQuery({
-    queryKey: ["members", form.clientId],
-    queryFn: () => api.listMembers(form.clientId),
+  const relatives = useQuery({
+    queryKey: ["relatives", form.clientId],
+    queryFn: () => api.listRelatives(form.clientId),
     enabled: form.clientId > 0,
   });
 
@@ -130,10 +130,10 @@ export function PolicyForm({
         nomineeRelation: policy.nomineeRelation ?? "",
         vehicleNumber: policy.vehicleNumber ?? "",
         notes: policy.notes ?? "",
-        memberIds: [],
+        insuredClientIds: [],
       });
-      api.policyMemberIds(policy.id).then((ids) =>
-        setForm((current) => ({ ...current, memberIds: ids })),
+      api.policyInsuredIds(policy.id).then((ids) =>
+        setForm((current) => ({ ...current, insuredClientIds: ids })),
       );
     } else {
       const today = new Date().toISOString().slice(0, 10);
@@ -177,10 +177,10 @@ export function PolicyForm({
     onError: (err: ApiError) => setError(err.message),
   });
 
-  /** Taking a client on: members belong to a client, so another client starts
-   * with none of them covered. */
+  /** Taking a client on: only the holder and their relatives may be covered, so
+   * another client starts with nobody named. */
   const chooseClient = (id: number) => {
-    setForm((current) => ({ ...current, clientId: id, memberIds: [] }));
+    setForm((current) => ({ ...current, clientId: id, insuredClientIds: [] }));
     setShowClientList(false);
     setClientSearch(null);
   };
@@ -497,25 +497,39 @@ export function PolicyForm({
           )}
         </div>
 
-        {(members.data?.length ?? 0) > 0 && (
+        {/* The lives a floater covers are clients: the holder, and the people
+            related to them. A client with nobody linked gets no list, because
+            naming the holder on their own motor policy says nothing. */}
+        {(relatives.data?.length ?? 0) > 0 && (
           <div>
             <span className="field-label">Members covered</span>
             <div className="flex flex-wrap gap-2">
-              {members.data?.map((member) => {
-                const selected = form.memberIds?.includes(member.id) ?? false;
+              {[
+                {
+                  id: form.clientId,
+                  fullName: selectedClient.data?.fullName ?? "Policyholder",
+                  relation: "policyholder",
+                },
+                ...(relatives.data ?? []).map((relative) => ({
+                  id: relative.clientId,
+                  fullName: relative.fullName,
+                  relation: relationshipLabel(relative.relationship, relative.outgoing).toLowerCase(),
+                })),
+              ].map((person) => {
+                const selected = form.insuredClientIds?.includes(person.id) ?? false;
                 return (
                   <button
-                    key={member.id}
+                    key={person.id}
                     type="button"
                     // The relationship is set apart by a margin on screen, which
                     // a screen reader runs into the name.
-                    aria-label={`${member.fullName}, ${member.relationship}`}
+                    aria-label={`${person.fullName}, ${person.relation}`}
                     onClick={() =>
                       set(
-                        "memberIds",
+                        "insuredClientIds",
                         selected
-                          ? (form.memberIds ?? []).filter((id) => id !== member.id)
-                          : [...(form.memberIds ?? []), member.id],
+                          ? (form.insuredClientIds ?? []).filter((id) => id !== person.id)
+                          : [...(form.insuredClientIds ?? []), person.id],
                       )
                     }
                     className={[
@@ -525,8 +539,8 @@ export function PolicyForm({
                         : "border-slate-300 text-slate-600 hover:bg-slate-50",
                     ].join(" ")}
                   >
-                    {member.fullName}
-                    <span className="ml-1 text-slate-400">{member.relationship}</span>
+                    {person.fullName}
+                    <span className="ml-1 text-slate-400">{person.relation}</span>
                   </button>
                 );
               })}

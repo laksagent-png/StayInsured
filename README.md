@@ -98,11 +98,10 @@ each message. See below.
 
 **Clients** — everybody in your book. Search by name, phone, email, client code
 or PAN. Narrow by city, by the kind of cover they hold, by who has no email
-address on file, or show archived clients.
+address on file, or show archived clients and family members.
 
-**Client page** — one client in full: contact details, the family members covered
-under their policies, every policy they hold, past and present, and the scanned
-paperwork behind them.
+**Client page** — one client in full: contact details, the family they belong to,
+every policy they hold, past and present, and the scanned paperwork behind them.
 
 **Policies** — every policy you have placed, searchable by policy number, client
 name or vehicle number, filterable by category, status and expiry window.
@@ -187,8 +186,14 @@ under the same name, each with its own number, insurer, premium and expiry date.
 Their client page lists all of them together, and the renewals list treats each
 separately, because each falls due at its own time.
 
-Family members covered under a policy are recorded on the client too, so you know
-who is on the family floater without opening the paperwork.
+The people covered under a policy are clients in their own right, linked to the
+policyholder as spouse, son, mother and so on. So you know who is on the family
+floater without opening the paperwork — and the day the son buys his own
+two-wheeler policy, he is already somebody in your book rather than a name typed
+inside his father's record.
+
+Browsing the clients list shows the people who hold the cover; **Include family
+members** brings in everybody else, and searching by name always finds them.
 
 ## The paperwork itself
 

@@ -66,9 +66,18 @@ pub fn load(conn: &Connection) -> AppResult<Dashboard> {
          ORDER BY expiry_date DESC LIMIT 8",
     )?;
 
+    // The counts of people are counts of policyholders. A family member is a
+    // client, so counting rows would say the book holds half again as many people
+    // as it has cover for, and would report every child as a client with no email
+    // address — which is the one figure on this screen meant to be acted on.
+    let holders = format!(
+        "FROM clients c WHERE NOT ({})",
+        super::clients::IS_DEPENDENT
+    );
+
     Ok(Dashboard {
-        total_clients: scalar("SELECT COUNT(*) FROM clients")?,
-        active_clients: scalar("SELECT COUNT(*) FROM clients WHERE is_archived = 0")?,
+        total_clients: scalar(&format!("SELECT COUNT(*) {holders}"))?,
+        active_clients: scalar(&format!("SELECT COUNT(*) {holders} AND c.is_archived = 0"))?,
         active_policies: scalar("SELECT COUNT(*) FROM policies WHERE status = 'active'")?,
         expiring_this_week: scalar(
             "SELECT COUNT(*) FROM policy_overview \
@@ -88,9 +97,9 @@ pub fn load(conn: &Connection) -> AppResult<Dashboard> {
         commission_expected: money(
             "SELECT IFNULL(SUM(commission_expected), 0) FROM policies WHERE status = 'active'",
         )?,
-        clients_without_email: scalar(
-            "SELECT COUNT(*) FROM clients WHERE is_archived = 0 AND (email IS NULL OR email = '')",
-        )?,
+        clients_without_email: scalar(&format!(
+            "SELECT COUNT(*) {holders} AND c.is_archived = 0 AND (c.email IS NULL OR c.email = '')"
+        ))?,
         buckets,
         by_category,
         upcoming,

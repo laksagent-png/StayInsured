@@ -472,17 +472,28 @@ describe("the policy form's numbers", () => {
 });
 
 describe("the policy form's covered members", () => {
-  it("ticks the members an existing policy covers", async () => {
+  it("ticks the lives an existing policy covers", async () => {
     openForm({ policy: fromBook(1) });
 
     expect(await screen.findByText("Members covered")).toBeInTheDocument();
-    expect(backend().lastCall("policy_member_ids")).toEqual({ id: 1 });
+    expect(backend().lastCall("policy_insured_ids")).toEqual({ id: 1 });
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /Sneha Sharma/ })).toHaveClass("bg-brand-50"),
     );
   });
 
-  it("saves the members that are ticked", async () => {
+  it("offers the holder and the people related to them, and nobody else", async () => {
+    openForm({ policy: fromBook(1) });
+    await screen.findByText("Members covered");
+
+    for (const name of [/Rohit Sharma, policyholder/, /Sneha Sharma, spouse/, /Aarav Sharma, son/]) {
+      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    }
+    // Anita Desai is a client, but not this family's.
+    expect(screen.queryByRole("button", { name: /Anita Desai, / })).not.toBeInTheDocument();
+  });
+
+  it("saves the lives that are ticked, by client", async () => {
     const { user } = openForm({ policy: fromBook(1) });
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /Sneha Sharma/ })).toHaveClass("bg-brand-50"),
@@ -491,21 +502,32 @@ describe("the policy form's covered members", () => {
     await user.click(screen.getByRole("button", { name: /Sneha Sharma/ }));
     await user.click(saveChanges());
 
-    await waitFor(() => expect(savedInput("update_policy").memberIds).toEqual([1, 3]));
+    await waitFor(() => expect(savedInput("update_policy").insuredClientIds).toEqual([1, 10]));
   });
 
-  it("adds a member to a new policy", async () => {
+  it("adds a life to a new policy", async () => {
     const { user } = openForm();
-    await fillMinimum(user);
-    const chip = await screen.findByRole("button", { name: /Anita Desai/ });
+    await chooseClient(user, /Rohit Sharma/);
+    await chooseInsurer(user, 2, "HDFC ERGO");
+    await user.type(screen.getByLabelText(/Policy number/), "SH/2026/0001");
 
-    await user.click(chip);
+    await user.click(await screen.findByRole("button", { name: /Aarav Sharma, son/ }));
     await user.click(addPolicy());
 
-    await waitFor(() => expect(savedInput("create_policy").memberIds).toEqual([4]));
+    await waitFor(() => expect(savedInput("create_policy").insuredClientIds).toEqual([10]));
   });
 
-  it("forgets the members when the client changes", async () => {
+  it("says nothing about cover for a client with nobody linked to them", async () => {
+    const { user } = openForm();
+    await fillMinimum(user);
+
+    // Anita Desai holds her own cover and has no family in the book, so naming
+    // her on her own policy would say nothing.
+    await waitFor(() => expect(backend().countOf("list_relatives")).toBeGreaterThan(0));
+    expect(screen.queryByText("Members covered")).not.toBeInTheDocument();
+  });
+
+  it("forgets the lives when the client changes", async () => {
     const { user } = openForm();
     await chooseClient(user, /Rohit Sharma/);
     await user.click(await screen.findByRole("button", { name: /Sneha Sharma/ }));
@@ -516,7 +538,7 @@ describe("the policy form's covered members", () => {
     await user.type(screen.getByLabelText(/Policy number/), "SH/2026/0002");
     await user.click(addPolicy());
 
-    await waitFor(() => expect(savedInput("create_policy").memberIds).toEqual([]));
+    await waitFor(() => expect(savedInput("create_policy").insuredClientIds).toEqual([]));
   });
 });
 
@@ -581,7 +603,6 @@ describe("saving from the policy form", () => {
     await user.type(screen.getByLabelText("Payment mode"), "UPI");
     await user.type(screen.getByLabelText("Nominee"), "Rahul Desai");
     await user.type(screen.getByLabelText("Nominee relation"), "Son");
-    await user.click(await screen.findByRole("button", { name: /Anita Desai/ }));
     await user.type(screen.getByLabelText("Notes"), "Ported from last year");
 
     await user.click(addPolicy());
@@ -608,7 +629,8 @@ describe("saving from the policy form", () => {
       // fields that were never touched go as empty strings.
       vehicleNumber: "",
       notes: "Ported from last year",
-      memberIds: [4],
+      // Anita has nobody linked to her, so the policy names no other life.
+      insuredClientIds: [],
     });
     expect(await screen.findByText("Policy added")).toBeInTheDocument();
     expect(onClose).toHaveBeenCalled();

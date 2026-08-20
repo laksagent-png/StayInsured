@@ -18,13 +18,41 @@ const SORTABLE: &[(&str, &str)] = &[
 const DERIVED: &str = "(SELECT COUNT(*) FROM policies p WHERE p.client_id = c.id AND p.status = 'active') AS active_policies, \
      (SELECT COUNT(*) FROM policies p WHERE p.client_id = c.id) AS total_policies, \
      (SELECT MIN(p.expiry_date) FROM policies p WHERE p.client_id = c.id \
-        AND p.expiry_date >= date('now', 'localtime')) AS next_expiry";
+        AND p.expiry_date >= date('now', 'localtime')) AS next_expiry, \
+     (SELECT COUNT(*) FROM client_relations r \
+        WHERE r.client_id = c.id OR r.related_client_id = c.id) AS relatives, \
+     (SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM policies p WHERE p.client_id = c.id) \
+                   AND EXISTS (SELECT 1 FROM client_relations r WHERE r.related_client_id = c.id) \
+                  THEN 1 ELSE 0 END) AS is_dependent";
+
+/// A client with no policy of their own who is listed under somebody else — a
+/// spouse on a floater, a dependent child. They are clients like any other and
+/// the book holds them once, but a list of two thousand names where half are
+/// children is not the book an agent works from, so browsing hides them.
+///
+/// The dashboard counts through this too: a child with no email address is not a
+/// client the agency is failing to reach.
+pub const IS_DEPENDENT: &str = "NOT EXISTS (SELECT 1 FROM policies p WHERE p.client_id = c.id) \
+     AND EXISTS (SELECT 1 FROM client_relations r WHERE r.related_client_id = c.id)";
 
 fn build_conditions(filter: &ClientFilter) -> Conditions {
     let mut c = Conditions::new();
 
     if !filter.include_archived.unwrap_or(false) {
         c.add_raw("c.is_archived = 0");
+    }
+
+    let searching = filter
+        .search
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|s| !s.is_empty());
+
+    // Searching reaches everybody. Someone typing a child's name is looking for
+    // that child, and a book that held them but would not admit it when asked by
+    // name would be worse than one that never held them at all.
+    if !filter.include_family.unwrap_or(false) && !searching {
+        c.add_raw(&format!("NOT ({IS_DEPENDENT})"));
     }
 
     if let Some(search) = filter
@@ -239,14 +267,60 @@ pub fn set_archived(conn: &Connection, id: i64, archived: bool) -> AppResult<()>
     Ok(())
 }
 
-/// Removes the client together with their policies. The UI confirms first; the
-/// archive flag is the softer option offered alongside it.
+/// Archives or restores a client together with the people directly related to
+/// them, and answers with how many rows it moved.
+///
+/// One step out, deliberately. A family has no boundary of its own — it is
+/// whoever the edges reach — so an operation that walked the whole graph would
+/// grow every time an in-law was recorded, and putting one household away would
+/// eventually put away half the book.
+pub fn set_family_archived(conn: &Connection, id: i64, archived: bool) -> AppResult<usize> {
+    get(conn, id)?;
+    let mut ids = super::relations::immediate_ids(conn, id)?;
+    ids.push(id);
+
+    let mut moved = 0;
+    for person in ids {
+        moved += conn.execute(
+            "UPDATE clients SET is_archived = ?2 WHERE id = ?1 AND is_archived <> ?2",
+            params![person, archived as i64],
+        )?;
+    }
+    Ok(moved)
+}
+
+/// Removes the client together with their policies and documents. Relationship
+/// edges go with them, but the people on the other end do not: they are clients,
+/// and one of them holding cover of their own is the ordinary case.
+///
+/// The UI confirms first, naming who is involved; the archive flag is the softer
+/// option offered alongside it.
 pub fn delete(conn: &Connection, id: i64) -> AppResult<()> {
     let changed = conn.execute("DELETE FROM clients WHERE id = ?1", params![id])?;
     if changed == 0 {
         return Err(AppError::NotFound("Client"));
     }
     Ok(())
+}
+
+/// Removes the client and the people directly related to them, answering with
+/// every id it deleted so the interface can say what went.
+///
+/// Reaches one step out for the same reason `set_family_archived` does. What it
+/// deletes is therefore the family as it stood when the operator was shown the
+/// list, not whatever the graph grows into later.
+pub fn delete_with_immediate_family(conn: &Connection, id: i64) -> AppResult<Vec<i64>> {
+    get(conn, id)?;
+    let mut ids = super::relations::immediate_ids(conn, id)?;
+    ids.push(id);
+
+    let mut deleted = Vec::new();
+    for person in ids {
+        if conn.execute("DELETE FROM clients WHERE id = ?1", params![person])? > 0 {
+            deleted.push(person);
+        }
+    }
+    Ok(deleted)
 }
 
 pub fn distinct_cities(conn: &Connection) -> AppResult<Vec<String>> {

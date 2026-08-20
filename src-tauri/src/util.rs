@@ -258,15 +258,32 @@ pub fn normalise_gender(raw: &str) -> Option<String> {
     }
 }
 
+/// The words `client_relations.relationship` accepts, matching its `CHECK`.
+pub const RELATIONSHIPS: &[&str] = &[
+    "spouse", "son", "daughter", "father", "mother", "brother", "sister", "other",
+];
+
+/// Whether a spreadsheet or an operator means the policyholder themselves rather
+/// than a second person. There is no `self` relationship: a client does not
+/// relate to themselves, so a life named this way resolves to the client's own
+/// row.
+pub fn is_self_relationship(raw: Option<&str>) -> bool {
+    matches!(
+        raw.map(|r| r.trim().to_lowercase()).as_deref(),
+        Some("self" | "proposer" | "primary" | "insured" | "policyholder")
+    )
+}
+
 pub fn normalise_relationship(raw: &str) -> String {
     let text = raw.trim().to_lowercase();
     match text.as_str() {
-        "self" | "proposer" | "primary" => "self".into(),
         "spouse" | "wife" | "husband" | "partner" => "spouse".into(),
         "son" | "child (male)" => "son".into(),
         "daughter" | "child (female)" => "daughter".into(),
-        "father" | "dad" => "father".into(),
-        "mother" | "mom" | "mum" => "mother".into(),
+        "father" | "dad" | "papa" => "father".into(),
+        "mother" | "mom" | "mum" | "mummy" => "mother".into(),
+        "brother" | "bro" => "brother".into(),
+        "sister" | "sis" => "sister".into(),
         _ => "other".into(),
     }
 }

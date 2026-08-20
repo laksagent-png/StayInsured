@@ -238,7 +238,7 @@ pub fn create(conn: &Connection, input: &PolicyInput) -> AppResult<i64> {
     .map_err(map_constraint_error)?;
 
     let id = conn.last_insert_rowid();
-    set_members(conn, id, input.member_ids.as_deref().unwrap_or(&[]))?;
+    set_members(conn, id, input.insured_client_ids.as_deref().unwrap_or(&[]))?;
     Ok(id)
 }
 
@@ -286,8 +286,8 @@ pub fn update(conn: &Connection, id: i64, input: &PolicyInput) -> AppResult<()> 
     if changed == 0 {
         return Err(AppError::NotFound("Policy"));
     }
-    if let Some(members) = input.member_ids.as_deref() {
-        set_members(conn, id, members)?;
+    if let Some(insured) = input.insured_client_ids.as_deref() {
+        set_members(conn, id, insured)?;
     }
     Ok(())
 }
@@ -366,8 +366,8 @@ pub fn renew(conn: &Connection, input: &RenewalInput) -> AppResult<i64> {
     let new_id = conn.last_insert_rowid();
 
     conn.execute(
-        "INSERT INTO policy_members (policy_id, member_id) \
-         SELECT ?1, member_id FROM policy_members WHERE policy_id = ?2",
+        "INSERT INTO policy_members (policy_id, insured_client_id) \
+         SELECT ?1, insured_client_id FROM policy_members WHERE policy_id = ?2",
         params![new_id, previous.id],
     )?;
     // A cancelled year keeps saying so. Cancelling is something the agent did
@@ -411,25 +411,40 @@ pub fn set_status(conn: &Connection, id: i64, status: &str) -> AppResult<()> {
     Ok(())
 }
 
-pub fn set_members(conn: &Connection, policy_id: i64, member_ids: &[i64]) -> AppResult<()> {
+/// Replaces the list of clients a policy year covers.
+///
+/// A client may be attached when they are the policyholder or when the book
+/// records how they are related to them. The rule lives in the insert rather than
+/// in the interface: a floater is the one place where a stray id would put a
+/// stranger's name and date of birth onto somebody else's cover, and an import
+/// reaches this code without passing a screen at all.
+pub fn set_members(conn: &Connection, policy_id: i64, insured_client_ids: &[i64]) -> AppResult<()> {
     conn.execute(
         "DELETE FROM policy_members WHERE policy_id = ?1",
         params![policy_id],
     )?;
     let mut stmt = conn.prepare(
-        "INSERT OR IGNORE INTO policy_members (policy_id, member_id) \
-         SELECT ?1, id FROM insured_members WHERE id = ?2 \
-           AND client_id = (SELECT client_id FROM policies WHERE id = ?1)",
+        "INSERT OR IGNORE INTO policy_members (policy_id, insured_client_id) \
+         SELECT ?1, c.id FROM clients c WHERE c.id = ?2 AND ( \
+              c.id = (SELECT client_id FROM policies WHERE id = ?1) \
+           OR EXISTS (SELECT 1 FROM client_relations r \
+                       WHERE (r.client_id = (SELECT client_id FROM policies WHERE id = ?1) \
+                              AND r.related_client_id = c.id) \
+                          OR (r.related_client_id = (SELECT client_id FROM policies WHERE id = ?1) \
+                              AND r.client_id = c.id)))",
     )?;
-    for member_id in member_ids {
-        stmt.execute(params![policy_id, member_id])?;
+    for client_id in insured_client_ids {
+        stmt.execute(params![policy_id, client_id])?;
     }
     Ok(())
 }
 
-pub fn members_of(conn: &Connection, policy_id: i64) -> AppResult<Vec<i64>> {
-    let mut stmt = conn
-        .prepare("SELECT member_id FROM policy_members WHERE policy_id = ?1 ORDER BY member_id")?;
+/// The clients a policy year covers.
+pub fn insured_of(conn: &Connection, policy_id: i64) -> AppResult<Vec<i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT insured_client_id FROM policy_members WHERE policy_id = ?1 \
+         ORDER BY insured_client_id",
+    )?;
     let rows = stmt
         .query_map(params![policy_id], |row| row.get::<_, i64>(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;

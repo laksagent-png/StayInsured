@@ -24,16 +24,16 @@ import * as clients from "./repo/clients";
 import * as dashboard from "./repo/dashboard";
 import * as documents from "./repo/documents";
 import * as insurers from "./repo/insurers";
-import * as members from "./repo/members";
 import * as notifications from "./repo/notifications";
 import * as policies from "./repo/policies";
 import * as products from "./repo/products";
+import * as relations from "./repo/relations";
 import * as rules from "./repo/rules";
 import * as settings from "./repo/settings";
 import * as templates from "./repo/templates";
 import type { Session } from "./session";
 import * as templating from "./templating";
-import type { Client, ClientFilter, ImportOptions, ReminderRun } from "./types";
+import type { Client, ClientFilter, DeleteScope, ImportOptions, ReminderRun } from "./types";
 import { CATEGORIES, categoryLabel, looksLikeEmail, todayIso } from "./util";
 
 type Args = Record<string, unknown>;
@@ -72,6 +72,20 @@ function triStateBool(args: Args, key: string): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
 
+/**
+ * How much of a family a delete takes. Absent means the narrow answer, matching
+ * `Option<DeleteScope>` in the Rust handler; a word neither side recognises is
+ * refused rather than read as the destructive one.
+ */
+function deleteScope(args: Args, key: string): DeleteScope {
+  const value = args[key];
+  if (value === undefined || value === null) return "linksOnly";
+  if (value !== "linksOnly" && value !== "immediateFamily") {
+    throw AppError.other(`${key} must be linksOnly or immediateFamily`);
+  }
+  return value;
+}
+
 export const COMMANDS: Record<string, Handler> = {
   // ---------------------------------------------------------------- session
   session_state: (session) => session.state(),
@@ -105,17 +119,36 @@ export const COMMANDS: Record<string, Handler> = {
     session.db().withTx((conn) => clients.update(conn, num(args, "id"), obj(args, "input"))),
   set_client_archived: (session, args) =>
     session.db().withTx((conn) => clients.setArchived(conn, num(args, "id"), optBool(args, "archived"))),
-  delete_client: (session, args) => session.db().withTx((conn) => clients.remove(conn, num(args, "id"))),
+  // `scope` decides whether the people directly related to this client go too.
+  // Anything else is refused rather than guessed at, because both answers destroy
+  // something and the difference between them is the point.
+  delete_client: (session, args) => {
+    const scope = deleteScope(args, "scope");
+    return session.db().withTx((conn) => {
+      if (scope === "immediateFamily") return clients.removeWithImmediateFamily(conn, num(args, "id"));
+      clients.remove(conn, num(args, "id"));
+      return [num(args, "id")];
+    });
+  },
+  set_family_archived: (session, args) =>
+    session
+      .db()
+      .withTx((conn) => clients.setFamilyArchived(conn, num(args, "id"), optBool(args, "archived"))),
   next_client_code: (session) => session.db().with(clients.nextClientCode),
 
-  // ---------------------------------------------------------------- members
-  list_members: (session, args) =>
-    session.db().with((conn) => members.listForClient(conn, num(args, "clientId"))),
-  create_member: (session, args) =>
-    session.db().withTx((conn) => members.create(conn, obj(args, "input"))),
-  update_member: (session, args) =>
-    session.db().withTx((conn) => members.update(conn, num(args, "id"), obj(args, "input"))),
-  delete_member: (session, args) => session.db().withTx((conn) => members.remove(conn, num(args, "id"))),
+  // ---------------------------------------------------------------- family
+  list_relatives: (session, args) =>
+    session.db().with((conn) => relations.listForClient(conn, num(args, "clientId"))),
+  client_family: (session, args) =>
+    session.db().with((conn) => relations.family(conn, num(args, "clientId"))),
+  link_clients: (session, args) =>
+    session.db().withTx((conn) => relations.link(conn, obj(args, "input"))),
+  unlink_clients: (session, args) =>
+    session
+      .db()
+      .withTx((conn) =>
+        relations.unlink(conn, num(args, "clientId"), num(args, "relatedClientId")),
+      ),
 
   // ---------------------------------------------------------------- documents
   list_documents: (session, args) =>
@@ -158,8 +191,8 @@ export const COMMANDS: Record<string, Handler> = {
   list_policies: (session, args) => session.db().with((conn) => policies.list(conn, obj(args, "filter"))),
   get_policy: (session, args) => session.db().with((conn) => policies.get(conn, num(args, "id"))),
   policy_chain: (session, args) => session.db().with((conn) => policies.chain(conn, num(args, "id"))),
-  policy_member_ids: (session, args) =>
-    session.db().with((conn) => policies.membersOf(conn, num(args, "id"))),
+  policy_insured_ids: (session, args) =>
+    session.db().with((conn) => policies.insuredOf(conn, num(args, "id"))),
   create_policy: (session, args) =>
     session.db().withTx((conn) => policies.create(conn, obj(args, "input"))),
   update_policy: (session, args) =>

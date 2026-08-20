@@ -19,8 +19,9 @@ Critical Illness · Other
 
 Every policy carries exactly one. Categories drive the dashboard's mix, the
 filters on the [clients](clients.md) and [policies](policies.md) screens, and
-which fields appear on the policy form — **Vehicle number** shows for motor,
-members for health and travel.
+which fields appear on the policy form — **Vehicle number** shows for motor. The
+list of lives covered appears whenever the client has a [family](families.md) on
+file, whatever the category.
 
 An [import](import-your-book.md) works the category out from your wording:
 "mediclaim" and "family floater" become Health, "term plan" Life, "two wheeler"
@@ -58,6 +59,9 @@ it can see.
 
 Client codes are searchable, and an [import](import-your-book.md) matches on
 them first, so a file that carries your codes never creates a duplicate.
+
+Everybody in a [family](families.md) is a client, so a spouse or child gets a code
+of their own. The next code the app offers therefore counts them too.
 
 ## Exports
 

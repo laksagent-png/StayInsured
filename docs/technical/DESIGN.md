@@ -217,7 +217,7 @@ straight query instead of an audit-trail reconstruction, and gives the
 whose `previous_policy_id` points at it.
 
 `renew` carries forward everything the caller does not restate — frequency,
-payment mode, nominee, vehicle number, commission, and the covered members —
+payment mode, nominee, vehicle number, commission, and the lives covered —
 defaults the new term to the day after expiry plus a year minus a day, copies
 the `policy_members` rows, and marks the expiring year `renewed`.
 
@@ -264,6 +264,66 @@ then phone, then name — and the importer depends on that order.
 
 Archiving is the soft option and the default one offered in the UI; deleting a
 client cascades to their policies.
+
+### A family is edges between clients
+
+**Everybody on a family floater is a client.** There is no member entity, no
+household table and no family id: `client_relations` holds directed edges, and a
+family is the set of clients reachable from one of them by following those edges
+in either direction. Migration 005 moved the old `insured_members` rows across —
+`repo::relations` is what replaced `repo::members`.
+
+The reason is the day a dependent buys cover. A son on his father's floater who
+takes out his own two-wheeler policy is, under a member model, a name inside
+another person's record that has to become a client — a migration performed by
+hand, at the till, with the old row left behind or deleted. As a client from the
+start he is already there, and the new policy simply belongs to him. Nothing about
+the family changes.
+
+Edges rather than a family id, because a person belongs to more than one family. A
+married man is in his wife and children's family and in his parents'. An id forces
+a choice, and marriage or death then means merging or splitting ids across every
+row that carries one; edges mean adding or removing one row.
+
+```mermaid
+flowchart LR
+    rajesh["Rajesh<br/>2 policies"] -->|spouse| priya["Priya"]
+    rajesh -->|son| aarav["Aarav"]
+    rajesh -->|father| mohan["Mohan"]
+    priya -->|mother| sita["Sita<br/>1 policy"]
+```
+
+Consequences worth knowing, all of them enforced in `repo::relations`:
+
+- **The pair is unique, not the direction.** `link` rewrites an edge that exists
+  either way round, so "father" recorded on the son's page corrects the "son"
+  recorded on the father's instead of contradicting it. `Relative.outgoing` tells
+  the interface which way the surviving edge points, and it renders the stored word
+  with a preposition — "Son" one way, "Son of" the other — rather than inverting
+  it. Inverting would mean guessing gender, and would be wrong about a mother.
+- **The walk is done in Rust, not in a recursive CTE.** Both editions must agree,
+  the older SQLite behind the Windows 7 build is a poor place to rest a graph
+  traversal, and a visited set cannot loop for ever the way a recursive query whose
+  key includes the depth can. It stops at 12 steps: an agency's book is not a
+  genealogy, and one mistaken edge between two families should not turn a client
+  page into the whole client list.
+- **Ancestry cycles are refused; other loops are not.** Only parent and child edges
+  point up and down a family, so only they can contradict themselves. A couple who
+  are also each other's cousins is one family with two ways through it, and
+  `client_family` returns both edges because the book holds both.
+- **Family archive and family delete reach one step out and stop.** An in-law's own
+  parents are their own household. Reaching further would mean a delete confirmed
+  against a list of three could take a dozen people, and what was confirmed is what
+  should go.
+- **A dependent is derived, never stored.** No policy of their own, and named as
+  somebody's relative. `clients::list` drops dependents when browsing, keeps them
+  when searching, and the dashboard counts policyholders through the same
+  `IS_DEPENDENT` predicate — otherwise a book of 2,000 policyholders would report
+  5,000 clients and every child as a client with no email address. Buying a policy
+  makes somebody a policyholder with nothing to migrate.
+- **A policy covers its holder or somebody related to them.** `set_members` writes
+  the set through an `INSERT … WHERE`, so an id from outside the family is dropped
+  rather than trusted.
 
 ### Stored documents
 
@@ -516,7 +576,16 @@ database in a temporary directory, with no window:
 - a code already in use is refused, and a code typed by hand moves the counter
   past it
 - archiving puts a client away without touching their policies
-- deleting a client takes their policies, members and the links between them
+- deleting a client takes their policies but leaves their family standing, and
+  deleting the family reaches one step out and stops
+- archiving a family moves the household, stops at the in-laws, and reverses
+- a family reads the same walked from any of them
+- a relationship recorded twice, once from each end, is still one edge
+- nobody can be their own ancestor
+- a dependent is hidden from the browse list, found by name, brought in by the
+  toggle, and stops being one by holding a policy
+- the dashboard counts policyholders rather than people, so a child with no
+  email address is not something to chase
 - a blank field is stored as nothing rather than as empty text
 - renewal builds a chain, carries values forward and preserves last year's
   premium
@@ -532,7 +601,8 @@ database in a temporary directory, with no window:
 - renewing a cancelled year leaves it cancelled, still marked as renewed and
   still ignored by the sweep
 - deleting a year leaves the earlier ones standing
-- a member from another client cannot be attached to a policy
+- a policy covers its holder or somebody related to them, and nobody else
+- a life named on a policy in a spreadsheet is not entered as a client twice
 - an insurer holding policies is refused deletion and retired instead, and
   retiring one leaves its policies readable
 - deleting a plan detaches it from the policies that used it rather than
@@ -706,7 +776,7 @@ installs have to be replaced by hand once.
 
 ## Built, and deliberately not built yet
 
-Working today: clients and insured members, policies with renewal chains, the
+Working today: clients and the families between them, policies with renewal chains, the
 renewals desk, the dashboard, insurers and plans, spreadsheet import with a dry
 run, export, reminders — rules, templates, the outbox and the daily sweep over
 the agent's own SMTP server — stored documents, settings, encrypted backups, lock

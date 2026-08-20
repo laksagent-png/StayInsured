@@ -10,14 +10,22 @@ export type Category =
 
 export type PolicyStatus = "active" | "expired" | "renewed" | "lapsed" | "cancelled";
 
+/**
+ * How one client is related to another. There is no `self`: a family member is a
+ * client, so a client does not relate to themselves.
+ */
 export type Relationship =
-  | "self"
   | "spouse"
   | "son"
   | "daughter"
   | "father"
   | "mother"
+  | "brother"
+  | "sister"
   | "other";
+
+/** What a client delete takes with it besides the client. */
+export type DeleteScope = "linksOnly" | "immediateFamily";
 
 export interface Page<T> {
   rows: T[];
@@ -67,6 +75,10 @@ export interface Client {
   activePolicies: number;
   totalPolicies: number;
   nextExpiry: string | null;
+  /** People related to this client, either direction of the edge. */
+  relatives: number;
+  /** No policy of their own and listed under somebody else. Derived on read. */
+  isDependent: boolean;
 }
 
 export interface ClientInput {
@@ -96,6 +108,11 @@ export interface ClientFilter {
   state?: string;
   category?: string;
   includeArchived?: boolean;
+  /**
+   * Brings dependents into the list. They are always reachable by search; this
+   * is about whether browsing shows them.
+   */
+  includeFamily?: boolean;
   missingEmail?: boolean;
   sort?: string;
   descending?: boolean;
@@ -122,23 +139,61 @@ export interface DocumentInput {
   path: string;
 }
 
-export interface InsuredMember {
-  id: number;
+/** One client related to another, as a row of the family panel. */
+export interface Relative {
   clientId: number;
+  clientCode: string;
   fullName: string;
   relationship: Relationship;
+  /**
+   * Which side of the stored edge this person sits on. `true` — they are the
+   * client's `relationship`, read as "Son: Aarav". `false` — the client is
+   * theirs, read as "Son of: Rajesh".
+   *
+   * The word is never inverted into its opposite, because choosing between
+   * father and mother needs a gender the book may not hold.
+   */
+  outgoing: boolean;
   dateOfBirth: string | null;
   gender: string | null;
+  isArchived: boolean;
+  ownPolicies: number;
   notes: string | null;
 }
 
-export interface MemberInput {
+/**
+ * A whole family: everybody reachable from one client, and the edges between
+ * them. There is no family record — this is what a walk over the relationships
+ * found.
+ */
+export interface Family {
+  members: FamilyMember[];
+  edges: FamilyEdge[];
+}
+
+export interface FamilyMember {
   clientId: number;
+  clientCode: string;
   fullName: string;
-  relationship?: string;
-  dateOfBirth?: string | null;
-  gender?: string | null;
-  notes?: string | null;
+  dateOfBirth: string | null;
+  gender: string | null;
+  isArchived: boolean;
+  ownPolicies: number;
+  /** Edges walked to reach this person; zero is the client asked about. */
+  steps: number;
+}
+
+/** Stored in one direction: the related client is the `relationship` of the client. */
+export interface FamilyEdge {
+  clientId: number;
+  relatedClientId: number;
+  relationship: Relationship;
+}
+
+export interface RelationInput {
+  clientId: number;
+  relatedClientId: number;
+  relationship: string;
 }
 
 export interface Insurer {
@@ -244,7 +299,8 @@ export interface PolicyInput {
   nomineeRelation?: string | null;
   vehicleNumber?: string | null;
   notes?: string | null;
-  memberIds?: number[] | null;
+  /** The clients this policy year covers, which may include the holder. */
+  insuredClientIds?: number[] | null;
 }
 
 export interface RenewalInput {

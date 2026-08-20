@@ -17,11 +17,11 @@ import type {
   EmailTemplateInput,
   ImportOptions,
   InsurerInput,
-  MemberInput,
   NotificationFilter,
   PolicyFilter,
   PolicyInput,
   ProductInput,
+  RelationInput,
   ReminderRuleInput,
   RenewalInput,
 } from "@/lib/types";
@@ -29,7 +29,7 @@ import { backend } from "@/test";
 
 const clientFilter: ClientFilter = { search: "anita", city: "Pune", page: 2, pageSize: 25 };
 const clientInput: ClientInput = { fullName: "Anita Desai", email: "anita@example.com" };
-const memberInput: MemberInput = { clientId: 1, fullName: "Rhea Desai", relationship: "daughter" };
+const relationInput: RelationInput = { clientId: 1, relatedClientId: 9, relationship: "spouse" };
 const documentInput: DocumentInput = { clientId: 1, path: "/tmp/schedule.pdf", title: "Schedule" };
 const insurerInput: InsurerInput = { name: "Star Health", shortCode: "SH" };
 const productInput: ProductInput = { insurerId: 1, name: "Family Optima", category: "health" };
@@ -143,7 +143,19 @@ const wrappers: Wrapper[] = [
     name: "deleteClient",
     send: () => api.deleteClient(7),
     command: "delete_client",
-    args: { id: 7 },
+    args: { id: 7, scope: "linksOnly" },
+  },
+  {
+    name: "deleteClient with the family",
+    send: () => api.deleteClient(7, "immediateFamily"),
+    command: "delete_client",
+    args: { id: 7, scope: "immediateFamily" },
+  },
+  {
+    name: "setFamilyArchived",
+    send: () => api.setFamilyArchived(1, true),
+    command: "set_family_archived",
+    args: { id: 1, archived: true },
   },
   {
     name: "nextClientCode",
@@ -152,30 +164,30 @@ const wrappers: Wrapper[] = [
     args: {},
   },
 
-  // members
+  // family
   {
-    name: "listMembers",
-    send: () => api.listMembers(3),
-    command: "list_members",
-    args: { clientId: 3 },
+    name: "listRelatives",
+    send: () => api.listRelatives(1),
+    command: "list_relatives",
+    args: { clientId: 1 },
   },
   {
-    name: "createMember",
-    send: () => api.createMember(memberInput),
-    command: "create_member",
-    args: { input: memberInput },
+    name: "clientFamily",
+    send: () => api.clientFamily(1),
+    command: "client_family",
+    args: { clientId: 1 },
   },
   {
-    name: "updateMember",
-    send: () => api.updateMember(4, memberInput),
-    command: "update_member",
-    args: { id: 4, input: memberInput },
+    name: "linkClients",
+    send: () => api.linkClients(relationInput),
+    command: "link_clients",
+    args: { input: relationInput },
   },
   {
-    name: "deleteMember",
-    send: () => api.deleteMember(4),
-    command: "delete_member",
-    args: { id: 4 },
+    name: "unlinkClients",
+    send: () => api.unlinkClients(1, 9),
+    command: "unlink_clients",
+    args: { clientId: 1, relatedClientId: 9 },
   },
 
   // documents
@@ -269,9 +281,9 @@ const wrappers: Wrapper[] = [
     args: { id: 1 },
   },
   {
-    name: "policyMemberIds",
-    send: () => api.policyMemberIds(1),
-    command: "policy_member_ids",
+    name: "policyInsuredIds",
+    send: () => api.policyInsuredIds(1),
+    command: "policy_insured_ids",
     args: { id: 1 },
   },
   {

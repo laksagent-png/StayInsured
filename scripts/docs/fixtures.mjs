@@ -70,6 +70,12 @@ const clients = [
   { id: 6, clientCode: "CL-00006", fullName: "Priya Menon", email: "priya.menon@example.com", phone: "98400 66554", city: "Chennai", state: "Tamil Nadu", pincode: "600020", occupation: "Doctor", pan: "APMPM6655T", dateOfBirth: "1988-02-08", gender: "female", addressLine1: "18 Adyar Gardens" },
   { id: 7, clientCode: "CL-00007", fullName: "Arjun Reddy", email: "arjun.reddy@example.com", phone: "90000 12345", city: "Hyderabad", state: "Telangana", pincode: "500034", occupation: "Restaurateur", pan: "AARPR1234N", dateOfBirth: "1981-12-19", gender: "male", addressLine1: "Road No. 12, Banjara Hills" },
   { id: 8, clientCode: "CL-00008", fullName: "Kavita Joshi", email: "kavita.joshi@example.com", phone: "97660 98765", city: "Nashik", state: "Maharashtra", pincode: "422005", occupation: "Teacher", pan: "AKJPJ9876L", dateOfBirth: "1992-07-25", gender: "female", addressLine1: "Sai Residency, College Road", remindersOptedOut: true, notes: "Asked to be contacted by phone only." },
+
+  // The families. Everybody covered on somebody else's policy is a client, at
+  // the household's address, holding no cover of their own.
+  { id: 9, clientCode: "CL-00009", fullName: "Sneha Sharma", phone: "98765 43211", city: "Pune", state: "Maharashtra", pincode: "411045", dateOfBirth: "1988-09-03", gender: "female", addressLine1: "Flat 402, Green Meadows", addressLine2: "Baner Road" },
+  { id: 10, clientCode: "CL-00010", fullName: "Aarav Sharma", city: "Pune", state: "Maharashtra", pincode: "411045", dateOfBirth: "2016-01-19", gender: "male", addressLine1: "Flat 402, Green Meadows", addressLine2: "Baner Road" },
+  { id: 11, clientCode: "CL-00011", fullName: "Lakshmi Iyer", city: "Bengaluru", state: "Karnataka", pincode: "560038", dateOfBirth: "1958-03-11", gender: "female", addressLine1: "301, Indiranagar Heights" },
 ].map((row) => ({
   altPhone: null,
   gstin: null,
@@ -83,14 +89,25 @@ const clients = [
   ...row,
 }));
 
-const members = [
-  { id: 1, clientId: 1, fullName: "Rohit Sharma", relationship: "self", dateOfBirth: "1986-04-12", gender: "male" },
-  { id: 2, clientId: 1, fullName: "Sneha Sharma", relationship: "spouse", dateOfBirth: "1988-09-03", gender: "female" },
-  { id: 3, clientId: 1, fullName: "Aarav Sharma", relationship: "son", dateOfBirth: "2016-01-19", gender: "male" },
-  { id: 4, clientId: 2, fullName: "Anita Desai", relationship: "self", dateOfBirth: "1979-11-02", gender: "female" },
-  { id: 5, clientId: 4, fullName: "Meera Iyer", relationship: "self", dateOfBirth: "1990-06-30", gender: "female" },
-  { id: 6, clientId: 4, fullName: "Lakshmi Iyer", relationship: "mother", dateOfBirth: "1958-03-11", gender: "female" },
-].map((row) => ({ notes: null, ...row }));
+/**
+ * How the clients are related, in the direction it was recorded: the related
+ * client is the `relationship` of the client. There is no family table — a
+ * family is what these edges reach.
+ */
+const relations = [
+  { clientId: 1, relatedClientId: 9, relationship: "spouse" },
+  { clientId: 1, relatedClientId: 10, relationship: "son" },
+  { clientId: 4, relatedClientId: 11, relationship: "mother" },
+];
+
+/** The lives each policy covers, holder included. */
+const cover = [
+  { policyId: 1, clientId: 1 },
+  { policyId: 1, clientId: 9 },
+  { policyId: 1, clientId: 10 },
+  { policyId: 6, clientId: 4 },
+  { policyId: 6, clientId: 11 },
+];
 
 const documents = [
   { id: 1, clientId: 1, policyId: 2, policyNumber: "IL/MOT/778211", title: "Registration certificate", fileName: "mh12ab1234-rc.jpg", mimeType: "image/jpeg", sizeBytes: 736_120, uploadedAt: "2025-09-01 11:37:55" },
@@ -172,7 +189,17 @@ for (const client of clients) {
     .filter((p) => p.status === "active")
     .map((p) => p.expiryDate)
     .sort()[0] ?? null;
+  client.relatives = relations.filter(
+    (edge) => edge.clientId === client.id || edge.relatedClientId === client.id,
+  ).length;
+  // Somebody with no cover of their own, listed under another client. Browsing
+  // the book passes over them; searching by name finds them.
+  client.isDependent =
+    own.length === 0 && relations.some((edge) => edge.relatedClientId === client.id);
 }
+
+/** The clients the agency sells to, which is what the dashboard counts. */
+const holders = clients.filter((client) => !client.isDependent);
 
 const active = policies.filter((p) => p.status === "active");
 const overdue = policies.filter((p) => !p.isRenewed && p.status !== "cancelled" && p.daysToExpiry < 0);
@@ -182,15 +209,15 @@ const sum = (rows, key) => rows.reduce((total, row) => total + (row[key] ?? 0), 
 const categoryOrder = ["health", "life", "motor", "travel", "home", "personal_accident", "critical_illness", "other"];
 
 const dashboard = {
-  totalClients: clients.length,
-  activeClients: clients.filter((c) => !c.isArchived).length,
+  totalClients: holders.length,
+  activeClients: holders.filter((c) => !c.isArchived).length,
   activePolicies: active.length,
   expiringThisWeek: within(0, 7).length,
   expiringThisMonth: within(0, 30).length,
   expiredUnrenewed: overdue.length,
   premiumUnderManagement: sum(active, "premiumAmount"),
   commissionExpected: sum(active, "commissionExpected"),
-  clientsWithoutEmail: clients.filter((c) => !c.email).length,
+  clientsWithoutEmail: holders.filter((c) => !c.isArchived && !c.email).length,
   buckets: [
     { label: "Overdue", rows: overdue },
     { label: "0-7 days", rows: within(0, 7) },
@@ -543,11 +570,12 @@ export const fixtures = {
     unlocked: true,
     canUseKeychain: true,
     encrypted: true,
-    schemaVersion: 3,
+    schemaVersion: 5,
     dataDir: "/Users/you/Library/Application Support/com.stayinsured.app",
   },
   clients,
-  members,
+  relations,
+  cover,
   documents,
   insurers,
   products,

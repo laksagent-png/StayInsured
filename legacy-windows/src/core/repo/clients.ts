@@ -6,6 +6,7 @@ import { Conditions, likePattern, orderBy, paginate, type Bind } from "../query"
 import { blankToNull, boolToInt, toModel, toModels } from "../rows";
 import type { Client, ClientFilter, ClientInput, Page } from "../types";
 import { looksLikeEmail, normalisePhone, parseDate, tidyName } from "../util";
+import { immediateIds } from "./relations";
 import { count, ftsQuery, isConstraintViolation } from "./shared";
 
 const SORTABLE: Record<string, string> = {
@@ -28,7 +29,25 @@ const DERIVED =
   "(SELECT COUNT(*) FROM policies p WHERE p.client_id = c.id AND p.status = 'active') AS active_policies, " +
   "(SELECT COUNT(*) FROM policies p WHERE p.client_id = c.id) AS total_policies, " +
   "(SELECT MIN(p.expiry_date) FROM policies p WHERE p.client_id = c.id " +
-  "   AND p.expiry_date >= date('now', 'localtime')) AS next_expiry";
+  "   AND p.expiry_date >= date('now', 'localtime')) AS next_expiry, " +
+  "(SELECT COUNT(*) FROM client_relations r " +
+  "   WHERE r.client_id = c.id OR r.related_client_id = c.id) AS relatives, " +
+  "(SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM policies p WHERE p.client_id = c.id) " +
+  "              AND EXISTS (SELECT 1 FROM client_relations r WHERE r.related_client_id = c.id) " +
+  "             THEN 1 ELSE 0 END) AS is_dependent";
+
+/**
+ * A client with no policy of their own who is listed under somebody else — a
+ * spouse on a floater, a dependent child. They are clients like any other and the
+ * book holds them once, but a list of two thousand names where half are children
+ * is not the book an agent works from, so browsing hides them.
+ *
+ * The dashboard counts through this too: a child with no email address is not a
+ * client the agency is failing to reach.
+ */
+export const IS_DEPENDENT =
+  "NOT EXISTS (SELECT 1 FROM policies p WHERE p.client_id = c.id) " +
+  "AND EXISTS (SELECT 1 FROM client_relations r WHERE r.related_client_id = c.id)";
 
 function buildConditions(filter: ClientFilter): Conditions {
   const c = new Conditions();
@@ -36,6 +55,12 @@ function buildConditions(filter: ClientFilter): Conditions {
   if (!filter.includeArchived) c.addRaw("c.is_archived = 0");
 
   const search = filter.search?.trim();
+
+  // Searching reaches everybody. Someone typing a child's name is looking for
+  // that child, and a book that held them but would not admit it when asked by
+  // name would be worse than one that never held them at all.
+  if (!filter.includeFamily && !search) c.addRaw(`NOT (${IS_DEPENDENT})`);
+
   if (search) {
     const query = ftsQuery(search);
     if (query !== null) {
@@ -180,12 +205,59 @@ export function setArchived(conn: Conn, id: number, archived: boolean): void {
 }
 
 /**
- * Removes the client together with their policies. The UI confirms first; the
- * archive flag is the softer option offered alongside it.
+ * Archives or restores a client together with the people directly related to
+ * them, and answers with how many rows it moved.
+ *
+ * One step out, deliberately. A family has no boundary of its own — it is
+ * whoever the edges reach — so an operation that walked the whole graph would
+ * grow every time an in-law was recorded, and putting one household away would
+ * eventually put away half the book.
+ */
+export function setFamilyArchived(conn: Conn, id: number, archived: boolean): number {
+  get(conn, id);
+  const ids = [...immediateIds(conn, id), id];
+
+  let moved = 0;
+  for (const person of ids) {
+    moved += conn
+      .prepare("UPDATE clients SET is_archived = ? WHERE id = ? AND is_archived <> ?")
+      .run(boolToInt(archived), person, boolToInt(archived)).changes;
+  }
+  return moved;
+}
+
+/**
+ * Removes the client together with their policies and documents. Relationship
+ * edges go with them, but the people on the other end do not: they are clients,
+ * and one of them holding cover of their own is the ordinary case.
+ *
+ * The UI confirms first, naming who is involved; the archive flag is the softer
+ * option offered alongside it.
  */
 export function remove(conn: Conn, id: number): void {
   const result = conn.prepare("DELETE FROM clients WHERE id = ?").run(id);
   if (result.changes === 0) throw AppError.notFound("Client");
+}
+
+/**
+ * Removes the client and the people directly related to them, answering with
+ * every id it deleted so the interface can say what went.
+ *
+ * Reaches one step out for the same reason `setFamilyArchived` does. What it
+ * deletes is therefore the family as it stood when the operator was shown the
+ * list, not whatever the graph grows into later.
+ */
+export function removeWithImmediateFamily(conn: Conn, id: number): number[] {
+  get(conn, id);
+  const ids = [...immediateIds(conn, id), id];
+
+  const deleted: number[] = [];
+  for (const person of ids) {
+    if (conn.prepare("DELETE FROM clients WHERE id = ?").run(person).changes > 0) {
+      deleted.push(person);
+    }
+  }
+  return deleted;
 }
 
 export function distinctCities(conn: Conn): string[] {

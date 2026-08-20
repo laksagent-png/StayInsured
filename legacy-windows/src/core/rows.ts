@@ -15,7 +15,11 @@
 const BOOLEAN_COLUMNS = new Set([
   "is_active",
   "is_archived",
+  "is_dependent",
   "is_renewed",
+  // Which way round a relationship is stored, which is a yes or no like the rest
+  // even though it is derived by the query rather than held in a column.
+  "outgoing",
   "reminders_opted_out",
 ]);
 

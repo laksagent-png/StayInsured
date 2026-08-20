@@ -13,10 +13,10 @@ import type {
   Client,
   Document,
   EmailTemplate,
+  FamilyEdge,
   ImportFieldInfo,
   ImportPreview,
   ImportReport,
-  InsuredMember,
   Insurer,
   Notification,
   Placeholder,
@@ -75,7 +75,10 @@ export function showDate(iso: string): string {
 export interface Book {
   session: SessionState;
   clients: Client[];
-  members: InsuredMember[];
+  /** How clients are related. A family is what these edges reach, nothing more. */
+  relations: FamilyEdge[];
+  /** Which clients each policy year covers, as `policy_members` holds it. */
+  cover: Array<{ policyId: number; clientId: number }>;
   documents: Document[];
   insurers: Insurer[];
   products: Product[];
@@ -129,6 +132,32 @@ const rawClients: RawClient[] = [
   { id: 6, clientCode: "CL-00006", fullName: "Priya Menon", email: "priya.menon@example.com", phone: "98400 66554", city: "Chennai", state: "Tamil Nadu", pincode: "600020", occupation: "Doctor", pan: "APMPM6655T", dateOfBirth: "1988-02-08", gender: "female", addressLine1: "18 Adyar Gardens" },
   { id: 7, clientCode: "CL-00007", fullName: "Arjun Reddy", email: "arjun.reddy@example.com", phone: "90000 12345", city: "Hyderabad", state: "Telangana", pincode: "500034", occupation: "Restaurateur", pan: "AARPR1234N", dateOfBirth: "1981-12-19", gender: "male", addressLine1: "Road No. 12, Banjara Hills" },
   { id: 8, clientCode: "CL-00008", fullName: "Kavita Joshi", email: "kavita.joshi@example.com", phone: "97660 98765", city: "Nashik", state: "Maharashtra", pincode: "422005", occupation: "Teacher", pan: "AKJPJ9876L", dateOfBirth: "1992-07-25", gender: "female", addressLine1: "Sai Residency, College Road", remindersOptedOut: true, notes: "Asked to be contacted by phone only." },
+
+  // The families. Everybody covered on somebody else's policy is a client in
+  // their own right, holding no cover yet, living at the household's address.
+  { id: 9, clientCode: "CL-00009", fullName: "Sneha Sharma", phone: "98765 43211", city: "Pune", state: "Maharashtra", pincode: "411045", dateOfBirth: "1988-09-03", gender: "female", addressLine1: "Flat 402, Green Meadows", addressLine2: "Baner Road" },
+  { id: 10, clientCode: "CL-00010", fullName: "Aarav Sharma", city: "Pune", state: "Maharashtra", pincode: "411045", dateOfBirth: "2016-01-19", gender: "male", addressLine1: "Flat 402, Green Meadows", addressLine2: "Baner Road" },
+  { id: 11, clientCode: "CL-00011", fullName: "Lakshmi Iyer", city: "Bengaluru", state: "Karnataka", pincode: "560038", dateOfBirth: "1958-03-11", gender: "female", addressLine1: "301, Indiranagar Heights" },
+];
+
+/**
+ * Stored in the direction it was recorded: the related client is the
+ * `relationship` of the client. Read from the other end, the word does not
+ * invert — it reads "Son of" instead.
+ */
+const rawRelations: FamilyEdge[] = [
+  { clientId: 1, relatedClientId: 9, relationship: "spouse" },
+  { clientId: 1, relatedClientId: 10, relationship: "son" },
+  { clientId: 4, relatedClientId: 11, relationship: "mother" },
+];
+
+/** The lives each policy year covers, holder included where they are on it. */
+const rawCover: Array<{ policyId: number; clientId: number }> = [
+  { policyId: 1, clientId: 1 },
+  { policyId: 1, clientId: 9 },
+  { policyId: 1, clientId: 10 },
+  { policyId: 6, clientId: 4 },
+  { policyId: 6, clientId: 11 },
 ];
 
 type RawPolicy = Partial<Policy> &
@@ -166,15 +195,6 @@ const rawPolicies: RawPolicy[] = [
   { id: 102, chainId: "chain-c", policyYear: 1, policyNumber: "HE/OR/331885", clientId: 2, insurerId: 2, productId: 2, category: "health", status: "renewed", startDate: "2023-08-18", expiryDate: "2024-08-17", sumInsured: 1000000, premiumAmount: 26400, gstAmount: 4752, commissionRate: 15, isRenewed: true },
   { id: 103, chainId: "chain-c", policyYear: 2, previousPolicyId: 102, policyNumber: "HE/OR/442903", clientId: 2, insurerId: 2, productId: 2, category: "health", status: "renewed", startDate: "2024-08-18", expiryDate: "2025-08-17", sumInsured: 1500000, premiumAmount: 28800, gstAmount: 5184, commissionRate: 15, isRenewed: true, notes: "Sum insured raised to 15L." },
   { id: 104, chainId: "chain-h", policyYear: 1, policyNumber: "SH/2024/0112947", clientId: 6, insurerId: 1, productId: 1, category: "health", status: "renewed", startDate: "2024-09-20", expiryDate: "2025-09-19", sumInsured: 1000000, premiumAmount: 30400, gstAmount: 5472, commissionRate: 12.5, isRenewed: true },
-];
-
-const rawMembers: Array<Partial<InsuredMember> & Pick<InsuredMember, "id" | "clientId" | "fullName" | "relationship">> = [
-  { id: 1, clientId: 1, fullName: "Rohit Sharma", relationship: "self", dateOfBirth: "1986-04-12", gender: "male" },
-  { id: 2, clientId: 1, fullName: "Sneha Sharma", relationship: "spouse", dateOfBirth: "1988-09-03", gender: "female" },
-  { id: 3, clientId: 1, fullName: "Aarav Sharma", relationship: "son", dateOfBirth: "2016-01-19", gender: "male" },
-  { id: 4, clientId: 2, fullName: "Anita Desai", relationship: "self", dateOfBirth: "1979-11-02", gender: "female" },
-  { id: 5, clientId: 4, fullName: "Meera Iyer", relationship: "self", dateOfBirth: "1990-06-30", gender: "female" },
-  { id: 6, clientId: 4, fullName: "Lakshmi Iyer", relationship: "mother", dateOfBirth: "1958-03-11", gender: "female" },
 ];
 
 const rawDocuments: Document[] = [
@@ -411,8 +431,19 @@ const placeholders: Placeholder[] = [
   { name: "digest_table", description: "The digest table itself, as HTML" },
 ];
 
-/** Recomputes the counts a client row carries, after policies change. */
-export function recountClients(clients: Client[], policies: Policy[]): void {
+/**
+ * Recomputes the counts a client row carries, after policies or relationships
+ * change.
+ *
+ * `relatives` and `isDependent` are derived on every read by the core, which is
+ * what lets a dependent become a policyholder by buying cover and nothing else,
+ * so they are derived here rather than stored on the fixture.
+ */
+export function recountClients(
+  clients: Client[],
+  policies: Policy[],
+  relations: FamilyEdge[] = [],
+): void {
   for (const client of clients) {
     const own = policies.filter((policy) => policy.clientId === client.id);
     client.totalPolicies = own.length;
@@ -422,6 +453,11 @@ export function recountClients(clients: Client[], policies: Policy[]): void {
         .filter((policy) => policy.status === "active")
         .map((policy) => policy.expiryDate)
         .sort()[0] ?? null;
+    client.relatives = relations.filter(
+      (edge) => edge.clientId === client.id || edge.relatedClientId === client.id,
+    ).length;
+    client.isDependent =
+      own.length === 0 && relations.some((edge) => edge.relatedClientId === client.id);
   }
 }
 
@@ -475,6 +511,8 @@ export function createBook(): Book {
     activePolicies: 0,
     totalPolicies: 0,
     nextExpiry: null,
+    relatives: 0,
+    isDependent: false,
     ...row,
   }));
 
@@ -515,12 +553,7 @@ export function createBook(): Book {
     } as Policy;
   });
 
-  const members: InsuredMember[] = rawMembers.map((row) => ({
-    dateOfBirth: null,
-    gender: null,
-    notes: null,
-    ...row,
-  }));
+  const relations: FamilyEdge[] = rawRelations.map((row) => ({ ...row }));
 
   const templates: EmailTemplate[] = rawTemplates.map((row) => ({ ...row }));
 
@@ -553,7 +586,7 @@ export function createBook(): Book {
     } as Notification;
   });
 
-  recountClients(clients, policies);
+  recountClients(clients, policies, relations);
   recountCatalogue(insurers, products, policies);
 
   return {
@@ -562,11 +595,12 @@ export function createBook(): Book {
       unlocked: true,
       canUseKeychain: true,
       encrypted: true,
-      schemaVersion: 3,
+      schemaVersion: 5,
       dataDir: "/Users/you/Library/Application Support/com.stayinsured.app",
     },
     clients,
-    members,
+    relations,
+    cover: rawCover.map((row) => ({ ...row })),
     documents: rawDocuments.map((row) => ({ ...row })),
     insurers,
     products,
@@ -640,6 +674,8 @@ export function manyClients(book: Book, total: number): Book {
       activePolicies: 0,
       totalPolicies: 0,
       nextExpiry: null,
+      relatives: 0,
+      isDependent: false,
     });
     id += 1;
   }
@@ -651,7 +687,8 @@ export function createEmptyBook(): Book {
   const book = createBook();
   book.clients = [];
   book.policies = [];
-  book.members = [];
+  book.relations = [];
+  book.cover = [];
   book.documents = [];
   book.notifications = [];
   book.insurers = [];

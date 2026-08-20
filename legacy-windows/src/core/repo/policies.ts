@@ -204,7 +204,7 @@ export function create(conn: Conn, input: PolicyInput): number {
     throw mapConstraintError(error);
   }
 
-  setMembers(conn, id, input.memberIds ?? []);
+  setMembers(conn, id, input.insuredClientIds ?? []);
   return id;
 }
 
@@ -232,7 +232,7 @@ export function update(conn: Conn, id: number, input: PolicyInput): void {
   }
 
   if (changes === 0) throw AppError.notFound("Policy");
-  if (input.memberIds) setMembers(conn, id, input.memberIds);
+  if (input.insuredClientIds) setMembers(conn, id, input.insuredClientIds);
 }
 
 /**
@@ -302,8 +302,8 @@ export function renew(conn: Conn, input: RenewalInput): number {
 
   conn
     .prepare(
-      "INSERT INTO policy_members (policy_id, member_id) " +
-        "SELECT ?, member_id FROM policy_members WHERE policy_id = ?",
+      "INSERT INTO policy_members (policy_id, insured_client_id) " +
+        "SELECT ?, insured_client_id FROM policy_members WHERE policy_id = ?",
     )
     .run(newId, previous.id);
 
@@ -334,23 +334,41 @@ export function setStatus(conn: Conn, id: number, status: string): void {
   if (result.changes === 0) throw AppError.notFound("Policy");
 }
 
-export function setMembers(conn: Conn, policyId: number, memberIds: number[]): void {
+/**
+ * Replaces the list of clients a policy year covers.
+ *
+ * A client may be attached when they are the policyholder or when the book
+ * records how they are related to them. The rule lives in the insert rather than
+ * in the interface: a floater is the one place where a stray id would put a
+ * stranger's name and date of birth onto somebody else's cover, and an import
+ * reaches this code without passing a screen at all.
+ */
+export function setMembers(conn: Conn, policyId: number, insuredClientIds: number[]): void {
   conn.prepare("DELETE FROM policy_members WHERE policy_id = ?").run(policyId);
-  // The subquery is the guard: a member id belonging to another client inserts
-  // nothing rather than attaching a stranger to the policy.
   const insert = conn.prepare(
-    "INSERT OR IGNORE INTO policy_members (policy_id, member_id) " +
-      "SELECT ?, id FROM insured_members WHERE id = ? " +
-      "  AND client_id = (SELECT client_id FROM policies WHERE id = ?)",
+    "INSERT OR IGNORE INTO policy_members (policy_id, insured_client_id) " +
+      "SELECT ?, c.id FROM clients c WHERE c.id = ? AND ( " +
+      "     c.id = (SELECT client_id FROM policies WHERE id = ?) " +
+      "  OR EXISTS (SELECT 1 FROM client_relations r " +
+      "              WHERE (r.client_id = (SELECT client_id FROM policies WHERE id = ?) " +
+      "                     AND r.related_client_id = c.id) " +
+      "                 OR (r.related_client_id = (SELECT client_id FROM policies WHERE id = ?) " +
+      "                     AND r.client_id = c.id)))",
   );
-  for (const memberId of memberIds) insert.run(policyId, memberId, policyId);
+  for (const clientId of insuredClientIds) {
+    insert.run(policyId, clientId, policyId, policyId, policyId);
+  }
 }
 
-export function membersOf(conn: Conn, policyId: number): number[] {
+/** The clients a policy year covers. */
+export function insuredOf(conn: Conn, policyId: number): number[] {
   const rows = conn
-    .prepare("SELECT member_id FROM policy_members WHERE policy_id = ? ORDER BY member_id")
-    .all(policyId) as { member_id: number }[];
-  return rows.map((row) => row.member_id);
+    .prepare(
+      "SELECT insured_client_id AS id FROM policy_members WHERE policy_id = ? " +
+        "ORDER BY insured_client_id",
+    )
+    .all(policyId) as { id: number }[];
+  return rows.map((row) => row.id);
 }
 
 /**

@@ -1,6 +1,6 @@
 /**
  * One client, in full: the header, the three summary cards, every policy year
- * they hold, and the writes an agent makes from this page — members, edits,
+ * they hold, and the writes an agent makes from this page — family links, edits,
  * archiving and deleting.
  */
 
@@ -142,7 +142,7 @@ describe("the client header", () => {
 
     for (const section of [
       "Contact & details",
-      "Members covered",
+      "Family",
       "Book value",
       "Policies",
       "Documents",
@@ -306,201 +306,253 @@ describe("the client's policies", () => {
   });
 });
 
-describe("insured members", () => {
-  it("lists the lives the client covers", async () => {
+describe("the client's family", () => {
+  it("lists the people related to this client, spouse first", async () => {
     openClient(1);
-    const card = (await screen.findByRole("heading", { name: "Members covered" })).closest(
+    const card = (await screen.findByRole("heading", { name: "Family" })).closest(
       "section",
     ) as HTMLElement;
 
     const names = within(card)
       .getAllByRole("listitem")
       .map((row) => row.textContent);
-    expect(names[0]).toContain("Rohit Sharma");
-    expect(names[0]).toContain("Self · 12 Apr 1986");
-    expect(names[1]).toContain("Sneha Sharma");
-    expect(names[1]).toContain("Spouse · 03 Sep 1988");
-    expect(names[2]).toContain("Aarav Sharma");
-    expect(names[2]).toContain("Son · 19 Jan 2016");
-    expect(backend().lastCall("list_members")).toMatchObject({ clientId: 1 });
+    expect(names).toHaveLength(2);
+    expect(names[0]).toContain("Sneha Sharma");
+    expect(names[0]).toContain("Spouse · 03 Sep 1988");
+    expect(names[1]).toContain("Aarav Sharma");
+    expect(names[1]).toContain("Son · 19 Jan 2016");
+    expect(backend().lastCall("list_relatives")).toMatchObject({ clientId: 1 });
   });
 
-  it("invites the first member and the first document when there are neither", async () => {
+  it("reads the relationship the other way round from the other page", async () => {
+    // The son's page shows the same one edge, stored on the father: the word
+    // does not invert, it gains a preposition.
+    openClient(10);
+    const card = (await screen.findByRole("heading", { name: "Family" })).closest(
+      "section",
+    ) as HTMLElement;
+
+    expect(within(card).getByRole("listitem")).toHaveTextContent("Son of");
+    expect(within(card).getByRole("link", { name: /Rohit Sharma/ })).toHaveAttribute(
+      "href",
+      "/clients/1",
+    );
+  });
+
+  it("badges a client who is only somebody's family member", async () => {
+    openClient(10);
+
+    expect(await screen.findByRole("heading", { name: "Aarav Sharma" })).toBeInTheDocument();
+    expect(screen.getByText("Family member")).toBeInTheDocument();
+    expect(screen.getByText("1 relative")).toBeInTheDocument();
+  });
+
+  it("invites the first relative and the first document when there are neither", async () => {
     openClient(5);
 
     expect(await screen.findByRole("heading", { name: "Suresh Nair" })).toBeInTheDocument();
     expect(
-      screen.getByText("Add family members to attach them to health and travel policies."),
+      screen.getByText(/Link a spouse, child or parent to cover them on a floater/),
     ).toBeInTheDocument();
     expect(
       await screen.findByText(/Keep the policy schedule, the proposal form/),
     ).toBeInTheDocument();
   });
 
-  it("says what the buttons on a member do", async () => {
+  it("says what the controls on a relative do", async () => {
     openClient(1);
     const row = (await screen.findByText("Sneha Sharma")).closest("li") as HTMLElement;
 
-    // Three controls, not two: the name opens the editor alongside the pencil.
-    expect(within(row).getAllByRole("button")).toHaveLength(3);
-    expect(within(row).getByRole("button", { name: "Edit Sneha Sharma" })).toBeInTheDocument();
-    expect(within(row).getByRole("button", { name: /remove/i })).toBeInTheDocument();
-  });
-
-  it("adds a member and shows them on the client", async () => {
-    const { user } = openClient(1);
-
-    await user.click(await screen.findByRole("button", { name: "Add" }));
-
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByRole("heading", { name: "Add member" })).toBeInTheDocument();
-    await user.type(within(dialog).getByLabelText(/Full name/), "Ishaan Sharma");
-    await user.selectOptions(within(dialog).getByLabelText("Relationship"), "son");
-    await user.selectOptions(within(dialog).getByLabelText("Gender"), "male");
-    await user.click(within(dialog).getByRole("button", { name: "Save" }));
-
-    expect(await screen.findByText("Member added")).toBeInTheDocument();
-    expect(backend().lastCall("create_member")?.input).toMatchObject({
-      clientId: 1,
-      fullName: "Ishaan Sharma",
-      relationship: "son",
-      gender: "male",
-    });
-    expect(await screen.findByText("Ishaan Sharma")).toBeInTheDocument();
-    await waitFor(() => expect(backend().countOf("list_members")).toBe(2));
-  });
-
-  it("refuses a member with no name, and stays open to be corrected", async () => {
-    const { user } = openClient(1);
-
-    await user.click(await screen.findByRole("button", { name: "Add" }));
-    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Save" }));
-
-    expect(await screen.findByText("A member needs a name")).toBeInTheDocument();
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Add member" })).toBeInTheDocument();
-  });
-
-  it("starts the add form empty every time", async () => {
-    const { user } = openClient(1);
-
-    await user.click(await screen.findByRole("button", { name: "Add" }));
-    await user.type(
-      within(await screen.findByRole("dialog")).getByLabelText(/Full name/),
-      "Ishaan Sharma",
+    // The name is a link to her own page, not a control on this one.
+    expect(within(row).getByRole("link", { name: /Sneha Sharma/ })).toHaveAttribute(
+      "href",
+      "/clients/9",
     );
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    await screen.findByText("Member added");
-
-    await user.click(screen.getByRole("button", { name: "Add" }));
-
-    const reopened = await screen.findByRole("dialog");
-    expect(within(reopened).getByRole("heading", { name: "Add member" })).toBeInTheDocument();
-    expect(within(reopened).getByLabelText(/Full name/)).toHaveValue("");
+    expect(
+      within(row).getByRole("button", { name: "Change how Sneha Sharma is related" }),
+    ).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Unlink Sneha Sharma" })).toBeInTheDocument();
   });
 
-  it("edits a member", async () => {
-    const { user } = openClient(1);
-    const row = (await screen.findByText("Sneha Sharma")).closest("li") as HTMLElement;
+  it("links a client already in the book, without opening a second one for them", async () => {
+    const { user } = openClient(2);
+    await screen.findByRole("heading", { name: "Anita Desai" });
 
-    // The pencil by name, since the member's own name is a control too.
-    await user.click(within(row).getByRole("button", { name: "Edit Sneha Sharma" }));
-
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByRole("heading", { name: "Edit Sneha Sharma" })).toBeInTheDocument();
-    const name = within(dialog).getByLabelText(/Full name/);
-    await user.clear(name);
-    await user.type(name, "Sneha S Sharma");
+    await user.click(screen.getByRole("button", { name: /Link relative/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Link a relative" });
+    await user.type(within(dialog).getByLabelText(/Name/), "Kavita");
+    await user.click(await within(dialog).findByRole("button", { name: /Kavita Joshi/ }));
+    await user.selectOptions(within(dialog).getByLabelText(/^Relationship/), "sister");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByText("Member updated")).toBeInTheDocument();
-    expect(backend().lastCall("update_member")).toMatchObject({
-      id: 2,
-      input: { fullName: "Sneha S Sharma", relationship: "spouse" },
+    expect(await screen.findByText("Relative linked")).toBeInTheDocument();
+    expect(backend().lastCall("link_clients")?.input).toMatchObject({
+      clientId: 2,
+      relatedClientId: 8,
+      relationship: "sister",
     });
-    expect(await screen.findByText("Sneha S Sharma")).toBeInTheDocument();
+    expect(backend().countOf("create_client")).toBe(0);
+    expect(await screen.findByText("Kavita Joshi")).toBeInTheDocument();
   });
 
-  it("leaves the member alone when the edit is cancelled", async () => {
+  it("opens a client for a relative nobody has entered yet, at the household's address", async () => {
+    const { user } = openClient(2);
+    await screen.findByRole("heading", { name: "Anita Desai" });
+
+    await user.click(screen.getByRole("button", { name: /Link relative/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Link a relative" });
+    await user.type(within(dialog).getByLabelText(/Name/), "Rhea Desai");
+    await user.selectOptions(within(dialog).getByLabelText(/^Relationship/), "daughter");
+    await user.click(within(dialog).getByRole("button", { name: "Add and link" }));
+
+    expect(await screen.findByText("Relative linked")).toBeInTheDocument();
+    const holder = backend().book.clients.find((row) => row.id === 2)!;
+    expect(backend().lastCall("create_client")?.input).toMatchObject({
+      fullName: "Rhea Desai",
+      city: holder.city,
+      pincode: holder.pincode,
+    });
+    expect(backend().lastCall("link_clients")?.input).toMatchObject({
+      clientId: 2,
+      relationship: "daughter",
+    });
+  });
+
+  it("corrects the word on a relationship already recorded", async () => {
     const { user } = openClient(1);
     const row = (await screen.findByText("Sneha Sharma")).closest("li") as HTMLElement;
 
-    await user.click(within(row).getByRole("button", { name: "Edit Sneha Sharma" }));
-    const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await user.click(within(row).getByRole("button", { name: "Change how Sneha Sharma is related" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "How is Sneha Sharma related?" });
+    // The person is settled, so the modal asks only about the word.
+    expect(within(dialog).queryByLabelText(/^Name/)).not.toBeInTheDocument();
+    await user.selectOptions(within(dialog).getByLabelText(/^Relationship/), "sister");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Relationship updated")).toBeInTheDocument();
+    expect(backend().lastCall("link_clients")?.input).toMatchObject({
+      clientId: 1,
+      relatedClientId: 9,
+      relationship: "sister",
+    });
+  });
+
+  it("leaves the relationship alone when the edit is cancelled", async () => {
+    const { user } = openClient(1);
+    const row = (await screen.findByText("Sneha Sharma")).closest("li") as HTMLElement;
+
+    await user.click(within(row).getByRole("button", { name: "Change how Sneha Sharma is related" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    );
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(backend().countOf("update_member")).toBe(0);
+    expect(backend().countOf("link_clients")).toBe(0);
   });
 
-  it("opens the editor when a member's name is clicked", async () => {
-    const { user } = openClient(1);
-
-    await user.click(await screen.findByText("Sneha Sharma"));
-
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByRole("heading", { name: "Edit Sneha Sharma" })).toBeInTheDocument();
-  });
-
-  it("opens the editor from the name without a mouse", async () => {
+  it("reports a relationship the core refuses, staying open to be corrected", async () => {
+    backend().fail("link_clients", {
+      kind: "validation",
+      message: "That would make somebody their own ancestor",
+    });
     const { user } = openClient(1);
     const row = (await screen.findByText("Sneha Sharma")).closest("li") as HTMLElement;
-    const name = within(row).getByRole("button", { name: /^Sneha Sharma/ });
 
-    name.focus();
-    expect(name).toHaveFocus();
-    await user.keyboard("{Enter}");
-
+    await user.click(within(row).getByRole("button", { name: "Change how Sneha Sharma is related" }));
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByRole("heading", { name: "Edit Sneha Sharma" })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(
+      await screen.findByText("That would make somebody their own ancestor"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
-  it("asks before removing a member, then removes them", async () => {
+  it("asks before unlinking, then keeps the person as a client", async () => {
     const confirm = confirms(true);
     const { user } = openClient(1);
     const row = (await screen.findByText("Aarav Sharma")).closest("li") as HTMLElement;
 
-    // The bin by name, since the member's own name is a control too.
-    await user.click(within(row).getByRole("button", { name: "Remove Aarav Sharma" }));
+    await user.click(within(row).getByRole("button", { name: "Unlink Aarav Sharma" }));
 
-    expect(confirm).toHaveBeenCalledWith("Remove Aarav Sharma?");
-    expect(await screen.findByText("Member removed")).toBeInTheDocument();
-    expect(backend().lastCall("delete_member")).toMatchObject({ id: 3 });
+    expect(confirm).toHaveBeenCalledWith(
+      "Unlink Aarav Sharma from Rohit Sharma? They stay in the book as a client.",
+    );
+    expect(await screen.findByText(/Relationship removed/)).toBeInTheDocument();
+    expect(backend().lastCall("unlink_clients")).toMatchObject({ clientId: 1, relatedClientId: 10 });
     await waitFor(() => expect(screen.queryByText("Aarav Sharma")).not.toBeInTheDocument());
+    expect(backend().book.clients.some((row) => row.fullName === "Aarav Sharma")).toBe(true);
   });
 
-  it("keeps the member when the confirmation is declined", async () => {
+  it("keeps the relationship when the confirmation is declined", async () => {
     confirms(false);
     const { user } = openClient(1);
     const row = (await screen.findByText("Aarav Sharma")).closest("li") as HTMLElement;
 
-    await user.click(within(row).getByRole("button", { name: "Remove Aarav Sharma" }));
+    await user.click(within(row).getByRole("button", { name: "Unlink Aarav Sharma" }));
 
-    expect(backend().countOf("delete_member")).toBe(0);
+    expect(backend().countOf("unlink_clients")).toBe(0);
     expect(screen.getByText("Aarav Sharma")).toBeInTheDocument();
   });
 
-  it("reports a removal the core refuses", async () => {
+  it("reports an unlink the core refuses", async () => {
     confirms(true);
-    backend().fail("delete_member", { kind: "internal", message: "The book is open elsewhere" });
+    backend().fail("unlink_clients", { kind: "internal", message: "The book is open elsewhere" });
     const { user } = openClient(1);
     const row = (await screen.findByText("Aarav Sharma")).closest("li") as HTMLElement;
 
-    await user.click(within(row).getByRole("button", { name: "Remove Aarav Sharma" }));
+    await user.click(within(row).getByRole("button", { name: "Unlink Aarav Sharma" }));
 
     expect(await screen.findByText("The book is open elsewhere")).toBeInTheDocument();
     expect(screen.getByText("Aarav Sharma")).toBeInTheDocument();
   });
 
-  it("says when the members could not be read", async () => {
-    backend().fail("list_members", { kind: "internal", message: "The book would not open" });
+  it("says when the family could not be read", async () => {
+    backend().fail("list_relatives", { kind: "internal", message: "The book would not open" });
     openClient(1);
-    await screen.findByRole("heading", { name: "Members covered" });
+    await screen.findByRole("heading", { name: "Family" });
 
-    await waitFor(() => expect(backend().countOf("list_members")).toBe(1));
+    await waitFor(() => expect(backend().countOf("list_relatives")).toBe(1));
+    expect(await screen.findByText("The family could not be read")).toBeInTheDocument();
     expect(
-      screen.queryByText("Add family members to attach them to health and travel policies."),
+      screen.queryByText(/Link a spouse, child or parent to cover them on a floater/),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("archiving a household from the client's page", () => {
+  it("moves the client and the people linked to them together", async () => {
+    const { user } = openClient(1);
+
+    await user.click(await screen.findByRole("button", { name: "Archive family" }));
+
+    expect(await screen.findByText("3 clients archived")).toBeInTheDocument();
+    expect(backend().lastCall("set_family_archived")).toMatchObject({ id: 1, archived: true });
+    const archived = backend()
+      .book.clients.filter((row) => row.isArchived)
+      .map((row) => row.fullName);
+    expect(archived).toEqual(["Rohit Sharma", "Sneha Sharma", "Aarav Sharma"]);
+  });
+
+  it("is not offered to a client with nobody linked to them", async () => {
+    openClient(5);
+    await screen.findByRole("heading", { name: "Suresh Nair" });
+
+    expect(screen.getByRole("button", { name: "Archive client" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Archive family" })).not.toBeInTheDocument();
+  });
+
+  it("reports a family archive the core refuses", async () => {
+    backend().fail("set_family_archived", {
+      kind: "internal",
+      message: "The book is open elsewhere",
+    });
+    const { user } = openClient(1);
+
+    await user.click(await screen.findByRole("button", { name: "Archive family" }));
+
+    expect(await screen.findByText("The book is open elsewhere")).toBeInTheDocument();
   });
 });
 
@@ -589,33 +641,71 @@ describe("archiving and deleting from the client's page", () => {
     await waitFor(() => expect(backend().countOf("list_clients")).toBe(2));
   });
 
-  it("asks before deleting, naming what goes with the client", async () => {
-    const confirm = confirms(false);
+  it("asks what goes with the client, naming the family on file", async () => {
     const { user } = openClient(1);
 
     await user.click(await screen.findByRole("button", { name: "Delete permanently" }));
 
-    expect(confirm).toHaveBeenCalledWith(
-      "Delete Rohit Sharma and all 3 policy records? This cannot be undone.",
-    );
+    const dialog = await screen.findByRole("dialog", { name: "Delete Rohit Sharma?" });
+    expect(dialog).toHaveTextContent("This removes the client and 3 policy records");
+    expect(within(dialog).getByText(/Sneha Sharma — spouse/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Aarav Sharma — son/)).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "Delete this client only, and keep the family" }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "Delete this client and 2 relatives" }),
+    ).toBeInTheDocument();
     expect(backend().countOf("delete_client")).toBe(0);
-    expect(currentRoute()).toBe("/clients/1");
   });
 
-  it("deletes the client and returns to the list", async () => {
-    backend().book.policies = [];
-    confirms(true);
+  it("deletes the client alone, leaving their family standing", async () => {
     const { user } = openClient(1);
 
     await user.click(await screen.findByRole("button", { name: "Delete permanently" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Delete this client only, and keep the family" }),
+    );
 
     expect(await screen.findByText("Client deleted")).toBeInTheDocument();
-    expect(backend().lastCall("delete_client")).toMatchObject({ id: 1 });
+    expect(backend().lastCall("delete_client")).toMatchObject({ id: 1, scope: "linksOnly" });
     await waitFor(() => expect(currentRoute()).toBe("/clients"));
+    expect(backend().book.clients.map((row) => row.fullName)).toContain("Sneha Sharma");
+  });
+
+  it("deletes the household when that is what was asked for", async () => {
+    const { user } = openClient(1);
+
+    await user.click(await screen.findByRole("button", { name: "Delete permanently" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Delete this client and 2 relatives" }),
+    );
+
+    expect(await screen.findByText("3 clients deleted")).toBeInTheDocument();
+    expect(backend().lastCall("delete_client")).toMatchObject({
+      id: 1,
+      scope: "immediateFamily",
+    });
+    await waitFor(() => expect(currentRoute()).toBe("/clients"));
+    const left = backend().book.clients.map((row) => row.fullName);
+    expect(left).not.toContain("Sneha Sharma");
+    expect(left).not.toContain("Aarav Sharma");
+  });
+
+  it("offers one choice only when nobody is linked to the client", async () => {
+    const { user } = openClient(5);
+    await screen.findByRole("heading", { name: "Suresh Nair" });
+
+    await user.click(screen.getByRole("button", { name: "Delete permanently" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Delete Suresh Nair?" });
+    expect(within(dialog).getByRole("button", { name: "Delete this client" })).toBeInTheDocument();
+    expect(within(dialog).queryByText("Family on file")).not.toBeInTheDocument();
   });
 
   it("reports a delete the core refuses, staying on the client", async () => {
-    confirms(true);
     backend().fail("delete_client", {
       kind: "conflict",
       message: "This client still has policies, so they cannot be deleted",
@@ -623,6 +713,11 @@ describe("archiving and deleting from the client's page", () => {
     const { user } = openClient(1);
 
     await user.click(await screen.findByRole("button", { name: "Delete permanently" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Delete this client only, and keep the family",
+      }),
+    );
 
     expect(
       await screen.findByText("This client still has policies, so they cannot be deleted"),

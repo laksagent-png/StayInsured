@@ -42,6 +42,12 @@ pub struct Client {
     pub active_policies: i64,
     pub total_policies: i64,
     pub next_expiry: Option<String>,
+    /// People related to this client, either direction of the edge.
+    pub relatives: i64,
+    /// No policy of their own and listed under somebody else. Derived on every
+    /// read rather than stored, so it stops being true the moment they hold
+    /// cover.
+    pub is_dependent: bool,
 }
 
 pub const CLIENT_COLUMNS: &str =
@@ -51,7 +57,8 @@ pub const CLIENT_COLUMNS: &str =
      c.is_archived, c.created_at, c.updated_at";
 
 impl Client {
-    /// Expects `CLIENT_COLUMNS` followed by active_policies, total_policies, next_expiry.
+    /// Expects `CLIENT_COLUMNS` followed by active_policies, total_policies,
+    /// next_expiry, relatives, is_dependent.
     pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
         Ok(Self {
             id: row.get(0)?,
@@ -79,6 +86,8 @@ impl Client {
             active_policies: row.get(22).unwrap_or(0),
             total_policies: row.get(23).unwrap_or(0),
             next_expiry: row.get(24).unwrap_or(None),
+            relatives: row.get(25).unwrap_or(0),
+            is_dependent: row.get::<_, i64>(26).unwrap_or(0) != 0,
         })
     }
 }
@@ -114,6 +123,9 @@ pub struct ClientFilter {
     pub state: Option<String>,
     pub category: Option<String>,
     pub include_archived: Option<bool>,
+    /// Brings dependents into the list. They are always found by search; this is
+    /// about whether browsing shows them.
+    pub include_family: Option<bool>,
     pub missing_email: Option<bool>,
     pub sort: Option<String>,
     pub descending: Option<bool>,
@@ -121,43 +133,129 @@ pub struct ClientFilter {
     pub page_size: Option<u32>,
 }
 
-// ---------------------------------------------------------------- members
+// ---------------------------------------------------------------- family
 
+/// One client related to another: the person, and which way the edge between
+/// them runs.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InsuredMember {
-    pub id: i64,
+pub struct Relative {
     pub client_id: i64,
+    pub client_code: String,
     pub full_name: String,
     pub relationship: String,
+    /// Which side of the stored edge this person sits on. `true` — they are the
+    /// subject's `relationship`, read as "son: Aarav". `false` — the subject is
+    /// theirs, read as "son of: Rajesh".
+    ///
+    /// The edge is never inverted into the opposite word, because doing so needs
+    /// a gender to choose between father and mother, and a dependent imported as
+    /// a name has none. Reading the one stored word from either side needs
+    /// nothing the book does not hold.
+    pub outgoing: bool,
     pub date_of_birth: Option<String>,
     pub gender: Option<String>,
+    pub is_archived: bool,
+    /// Policies in this person's own name, which is what makes them a
+    /// policyholder rather than somebody's dependent.
+    pub own_policies: i64,
     pub notes: Option<String>,
 }
 
-impl InsuredMember {
+impl Relative {
     pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
         Ok(Self {
-            id: row.get(0)?,
-            client_id: row.get(1)?,
+            client_id: row.get(0)?,
+            client_code: row.get(1)?,
             full_name: row.get(2)?,
             relationship: row.get(3)?,
-            date_of_birth: row.get(4)?,
-            gender: row.get(5)?,
-            notes: row.get(6)?,
+            outgoing: row.get::<_, i64>(4)? != 0,
+            date_of_birth: row.get(5)?,
+            gender: row.get(6)?,
+            is_archived: row.get::<_, i64>(7)? != 0,
+            own_policies: row.get(8)?,
+            notes: row.get(9)?,
+        })
+    }
+}
+
+/// A whole family: everybody reachable from one client, and the edges between
+/// them. There is no family row to fetch — a family is what a walk over
+/// `client_relations` finds, so this is assembled rather than selected.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Family {
+    pub members: Vec<FamilyMember>,
+    pub edges: Vec<FamilyEdge>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FamilyMember {
+    pub client_id: i64,
+    pub client_code: String,
+    pub full_name: String,
+    pub date_of_birth: Option<String>,
+    pub gender: Option<String>,
+    pub is_archived: bool,
+    pub own_policies: i64,
+    /// Edges walked to reach this person. Zero is the client asked about.
+    pub steps: i64,
+}
+
+impl FamilyMember {
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            client_id: row.get(0)?,
+            client_code: row.get(1)?,
+            full_name: row.get(2)?,
+            date_of_birth: row.get(3)?,
+            gender: row.get(4)?,
+            is_archived: row.get::<_, i64>(5)? != 0,
+            own_policies: row.get(6)?,
+            steps: 0,
+        })
+    }
+}
+
+/// A stored edge, in the direction it is stored: `related_client_id` is the
+/// `relationship` of `client_id`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FamilyEdge {
+    pub client_id: i64,
+    pub related_client_id: i64,
+    pub relationship: String,
+}
+
+impl FamilyEdge {
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            client_id: row.get(0)?,
+            related_client_id: row.get(1)?,
+            relationship: row.get(2)?,
         })
     }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MemberInput {
+pub struct RelationInput {
     pub client_id: i64,
-    pub full_name: String,
-    pub relationship: Option<String>,
-    pub date_of_birth: Option<String>,
-    pub gender: Option<String>,
-    pub notes: Option<String>,
+    pub related_client_id: i64,
+    pub relationship: String,
+}
+
+/// What a client delete takes with it. Relationship edges always go; whether the
+/// people on the other end do is the operator's decision, and it reaches only
+/// one step out so that recording an in-law never widens what a delete removes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DeleteScope {
+    /// The client alone. Their family stay in the book as clients.
+    LinksOnly,
+    /// The client and the people directly related to them.
+    ImmediateFamily,
 }
 
 // ---------------------------------------------------------------- documents
@@ -405,7 +503,10 @@ pub struct PolicyInput {
     pub nominee_relation: Option<String>,
     pub vehicle_number: Option<String>,
     pub notes: Option<String>,
-    pub member_ids: Option<Vec<i64>>,
+    /// The clients this policy year covers. Named for clients rather than for
+    /// members so that a caller still passing the old member ids fails at the
+    /// name instead of resolving them against the wrong table.
+    pub insured_client_ids: Option<Vec<i64>>,
 }
 
 /// Creating the next year of an existing policy. Anything left out is carried

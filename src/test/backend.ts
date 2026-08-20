@@ -19,12 +19,14 @@ import type {
   Dashboard,
   Document,
   DocumentInput,
+  DeleteScope,
   EmailTemplate,
   EmailTemplateInput,
-  InsuredMember,
+  Family,
+  FamilyEdge,
+  FamilyMember,
   Insurer,
   InsurerInput,
-  MemberInput,
   Notification,
   NotificationFilter,
   Page,
@@ -34,6 +36,9 @@ import type {
   PolicyInput,
   Product,
   ProductInput,
+  RelationInput,
+  Relationship,
+  Relative,
   ReminderOverview,
   ReminderRule,
   ReminderRuleInput,
@@ -83,6 +88,21 @@ interface HeldCall {
 }
 
 const lower = (value: unknown) => String(value ?? "").toLowerCase();
+
+/** The words a relationship may be, as `util.rs` has them. */
+const RELATIONSHIPS: Relationship[] = [
+  "spouse",
+  "son",
+  "daughter",
+  "father",
+  "mother",
+  "brother",
+  "sister",
+  "other",
+];
+
+/** How far a family is walked, as the core walks it. */
+const FAMILY_MAX_DEPTH = 12;
 
 // ---------------------------------------------------------------- normalising
 // The real core tidies what it is given before it writes. A test that does not
@@ -463,6 +483,11 @@ export class FakeBackend {
     let rows = this.book.clients.map((row) => ({ ...row }));
 
     if (!filter.includeArchived) rows = rows.filter((row) => !row.isArchived);
+    // Browsing shows the policyholders; searching reaches everybody, because a
+    // child the book holds must answer to their own name.
+    if (!filter.includeFamily && !filter.search?.trim()) {
+      rows = rows.filter((row) => !row.isDependent);
+    }
     if (filter.missingEmail) rows = rows.filter((row) => !row.email);
     if (filter.city) rows = rows.filter((row) => row.city === filter.city);
     if (filter.state) rows = rows.filter((row) => row.state === filter.state);
@@ -495,6 +520,174 @@ export class FakeBackend {
     return rows;
   }
 
+  // ------------------------------------------------------------ family
+  // A family is what the edges reach, in either direction, with no family id
+  // anywhere. These mirror `src-tauri/src/repo/relations.rs`.
+
+  private samePair(edge: FamilyEdge, a: number, b: number): boolean {
+    return (
+      (edge.clientId === a && edge.relatedClientId === b) ||
+      (edge.clientId === b && edge.relatedClientId === a)
+    );
+  }
+
+  /** The ids one step out, either direction. What archive and family delete act on. */
+  private immediateIds(id: number): number[] {
+    const found = new Set<number>();
+    for (const edge of this.book.relations) {
+      if (edge.clientId === id) found.add(edge.relatedClientId);
+      if (edge.relatedClientId === id) found.add(edge.clientId);
+    }
+    return [...found];
+  }
+
+  /**
+   * Everyone directly related, spouse first and children before parents, with
+   * `outgoing` saying which way the edge is stored so the page can read the
+   * stored word aloud instead of guessing its opposite.
+   */
+  private relativesOf(id: number): Relative[] {
+    this.client(id);
+    const rows: Relative[] = [];
+    for (const edge of this.book.relations) {
+      const outgoing = edge.clientId === id;
+      if (!outgoing && edge.relatedClientId !== id) continue;
+      const other = this.client(outgoing ? edge.relatedClientId : edge.clientId);
+      rows.push({
+        clientId: other.id,
+        clientCode: other.clientCode,
+        fullName: other.fullName,
+        relationship: edge.relationship,
+        outgoing,
+        dateOfBirth: other.dateOfBirth,
+        gender: other.gender,
+        isArchived: other.isArchived,
+        ownPolicies: other.totalPolicies,
+        notes: other.notes,
+      });
+    }
+    const rank = (relationship: Relationship) =>
+      relationship === "spouse"
+        ? 0
+        : relationship === "son" || relationship === "daughter"
+          ? 1
+          : relationship === "father" || relationship === "mother"
+            ? 2
+            : 3;
+    return rows.sort(
+      (a, b) =>
+        rank(a.relationship) - rank(b.relationship) || a.fullName.localeCompare(b.fullName),
+    );
+  }
+
+  /** Everybody reachable, with the shortest walk to each and the edges between them. */
+  private family(id: number): Family {
+    this.client(id);
+    const steps = new Map<number, number>([[id, 0]]);
+    let frontier = [id];
+    for (let depth = 1; depth <= FAMILY_MAX_DEPTH && frontier.length; depth += 1) {
+      const next: number[] = [];
+      for (const person of frontier) {
+        for (const neighbour of this.immediateIds(person)) {
+          if (steps.has(neighbour)) continue;
+          steps.set(neighbour, depth);
+          next.push(neighbour);
+        }
+      }
+      frontier = next;
+    }
+
+    const members: FamilyMember[] = [...steps.entries()]
+      .map(([person, walked]) => {
+        const client = this.client(person);
+        return {
+          clientId: client.id,
+          clientCode: client.clientCode,
+          fullName: client.fullName,
+          dateOfBirth: client.dateOfBirth,
+          gender: client.gender,
+          isArchived: client.isArchived,
+          ownPolicies: client.totalPolicies,
+          steps: walked,
+        };
+      })
+      .sort((a, b) => a.steps - b.steps || a.fullName.localeCompare(b.fullName));
+
+    return {
+      members,
+      edges: this.book.relations
+        .filter((edge) => steps.has(edge.clientId) && steps.has(edge.relatedClientId))
+        .map((edge) => ({ ...edge })),
+    };
+  }
+
+  /**
+   * Refuses an edge that would make somebody their own ancestor. Only parent and
+   * child edges point up and down a family, so only they can contradict
+   * themselves; a spouse edge that closes a loop is a family with two ways
+   * through it.
+   */
+  private rejectAncestryLoop(clientId: number, relatedId: number, relationship: Relationship): void {
+    const pair =
+      relationship === "son" || relationship === "daughter"
+        ? { ancestor: clientId, descendant: relatedId }
+        : relationship === "father" || relationship === "mother"
+          ? { ancestor: relatedId, descendant: clientId }
+          : null;
+    if (!pair) return;
+
+    const parentsOf = (person: number) =>
+      this.book.relations
+        .filter(
+          (edge) =>
+            (edge.relatedClientId === person &&
+              (edge.relationship === "son" || edge.relationship === "daughter")) ||
+            (edge.clientId === person &&
+              (edge.relationship === "father" || edge.relationship === "mother")),
+        )
+        .map((edge) => (edge.relatedClientId === person ? edge.clientId : edge.relatedClientId));
+
+    const seen = new Set([pair.ancestor]);
+    let frontier = [pair.ancestor];
+    for (let depth = 0; depth < FAMILY_MAX_DEPTH && frontier.length; depth += 1) {
+      const next: number[] = [];
+      for (const person of frontier) {
+        for (const parent of parentsOf(person)) {
+          if (parent === pair.descendant) {
+            this.invalid(
+              "That would make somebody their own ancestor. Check which way round the relationship goes.",
+            );
+          }
+          if (!seen.has(parent)) {
+            seen.add(parent);
+            next.push(parent);
+          }
+        }
+      }
+      frontier = next;
+    }
+  }
+
+  /**
+   * Writes the lives a policy covers. Left out of the payload, the cover list is
+   * left alone; sent, it is replaced — and only the holder or someone related to
+   * them can be on it, which is the rule the core's INSERT ... WHERE enforces.
+   */
+  private setCover(policyId: number, input: PolicyInput): void {
+    if (!input.insuredClientIds) return;
+    const policy = this.policy(policyId);
+    const allowed = new Set([policy.clientId, ...this.immediateIds(policy.clientId)]);
+    this.book.cover = this.book.cover.filter((row) => row.policyId !== policyId);
+    for (const clientId of new Set(input.insuredClientIds)) {
+      if (allowed.has(clientId)) this.book.cover.push({ policyId, clientId });
+    }
+  }
+
+  /** The derived client columns, after policies or relationships change. */
+  private recount(): void {
+    recountClients(this.book.clients, this.book.policies, this.book.relations);
+  }
+
   private dashboard(): Dashboard {
     const all = this.book.policies.map((row) => this.decorate({ ...row }));
     const active = all.filter((row) => row.status === "active");
@@ -506,16 +699,21 @@ export class FakeBackend {
     const sum = (rows: Policy[], key: "premiumAmount" | "sumInsured" | "commissionExpected") =>
       rows.reduce((total, row) => total + (row[key] ?? 0), 0);
 
+    // The counts of people are counts of policyholders. Counting the family
+    // members as well would say the book holds half again as many clients as it
+    // has cover for, and would report every child as a client with no email.
+    const holders = this.book.clients.filter((row) => !row.isDependent);
+
     return {
-      totalClients: this.book.clients.length,
-      activeClients: this.book.clients.filter((row) => !row.isArchived).length,
+      totalClients: holders.length,
+      activeClients: holders.filter((row) => !row.isArchived).length,
       activePolicies: active.length,
       expiringThisWeek: within(0, 7).length,
       expiringThisMonth: within(0, 30).length,
       expiredUnrenewed: overdue.length,
       premiumUnderManagement: sum(active, "premiumAmount"),
       commissionExpected: sum(active, "commissionExpected"),
-      clientsWithoutEmail: this.book.clients.filter((row) => !row.email).length,
+      clientsWithoutEmail: holders.filter((row) => !row.isArchived && !row.email).length,
       buckets: [
         { label: "Overdue", rows: overdue },
         { label: "0-7 days", rows: within(0, 7) },
@@ -700,6 +898,8 @@ export class FakeBackend {
         activePolicies: 0,
         totalPolicies: 0,
         nextExpiry: null,
+        relatives: 0,
+        isDependent: false,
       });
       return id;
     },
@@ -721,46 +921,80 @@ export class FakeBackend {
       return null;
     },
     delete_client: (args) => {
+      // Two scopes, as the core has them: the client alone, whose relationship
+      // edges go but whose relatives stay, or the client with the people one
+      // step out from them.
       const id = Number(args.id);
-      const client = this.client(id);
-      // The real core lets the cascade take the policies, members and documents
-      // with them, so a test that deletes cannot find their rows afterwards.
-      this.book.clients = this.book.clients.filter((row) => row.id !== client.id);
-      this.book.policies = this.book.policies.filter((row) => row.clientId !== id);
-      this.book.members = this.book.members.filter((row) => row.clientId !== id);
-      this.book.documents = this.book.documents.filter((row) => row.clientId !== id);
+      this.client(id);
+      const scope = (args.scope ?? "linksOnly") as DeleteScope;
+      const going = scope === "immediateFamily" ? [id, ...this.immediateIds(id)] : [id];
+
+      this.book.clients = this.book.clients.filter((row) => !going.includes(row.id));
+      this.book.policies = this.book.policies.filter((row) => !going.includes(row.clientId));
+      this.book.relations = this.book.relations.filter(
+        (row) => !going.includes(row.clientId) && !going.includes(row.relatedClientId),
+      );
+      this.book.cover = this.book.cover.filter((row) => !going.includes(row.clientId));
+      this.book.documents = this.book.documents.filter((row) => !going.includes(row.clientId));
+      this.recount();
       recountCatalogue(this.book.insurers, this.book.products, this.book.policies);
-      return null;
+      return going;
     },
     next_client_code: () => `CL-${String(this.book.clients.length + 1).padStart(5, "0")}`,
 
-    // ------------------------------------------------------------ members
-    list_members: (args) =>
-      this.book.members.filter((row) => row.clientId === Number(args.clientId)).map((row) => ({ ...row })),
-    create_member: (args) => {
-      const input = args.input as MemberInput;
-      if (!input?.fullName?.trim()) this.invalid("A member needs a name");
-      const id = this.id();
-      const member: InsuredMember = {
-        id,
+    // ------------------------------------------------------------ family
+    list_relatives: (args) => this.relativesOf(Number(args.clientId)),
+    client_family: (args) => this.family(Number(args.clientId)),
+    link_clients: (args) => {
+      const input = args.input as RelationInput;
+      if (input.clientId === input.relatedClientId) {
+        this.invalid("A client cannot be related to themselves");
+      }
+      const relationship = String(input.relationship ?? "").trim().toLowerCase();
+      if (!RELATIONSHIPS.includes(relationship as Relationship)) {
+        this.invalid(`"${String(input.relationship).trim()}" is not a relationship this book records`);
+      }
+      this.client(input.clientId);
+      this.client(input.relatedClientId);
+      this.rejectAncestryLoop(input.clientId, input.relatedClientId, relationship as Relationship);
+
+      // The pair is unique, not the direction: correcting the word from either
+      // page rewrites the one edge rather than adding its opposite.
+      this.book.relations = this.book.relations.filter(
+        (row) => !this.samePair(row, input.clientId, input.relatedClientId),
+      );
+      this.book.relations.push({
         clientId: input.clientId,
-        fullName: input.fullName,
-        relationship: (input.relationship ?? "other") as InsuredMember["relationship"],
-        dateOfBirth: input.dateOfBirth ?? null,
-        gender: input.gender ?? null,
-        notes: input.notes ?? null,
-      };
-      this.book.members.push(member);
-      return id;
-    },
-    update_member: (args) => {
-      const member = this.book.members.find((row) => row.id === Number(args.id)) ?? this.notFound("That member");
-      Object.assign(member, args.input);
+        relatedClientId: input.relatedClientId,
+        relationship: relationship as Relationship,
+      });
+      this.recount();
       return null;
     },
-    delete_member: (args) => {
-      this.book.members = this.book.members.filter((row) => row.id !== Number(args.id));
+    unlink_clients: (args) => {
+      const clientId = Number(args.clientId);
+      const relatedId = Number(args.relatedClientId);
+      const before = this.book.relations.length;
+      this.book.relations = this.book.relations.filter((row) => !this.samePair(row, clientId, relatedId));
+      if (this.book.relations.length === before) this.notFound("Relationship");
+      // The people stay; only the edge goes.
+      this.recount();
       return null;
+    },
+    set_family_archived: (args) => {
+      const id = Number(args.id);
+      this.client(id);
+      const archived = Boolean(args.archived);
+      const household = [id, ...this.immediateIds(id)];
+      let moved = 0;
+      for (const person of household) {
+        const client = this.client(person);
+        if (client.isArchived !== archived) {
+          client.isArchived = archived;
+          moved += 1;
+        }
+      }
+      return moved;
     },
 
     // ------------------------------------------------------------ documents
@@ -915,9 +1149,10 @@ export class FakeBackend {
         .sort((a, b) => a.policyYear - b.policyYear)
         .map((row) => this.decorate({ ...row }));
     },
-    policy_member_ids: (args) => {
-      const policy = this.policy(Number(args.id));
-      return this.book.members.filter((row) => row.clientId === policy.clientId).map((row) => row.id);
+    policy_insured_ids: (args) => {
+      const id = Number(args.id);
+      this.policy(id);
+      return this.book.cover.filter((row) => row.policyId === id).map((row) => row.clientId);
     },
     create_policy: (args) => {
       const input = args.input as PolicyInput;
@@ -965,7 +1200,8 @@ export class FakeBackend {
         isRenewed: false,
       });
       this.book.policies.push(policy);
-      recountClients(this.book.clients, this.book.policies);
+      this.setCover(id, input);
+      this.recount();
       recountCatalogue(this.book.insurers, this.book.products, this.book.policies);
       return id;
     },
@@ -975,7 +1211,8 @@ export class FakeBackend {
       this.validatePolicy(input);
       Object.assign(policy, input, { updatedAt: `${TODAY}T04:30:00Z` });
       this.decorate(policy);
-      recountClients(this.book.clients, this.book.policies);
+      this.setCover(policy.id, input);
+      this.recount();
       recountCatalogue(this.book.insurers, this.book.products, this.book.policies);
       return null;
     },
@@ -1017,18 +1254,25 @@ export class FakeBackend {
       if (previous.status !== "cancelled") previous.status = "renewed";
       previous.isRenewed = true;
       this.book.policies.push(renewed);
-      recountClients(this.book.clients, this.book.policies);
+      // The new year covers the same lives as the old one, as the core carries
+      // them forward.
+      for (const row of this.book.cover.filter((entry) => entry.policyId === previous.id)) {
+        this.book.cover.push({ policyId: id, clientId: row.clientId });
+      }
+      this.recount();
       return id;
     },
     set_policy_status: (args) => {
       const policy = this.policy(Number(args.id));
       policy.status = String(args.status) as Policy["status"];
-      recountClients(this.book.clients, this.book.policies);
+      this.recount();
       return null;
     },
     delete_policy: (args) => {
-      this.book.policies = this.book.policies.filter((row) => row.id !== Number(args.id));
-      recountClients(this.book.clients, this.book.policies);
+      const id = Number(args.id);
+      this.book.policies = this.book.policies.filter((row) => row.id !== id);
+      this.book.cover = this.book.cover.filter((row) => row.policyId !== id);
+      this.recount();
       recountCatalogue(this.book.insurers, this.book.products, this.book.policies);
       return null;
     },

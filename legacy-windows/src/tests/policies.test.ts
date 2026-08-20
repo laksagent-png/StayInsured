@@ -21,7 +21,7 @@
 import * as clients from "../core/repo/clients";
 import * as dashboard from "../core/repo/dashboard";
 import * as insurers from "../core/repo/insurers";
-import * as members from "../core/repo/members";
+import * as relations from "../core/repo/relations";
 import * as policies from "../core/repo/policies";
 import { expect, suite, test, throwsKind } from "./harness";
 import { daysFromToday, sampleClient, samplePolicy, tempDb } from "./support";
@@ -122,14 +122,19 @@ suite("renewal", () => {
     db.with((conn) => {
       const client = clients.create(conn, sampleClient("Sunita Nair"));
       const insurer = insurers.findOrCreate(conn, "Niva Bupa");
-      const spouse = members.create(conn, { clientId: client, fullName: "Ravi Nair", relationship: "spouse" });
+      const spouse = clients.create(conn, sampleClient("Ravi Nair"));
+      relations.link(conn, {
+        clientId: client,
+        relatedClientId: spouse,
+        relationship: "spouse",
+      });
       const policy = policies.create(conn, {
         ...samplePolicy(client, insurer, "M-1", "2027-03-31"),
-        memberIds: [spouse],
+        insuredClientIds: [spouse],
       });
 
       const second = policies.renew(conn, { policyId: policy, policyNumber: "M-2" });
-      expect.deepEqual(policies.membersOf(conn, second), [spouse]);
+      expect.deepEqual(policies.insuredOf(conn, second), [spouse]);
     });
     db.close();
   });
@@ -458,24 +463,33 @@ suite("policy numbers and statuses", () => {
   });
 });
 
-suite("members", () => {
-  test("attach only to their own client", () => {
+suite("the lives a policy covers", () => {
+  test("are its holder or someone related to them", () => {
     const db = tempDb("members");
     db.with((conn) => {
-      const mine = clients.create(conn, sampleClient("Anil Kapoor"));
-      const other = clients.create(conn, sampleClient("Sneha Reddy"));
+      const owner = clients.create(conn, sampleClient("Anil Kapoor"));
+      const stranger = clients.create(conn, sampleClient("Sneha Reddy"));
       const insurer = insurers.findOrCreate(conn, "Niva Bupa");
+      const policy = policies.create(conn, samplePolicy(owner, insurer, "MB-1", "2027-03-31"));
 
-      const ours = members.create(conn, { clientId: mine, fullName: "Sonam Kapoor", relationship: "daughter" });
-      const stranger = members.create(conn, { clientId: other, fullName: "Rahul Reddy", relationship: "son" });
+      const mine = relations.findOrCreateRelative(conn, owner, "Sonam Kapoor", "daughter");
+      const theirs = relations.findOrCreateRelative(conn, stranger, "Rahul Reddy", "son");
 
-      const policy = policies.create(conn, samplePolicy(mine, insurer, "MB-1", "2027-03-31"));
-      policies.setMembers(conn, policy, [ours, stranger]);
+      // The holder themselves, the daughter, and somebody from another family.
+      policies.setMembers(conn, policy, [owner, mine, theirs]);
 
       expect.deepEqual(
-        policies.membersOf(conn, policy),
-        [ours],
-        "the stranger is dropped rather than attached to someone else's policy",
+        policies.insuredOf(conn, policy),
+        [owner, mine].sort((a, b) => a - b),
+        "the holder and his own family, and nobody else's",
+      );
+
+      const listed = relations.listForClient(conn, owner);
+      expect.equal(listed.length, 1);
+      expect.equal(listed[0]?.relationship, "daughter");
+      expect.ok(
+        listed[0]?.ownPolicies === 0 && listed[0]?.clientCode.startsWith("CL-"),
+        "a life named on a policy became a client with a code of her own",
       );
     });
     db.close();

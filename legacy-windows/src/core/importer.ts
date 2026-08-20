@@ -24,9 +24,9 @@ import type { Conn } from "./db";
 import { AppError, describe } from "./errors";
 import * as clients from "./repo/clients";
 import * as insurers from "./repo/insurers";
-import * as members from "./repo/members";
 import * as policies from "./repo/policies";
 import * as products from "./repo/products";
+import * as relations from "./repo/relations";
 import type {
   ImportFieldInfo,
   ImportOptions,
@@ -859,7 +859,9 @@ function importRow(
     nomineeRelation: reader.get("nomineeRelation"),
     vehicleNumber: reader.get("vehicleNumber"),
     notes: reader.get("notes"),
-    memberIds: null,
+    // Set after the policy exists, once the names have been resolved to clients:
+    // attaching them needs a policy to check the holder against.
+    insuredClientIds: null,
   };
 
   let policyId: number;
@@ -878,14 +880,19 @@ function importRow(
     report.policiesInserted += 1;
   }
 
+  // A cover list is a column of names, so each one is resolved to a client: the
+  // holder themselves where the name is theirs, somebody already in the family, an
+  // unambiguous client of that name, or a new client related to the holder.
+  // Re-importing the same sheet finds the same people rather than opening second
+  // copies of them.
   const list = reader.get("memberNames");
   if (list !== null) {
-    const memberIds = list
+    const insuredClientIds = list
       .split(/[,;/|]/)
       .map((part) => part.trim())
       .filter((part) => part !== "")
-      .map((part) => members.findOrCreate(conn, clientId, part, null));
-    if (memberIds.length > 0) policies.setMembers(conn, policyId, memberIds);
+      .map((part) => relations.findOrCreateRelative(conn, clientId, part, null));
+    if (insuredClientIds.length > 0) policies.setMembers(conn, policyId, insuredClientIds);
   }
 
   return { kind: existing === undefined ? "inserted" : "updated" };

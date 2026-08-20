@@ -75,7 +75,7 @@ export default defineConfig({
           text: "The book",
           items: [
             { text: "Clients", link: "/guide/clients" },
-            { text: "Insured members", link: "/guide/insured-members" },
+            { text: "Families", link: "/guide/families" },
             { text: "Documents", link: "/guide/documents" },
             { text: "Policies", link: "/guide/policies" },
             { text: "Insurers and plans", link: "/guide/insurers-and-plans" },

@@ -4,19 +4,19 @@ import type {
   ClientFilter,
   ClientInput,
   Dashboard,
+  DeleteScope,
   Document,
   DocumentInput,
   EmailTemplate,
   EmailTemplateInput,
+  Family,
   ImportFieldInfo,
   ImportOptions,
   ImportPreview,
   ImportReport,
-  InsuredMember,
   Insurer,
   InsurerInput,
   LookupItem,
-  MemberInput,
   Notification,
   NotificationFilter,
   Page,
@@ -27,6 +27,8 @@ import type {
   PolicyInput,
   Product,
   ProductInput,
+  RelationInput,
+  Relative,
   ReminderOverview,
   ReminderRule,
   ReminderRuleInput,
@@ -98,14 +100,22 @@ export const api = {
   updateClient: (id: number, input: ClientInput) => call<void>("update_client", { id, input }),
   setClientArchived: (id: number, archived: boolean) =>
     call<void>("set_client_archived", { id, archived }),
-  deleteClient: (id: number) => call<void>("delete_client", { id }),
+  /**
+   * Answers with every client id it removed, so the caller can say what went.
+   * `scope` decides whether the people directly related to this client go too.
+   */
+  deleteClient: (id: number, scope: DeleteScope = "linksOnly") =>
+    call<number[]>("delete_client", { id, scope }),
+  setFamilyArchived: (id: number, archived: boolean) =>
+    call<number>("set_family_archived", { id, archived }),
   nextClientCode: () => call<string>("next_client_code"),
 
-  // members
-  listMembers: (clientId: number) => call<InsuredMember[]>("list_members", { clientId }),
-  createMember: (input: MemberInput) => call<number>("create_member", { input }),
-  updateMember: (id: number, input: MemberInput) => call<void>("update_member", { id, input }),
-  deleteMember: (id: number) => call<void>("delete_member", { id }),
+  // family
+  listRelatives: (clientId: number) => call<Relative[]>("list_relatives", { clientId }),
+  clientFamily: (clientId: number) => call<Family>("client_family", { clientId }),
+  linkClients: (input: RelationInput) => call<void>("link_clients", { input }),
+  unlinkClients: (clientId: number, relatedClientId: number) =>
+    call<void>("unlink_clients", { clientId, relatedClientId }),
 
   // documents
   listDocuments: (clientId: number) => call<Document[]>("list_documents", { clientId }),
@@ -132,7 +142,7 @@ export const api = {
   listPolicies: (filter: PolicyFilter) => call<Page<Policy>>("list_policies", { filter }),
   getPolicy: (id: number) => call<Policy>("get_policy", { id }),
   policyChain: (id: number) => call<Policy[]>("policy_chain", { id }),
-  policyMemberIds: (id: number) => call<number[]>("policy_member_ids", { id }),
+  policyInsuredIds: (id: number) => call<number[]>("policy_insured_ids", { id }),
   createPolicy: (input: PolicyInput) => call<number>("create_policy", { input }),
   updatePolicy: (id: number, input: PolicyInput) => call<void>("update_policy", { id, input }),
   renewPolicy: (input: RenewalInput) => call<number>("renew_policy", { input }),

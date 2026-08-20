@@ -4,9 +4,10 @@ The schema lives in `src-tauri/src/db/schema/`, applied by
 `src-tauri/src/db/migrations.rs`. Everything below is one encrypted SQLite
 database, `stayinsured.db`, opened through SQLCipher.
 
-Current schema version: **4** — `001_init.sql` (structure), `002_seed.sql`
-(defaults), `003_documents.sql` (stored files) and `004_search_index.sql` (the
-client search triggers, and a rebuild of the index behind them).
+Current schema version: **5** — `001_init.sql` (structure), `002_seed.sql`
+(defaults), `003_documents.sql` (stored files), `004_search_index.sql` (the
+client search triggers, and a rebuild of the index behind them) and
+`005_client_relations.sql` (family members as clients).
 `session_state.schemaVersion` reports it at runtime.
 
 ## Migration policy
@@ -23,7 +24,7 @@ schema fresh installs get. Any change is a new numbered file added to the list.
 
 ```mermaid
 erDiagram
-    clients ||--o{ insured_members : has
+    clients ||--o{ client_relations : "related to"
     clients ||--o{ policies : holds
     clients ||--o{ documents : keeps
     policies ||--o{ documents : "evidenced by"
@@ -32,7 +33,7 @@ erDiagram
     insurers ||--o{ policies : underwrites
     products ||--o{ policies : "instantiated as"
     policies ||--o{ policy_members : covers
-    insured_members ||--o{ policy_members : "covered by"
+    clients ||--o{ policy_members : "covered by"
     policies ||--o| policies : "renews into"
     email_templates ||--o{ reminder_rules : "sent by"
     reminder_rules ||--o{ notification_log : produces
@@ -41,8 +42,12 @@ erDiagram
 
 ### `clients`
 
-The client book. `client_code` is unique and allocated as `CL-00001` upward from
-the highest numeric suffix matching `CL-[0-9]*`.
+The client book, and the only table that holds a person. A spouse on a floater, a
+dependent child and a policyholder are all rows here; what separates them is
+whether a policy is written against the row, not which table they live in.
+
+`client_code` is unique and allocated as `CL-00001` upward from the highest
+numeric suffix matching `CL-[0-9]*`.
 
 Contact and identity: `full_name` (required), `email`, `phone`, `alt_phone`,
 `date_of_birth`, `gender`, `address_line1`, `address_line2`, `city`, `state`,
@@ -53,11 +58,30 @@ Names are title-cased, phones reduced to digits with an optional leading `+`, PA
 and GSTIN upper-cased, and blank text stored as `NULL`. Indexed on name, email,
 phone, city and archived state.
 
-### `insured_members`
+### `client_relations`
 
-Family members and dependents who can be covered by that client's policies.
-Cascades on client delete. `relationship` is constrained to
-`self | spouse | son | daughter | father | mother | other`.
+How one client is related to another: `(client_id, related_client_id,
+relationship)`, primary key on the pair, both sides cascading on delete.
+
+A row reads **"`related_client_id` is the `relationship` of `client_id`"** —
+`(Rajesh, Aarav, 'son')` means Aarav is Rajesh's son. Only one direction is
+stored per pair; the reverse is derived when a family is displayed, so there is
+no second row that can fall out of agreement with the first.
+
+Two `CHECK`s carry the design. `client_id <> related_client_id` because a client
+does not relate to themselves — the `self` relationship the member table needed
+has no meaning once the member *is* the client. The relationship vocabulary is
+`spouse | son | daughter | father | mother | brother | sister | other`.
+
+A family is therefore a graph over the client book rather than a list hanging off
+one row, and it extends to any depth: a client's son has his own relations, and
+reaching them is a walk over these edges in both directions rather than a second
+kind of lookup.
+
+Nothing marks a client as a dependent. That a person is one is derived — they
+hold no policy of their own and appear as some other client's
+`related_client_id` — so a dependent who buys their own cover stops being one
+without anything needing to be corrected.
 
 ### `insurers`
 
@@ -90,9 +114,13 @@ category, insurer and previous policy.
 
 ### `policy_members`
 
-Which insured members a policy year covers — `(policy_id, member_id)`, cascading
-on both sides. The insert path only accepts members belonging to the policy's own
-client.
+Which lives a policy year covers — `(policy_id, insured_client_id)`, cascading on
+both sides, indexed on the client so that "which policies cover this person" is
+answerable from either end.
+
+The policyholder may appear in their own policy's cover list, and on a floater
+normally does. Indexing on `insured_client_id` is what lets a family be drawn
+with each person's cover beside them without a query per row.
 
 ### `documents` and `document_contents`
 
@@ -116,8 +144,8 @@ megabytes of scan to read a column of titles.
 | Category | `health`, `life`, `motor`, `travel`, `home`, `personal_accident`, `critical_illness`, `other` | `CHECK` on `products` and `policies` |
 | Policy status | `active`, `expired`, `renewed`, `lapsed`, `cancelled` | `CHECK` on `policies` |
 | Premium frequency | `annual`, `half_yearly`, `quarterly`, `monthly`, `single` | `CHECK` on `policies` |
-| Relationship | `self`, `spouse`, `son`, `daughter`, `father`, `mother`, `other` | `CHECK` on `insured_members` |
-| Gender | `male`, `female`, `other` | `CHECK` on `clients` and `insured_members` |
+| Relationship | `spouse`, `son`, `daughter`, `father`, `mother`, `brother`, `sister`, `other` | `CHECK` on `client_relations` |
+| Gender | `male`, `female`, `other` | `CHECK` on `clients` |
 | User role | `owner`, `staff`, `readonly` | `CHECK` on `users` |
 
 Dates are ISO `YYYY-MM-DD` text. Timestamps are `datetime('now')`, so UTC.
@@ -145,10 +173,15 @@ These hold across the whole database and the code depends on them.
    column is where the book remembers that the cover was ended early.
 4. **A policy number is unique per insurer.** Two insurers may use the same
    number; one insurer may not. This is why a renewal needs a fresh number.
-5. **A member only attaches to their own client's policies.** Enforced by the
-   insert query, not just by the UI.
-6. **Deleting a client removes their policies and members.** Archiving is the
-   reversible alternative and what the interface offers first.
+5. **A policy covers its holder or someone related to them.** Enforced by the
+   insert query, not just by the UI. The relationship is what makes a person
+   attachable, so putting an unrelated client on a floater means recording how
+   they are related first.
+6. **Deleting a client leaves their family in the book.** `client_relations`
+   cascades, so the edges go and the people stay — they are clients in their own
+   right, and one of them holding a policy is the ordinary case. Removing a
+   family outright is a separate and explicitly chosen operation, and archiving
+   is the reversible alternative the interface offers first.
 7. **An insurer carrying policies cannot be deleted.** Deactivation is the way to
    retire one.
 8. **Blank means `NULL`.** Optional text is trimmed and empty values stored as

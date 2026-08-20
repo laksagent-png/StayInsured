@@ -57,7 +57,7 @@ insurer, premium and expiry date, and each falls due in its own time.
 | **Nominee** | | |
 | **Nominee relation** | | |
 | **Vehicle number** | | Appears for motor policies only |
-| **Members covered** | | The [members](insured-members.md) on this client, as chips to tick |
+| **Members covered** | | The policyholder and their [family](families.md), as chips to tick. Nobody else can be named |
 | **Status** | | Only when editing an existing policy — see [statuses](#what-the-statuses-mean) |
 | **Notes** | | |
 

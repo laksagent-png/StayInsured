@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 use crate::models::{ClientInput, PolicyInput};
-use crate::repo::{clients, insurers, members, policies, products};
+use crate::repo::{clients, insurers, policies, products, relations};
 use crate::util;
 
 /// A field the importer can fill, with the header names it recognises.
@@ -990,7 +990,9 @@ fn import_row(
         nominee_relation: reader.get("nomineeRelation"),
         vehicle_number: reader.get("vehicleNumber"),
         notes: reader.get("notes"),
-        member_ids: None,
+        // Set after the policy exists, once the names have been resolved to
+        // clients: attaching them needs a policy to check the holder against.
+        insured_client_ids: None,
     };
 
     let policy_id = match existing_policy {
@@ -1012,15 +1014,20 @@ fn import_row(
         }
     };
 
+    // A cover list is a column of names, so each one is resolved to a client:
+    // the holder themselves where the name is theirs, somebody already in the
+    // family, an unambiguous client of that name, or a new client related to the
+    // holder. Re-importing the same sheet finds the same people rather than
+    // opening second copies of them.
     if let Some(list) = reader.get("memberNames") {
-        let member_ids = list
+        let insured_client_ids = list
             .split([',', ';', '/', '|'])
             .map(str::trim)
             .filter(|n| !n.is_empty())
-            .map(|n| members::find_or_create(conn, client_id, n, None))
+            .map(|n| relations::find_or_create_relative(conn, client_id, n, None))
             .collect::<AppResult<Vec<i64>>>()?;
-        if !member_ids.is_empty() {
-            policies::set_members(conn, policy_id, &member_ids)?;
+        if !insured_client_ids.is_empty() {
+            policies::set_members(conn, policy_id, &insured_client_ids)?;
         }
     }
 

@@ -37,9 +37,15 @@ function sentInput(command: "create_client" | "update_client"): ClientInput {
   return backend().lastCall(command)?.input as ClientInput;
 }
 
+/**
+ * The code the book would hand out next: one past the highest of the eleven
+ * clients it holds, family members included, since they are clients too.
+ */
+const NEXT_CODE = "CL-00012";
+
 /** Waits for the reserved client code, so a test does not race the fetch. */
 async function codeReserved(): Promise<void> {
-  await waitFor(() => expect(field(/^Client code/)).toHaveValue("CL-00009"));
+  await waitFor(() => expect(field(/^Client code/)).toHaveValue(NEXT_CODE));
 }
 
 describe("the new client form", () => {
@@ -123,7 +129,7 @@ describe("the new client form", () => {
     await waitFor(() => expect(backend().countOf("create_client")).toBe(1));
     expect(sentInput("create_client")).toMatchObject({
       fullName: "Nikhil Rao",
-      clientCode: "CL-00009",
+      clientCode: NEXT_CODE,
       phone: "9876500000",
       email: "nikhil.rao@example.com",
       city: "Indore",
@@ -316,7 +322,7 @@ describe("when the form is refused", () => {
     await user.click(addButton());
 
     expect(await screen.findByText("Client name is required")).toBeInTheDocument();
-    expect(backend().book.clients).toHaveLength(8);
+    expect(backend().book.clients).toHaveLength(11);
     expect(onClose).not.toHaveBeenCalled();
   });
 

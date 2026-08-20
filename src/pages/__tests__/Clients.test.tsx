@@ -262,6 +262,32 @@ describe("filtering the clients list", () => {
     expect(within(row(/Kavita Joshi/)).getByText("Archived")).toBeInTheDocument();
   });
 
+  it("browses the policyholders, and shows the family when asked", async () => {
+    const { user } = renderWithProviders(<ClientsPage />);
+    await screen.findByText("Rohit Sharma");
+
+    await waitFor(() => expect(names()).toHaveLength(8));
+    expect(screen.queryByText("Aarav Sharma")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: /Include family members/ }));
+
+    await waitFor(() => expect(lastFilter()).toMatchObject({ includeFamily: true, page: 1 }));
+    expect(await screen.findByText("Aarav Sharma")).toBeInTheDocument();
+    expect(within(row(/Aarav Sharma/)).getByText("Family member")).toBeInTheDocument();
+  });
+
+  it("finds a family member by name without the box being ticked", async () => {
+    // A book that held a child but would not admit it when asked by name would
+    // be worse than one that never held them.
+    const { user } = renderWithProviders(<ClientsPage />);
+    await screen.findByText("Rohit Sharma");
+
+    await user.type(searchBox(), "Aarav");
+
+    await waitFor(() => expect(names()).toEqual(["Aarav Sharma"]));
+    expect(lastFilter()?.includeFamily).toBeFalsy();
+  });
+
   it("combines the filters rather than replacing them", async () => {
     backend().book.clients[1].email = null;
     const { user } = renderWithProviders(<ClientsPage />);
@@ -488,7 +514,9 @@ describe("the client form on the list", () => {
 
     const dialog = within(await screen.findByRole("dialog", { name: "New client" }));
     expect(dialog.getByLabelText(/Full name/)).toHaveValue("");
-    await waitFor(() => expect(dialog.getByLabelText(/Client code/)).toHaveValue("CL-00009"));
+    // One past the highest code in the book, family members counted: they are
+    // clients and hold codes of their own.
+    await waitFor(() => expect(dialog.getByLabelText(/Client code/)).toHaveValue("CL-00012"));
   });
 
   it("opens on the client whose Edit was pressed", async () => {

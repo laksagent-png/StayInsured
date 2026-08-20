@@ -11,7 +11,7 @@ use crate::mail::{Mailer, SmtpConfig};
 use crate::models::*;
 use crate::reminders::SweepOptions;
 use crate::repo::{
-    clients, dashboard, documents, insurers, members, notifications, policies, products, rules,
+    clients, dashboard, documents, insurers, notifications, policies, products, relations, rules,
     settings, templates,
 };
 use crate::state::AppState;
@@ -253,9 +253,27 @@ pub fn set_client_archived(state: State<AppState>, id: i64, archived: bool) -> A
         .with_tx(|tx| clients::set_archived(tx, id, archived))
 }
 
+/// `scope` decides whether the people directly related to this client go too.
+/// Anything else is refused rather than guessed at, because both answers destroy
+/// something and the difference between them is the point.
 #[tauri::command]
-pub fn delete_client(state: State<AppState>, id: i64) -> AppResult<()> {
-    state.db()?.with_tx(|tx| clients::delete(tx, id))
+pub fn delete_client(
+    state: State<AppState>,
+    id: i64,
+    scope: Option<DeleteScope>,
+) -> AppResult<Vec<i64>> {
+    let scope = scope.unwrap_or(DeleteScope::LinksOnly);
+    state.db()?.with_tx(|tx| match scope {
+        DeleteScope::LinksOnly => clients::delete(tx, id).map(|()| vec![id]),
+        DeleteScope::ImmediateFamily => clients::delete_with_immediate_family(tx, id),
+    })
+}
+
+#[tauri::command]
+pub fn set_family_archived(state: State<AppState>, id: i64, archived: bool) -> AppResult<usize> {
+    state
+        .db()?
+        .with_tx(|tx| clients::set_family_archived(tx, id, archived))
 }
 
 #[tauri::command]
@@ -263,28 +281,35 @@ pub fn next_client_code(state: State<AppState>) -> AppResult<String> {
     state.db()?.with(clients::next_client_code)
 }
 
-// ------------------------------------------------------------------ members
+// ------------------------------------------------------------------ family
 
 #[tauri::command]
-pub fn list_members(state: State<AppState>, client_id: i64) -> AppResult<Vec<InsuredMember>> {
+pub fn list_relatives(state: State<AppState>, client_id: i64) -> AppResult<Vec<Relative>> {
     state
         .db()?
-        .with(|conn| members::list_for_client(conn, client_id))
+        .with(|conn| relations::list_for_client(conn, client_id))
+}
+
+/// Everybody reachable from this client, with the edges between them.
+#[tauri::command]
+pub fn client_family(state: State<AppState>, client_id: i64) -> AppResult<Family> {
+    state.db()?.with(|conn| relations::family(conn, client_id))
 }
 
 #[tauri::command]
-pub fn create_member(state: State<AppState>, input: MemberInput) -> AppResult<i64> {
-    state.db()?.with_tx(|tx| members::create(tx, &input))
+pub fn link_clients(state: State<AppState>, input: RelationInput) -> AppResult<()> {
+    state.db()?.with_tx(|tx| relations::link(tx, &input))
 }
 
 #[tauri::command]
-pub fn update_member(state: State<AppState>, id: i64, input: MemberInput) -> AppResult<()> {
-    state.db()?.with_tx(|tx| members::update(tx, id, &input))
-}
-
-#[tauri::command]
-pub fn delete_member(state: State<AppState>, id: i64) -> AppResult<()> {
-    state.db()?.with_tx(|tx| members::delete(tx, id))
+pub fn unlink_clients(
+    state: State<AppState>,
+    client_id: i64,
+    related_client_id: i64,
+) -> AppResult<()> {
+    state
+        .db()?
+        .with_tx(|tx| relations::unlink(tx, client_id, related_client_id))
 }
 
 // ------------------------------------------------------------------ documents
@@ -397,8 +422,8 @@ pub fn policy_chain(state: State<AppState>, id: i64) -> AppResult<Vec<Policy>> {
 }
 
 #[tauri::command]
-pub fn policy_member_ids(state: State<AppState>, id: i64) -> AppResult<Vec<i64>> {
-    state.db()?.with(|conn| policies::members_of(conn, id))
+pub fn policy_insured_ids(state: State<AppState>, id: i64) -> AppResult<Vec<i64>> {
+    state.db()?.with(|conn| policies::insured_of(conn, id))
 }
 
 #[tauri::command]

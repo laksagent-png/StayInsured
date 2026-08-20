@@ -1,5 +1,5 @@
 import { format, parseISO } from "date-fns";
-import type { Category, PolicyStatus } from "./types";
+import type { Category, PolicyStatus, Relationship } from "./types";
 
 const currency = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -119,4 +119,30 @@ export function titleCase(value: string): string {
   return value
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+export const relationshipLabels: Record<Relationship, string> = {
+  spouse: "Spouse",
+  son: "Son",
+  daughter: "Daughter",
+  father: "Father",
+  mother: "Mother",
+  brother: "Brother",
+  sister: "Sister",
+  other: "Related",
+};
+
+/**
+ * How a relationship reads from the side you are standing on.
+ *
+ * A relationship is stored once, in the direction it was recorded, so the
+ * father's page says "Son" and the son's page says "Son of" about the same row.
+ * The word is never swapped for its opposite: choosing between father and mother
+ * would need a gender, and a dependent entered as a name on a policy has none.
+ */
+export function relationshipLabel(relationship: string, outgoing: boolean): string {
+  const word = Object.hasOwn(relationshipLabels, relationship)
+    ? relationshipLabels[relationship as Relationship]
+    : "Related";
+  return outgoing ? word : `${word} of`;
 }

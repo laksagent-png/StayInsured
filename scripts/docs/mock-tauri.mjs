@@ -28,7 +28,8 @@ export function installTauriMock({ fixtures, scenario = {} }) {
   const policies = fixtures.policies.map((row) => ({ ...row }));
   const insurers = fixtures.insurers.map((row) => ({ ...row }));
   const products = fixtures.products.map((row) => ({ ...row }));
-  const members = fixtures.members.map((row) => ({ ...row }));
+  const relations = fixtures.relations.map((row) => ({ ...row }));
+  const cover = fixtures.cover.map((row) => ({ ...row }));
   const documents = fixtures.documents.map((row) => ({ ...row }));
   const settings = { ...fixtures.settings };
   const session = { ...fixtures.session, ...(scenario.session ?? {}) };
@@ -106,6 +107,8 @@ export function installTauriMock({ fixtures, scenario = {} }) {
     let rows = visibleClients.slice();
 
     if (!filter.includeArchived) rows = rows.filter((row) => !row.isArchived);
+    // Browsing shows the policyholders; searching reaches the whole book.
+    if (!filter.includeFamily && !filter.search) rows = rows.filter((row) => !row.isDependent);
     if (filter.missingEmail) rows = rows.filter((row) => !row.email);
     if (filter.city) rows = rows.filter((row) => row.city === filter.city);
     if (filter.category) {
@@ -237,13 +240,36 @@ export function installTauriMock({ fixtures, scenario = {} }) {
     create_client: () => 99,
     update_client: () => null,
     set_client_archived: () => null,
-    delete_client: () => null,
-    next_client_code: () => "CL-00009",
+    delete_client: ({ id }) => [id],
+    next_client_code: () => "CL-00012",
 
-    list_members: ({ clientId }) => members.filter((row) => row.clientId === clientId),
-    create_member: () => 99,
-    update_member: () => null,
-    delete_member: () => null,
+    set_family_archived: () => 0,
+
+    // A family is edges between clients, read from either end: the word is the
+    // one that was recorded, and `outgoing` says which way round it is stored.
+    list_relatives: ({ clientId }) =>
+      relations
+        .filter((edge) => edge.clientId === clientId || edge.relatedClientId === clientId)
+        .map((edge) => {
+          const outgoing = edge.clientId === clientId;
+          const other = clients.find(
+            (row) => row.id === (outgoing ? edge.relatedClientId : edge.clientId),
+          );
+          return {
+            clientId: other.id,
+            clientCode: other.clientCode,
+            fullName: other.fullName,
+            relationship: edge.relationship,
+            outgoing,
+            dateOfBirth: other.dateOfBirth,
+            gender: other.gender,
+            isArchived: other.isArchived,
+            ownPolicies: other.totalPolicies,
+            notes: other.notes,
+          };
+        }),
+    link_clients: () => null,
+    unlink_clients: () => null,
 
     list_documents: ({ clientId }) =>
       documents
@@ -278,11 +304,8 @@ export function installTauriMock({ fixtures, scenario = {} }) {
         .filter((row) => row.chainId === policy.chainId)
         .sort((a, b) => a.policyYear - b.policyYear);
     },
-    policy_member_ids: ({ id }) => {
-      const policy = policies.find((row) => row.id === id);
-      if (!policy) return [];
-      return members.filter((row) => row.clientId === policy.clientId).map((row) => row.id);
-    },
+    policy_insured_ids: ({ id }) =>
+      cover.filter((row) => row.policyId === id).map((row) => row.clientId),
     create_policy: () => 99,
     update_policy: () => null,
     renew_policy: () => 99,

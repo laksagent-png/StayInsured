@@ -9,13 +9,13 @@ use crate::exporter;
 use crate::importer::{self, ImportOptions};
 use crate::mail::{self, Outgoing};
 use crate::models::{
-    ClientFilter, ClientInput, DocumentInput, EmailTemplateInput, InsurerInput, MemberInput,
-    NotificationFilter, PolicyFilter, PolicyInput, ProductInput, ReminderRuleInput, RenewalInput,
+    ClientFilter, ClientInput, DocumentInput, EmailTemplateInput, InsurerInput, NotificationFilter,
+    PolicyFilter, PolicyInput, ProductInput, RelationInput, ReminderRuleInput, RenewalInput,
 };
 use crate::query;
 use crate::reminders::{self, NoAlerts, SweepOptions};
 use crate::repo::{
-    clients, dashboard, documents, insurers, members, notifications, policies, products, rules,
+    clients, dashboard, documents, insurers, notifications, policies, products, relations, rules,
     settings, templates,
 };
 use crate::templating;
@@ -124,13 +124,33 @@ fn a_book_edited_before_the_fix_has_its_search_index_put_right() {
             )?;
 
             // Wind the book back to what 0.0.3 wrote: the update trigger without
-            // the WHEN clause, the version stamp that went with it, and an index
-            // left disagreeing with the client list the way an edit under that
-            // trigger could leave it.
+            // the WHEN clause, the version stamp that went with it, an index left
+            // disagreeing with the client list the way an edit under that trigger
+            // could leave it, and the member tables 005 has since replaced —
+            // including a daughter, so that re-applying has a family to move.
             conn.execute_batch(&format!(
                 "DROP TRIGGER clients_fts_au; \
                  UPDATE clients SET full_name = 'Rohit Kumar Sharma' WHERE id = {id}; \
                  {OLD_TRIGGER} \
+                 DROP TABLE policy_members; \
+                 DROP TABLE client_relations; \
+                 CREATE TABLE insured_members ( \
+                     id            INTEGER PRIMARY KEY, \
+                     client_id     INTEGER NOT NULL REFERENCES clients (id) ON DELETE CASCADE, \
+                     full_name     TEXT    NOT NULL, \
+                     relationship  TEXT    NOT NULL DEFAULT 'other', \
+                     date_of_birth TEXT, \
+                     gender        TEXT, \
+                     notes         TEXT, \
+                     created_at    TEXT    NOT NULL DEFAULT (datetime('now')), \
+                     updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))); \
+                 CREATE INDEX idx_members_client ON insured_members (client_id); \
+                 CREATE TABLE policy_members ( \
+                     policy_id INTEGER NOT NULL REFERENCES policies (id) ON DELETE CASCADE, \
+                     member_id INTEGER NOT NULL REFERENCES insured_members (id) ON DELETE CASCADE, \
+                     PRIMARY KEY (policy_id, member_id)); \
+                 INSERT INTO insured_members (client_id, full_name, relationship, date_of_birth) \
+                 VALUES ({id}, 'Ananya Ghosh', 'daughter', '2010-05-06'); \
                  PRAGMA user_version = 3;"
             ))?;
             Ok(id)
@@ -152,12 +172,27 @@ fn a_book_edited_before_the_fix_has_its_search_index_put_right() {
             .unwrap()
     };
 
+    // Read straight out of the index while the book is wound back, rather than
+    // through client search: the repository is today's code and expects today's
+    // schema, and what is being shown here is what the index itself holds.
+    let indexed = |term: &str| -> i64 {
+        temp.db
+            .with(|conn| {
+                Ok(conn.query_row(
+                    "SELECT COUNT(*) FROM clients_fts WHERE clients_fts MATCH ?1",
+                    [format!("\"{}\"*", term.to_lowercase())],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap()
+    };
+
     assert_eq!(
-        found("Sharma"),
+        indexed("Sharma"),
         0,
         "the index has not heard of the new name"
     );
-    assert_eq!(found("Bose"), 1, "and still answers to the old one");
+    assert_eq!(indexed("Bose"), 1, "and still answers to the old one");
     temp.db
         .with(|conn| {
             // Nothing reports this. FTS5's integrity-check reads the index against
@@ -201,11 +236,32 @@ fn a_book_edited_before_the_fix_has_its_search_index_put_right() {
                 },
             )?;
             conn.execute_batch("INSERT INTO clients_fts(clients_fts) VALUES('integrity-check')")?;
+
+            // The same upgrade moved the daughter out of the member table and into
+            // the book as a client of her own, related to her father.
+            let family = relations::list_for_client(conn, id)?;
+            assert_eq!(family.len(), 1);
+            assert_eq!(family[0].full_name, "Ananya Ghosh");
+            assert_eq!(family[0].relationship, "daughter");
+            assert_eq!(
+                family[0].date_of_birth.as_deref(),
+                Some("2010-05-06"),
+                "what the member row knew came with her"
+            );
+            assert!(
+                family[0].client_code.starts_with("CL-"),
+                "and she was allocated a code like any other client"
+            );
             Ok(())
         })
         .unwrap();
 
     assert_eq!(found("Verma"), 1, "the edit the book used to refuse");
+    assert_eq!(
+        found("Ananya"),
+        1,
+        "a promoted daughter is searchable, because she is a client"
+    );
     assert_eq!(found("ABCDE1234F"), 1);
     assert_eq!(
         found("Bose"),
@@ -610,7 +666,7 @@ fn archiving_puts_a_client_away_without_losing_them() {
 }
 
 #[test]
-fn deleting_a_client_takes_their_policies_and_members_with_them() {
+fn deleting_a_client_takes_their_policies_but_leaves_their_family_standing() {
     let temp = TempDb::new("client-cascade");
     temp.db
         .with(|conn| {
@@ -620,18 +676,16 @@ fn deleting_a_client_takes_their_policies_and_members_with_them() {
                 conn,
                 &sample_policy(client, insurer, "SH/2026/77", "2027-03-31"),
             )?;
-            let member = members::create(
+            let son = clients::create(conn, &sample_client("Aarav Kulkarni"))?;
+            relations::link(
                 conn,
-                &MemberInput {
+                &RelationInput {
                     client_id: client,
-                    full_name: "Aarav Kulkarni".into(),
-                    relationship: Some("son".into()),
-                    date_of_birth: None,
-                    gender: None,
-                    notes: None,
+                    related_client_id: son,
+                    relationship: "son".into(),
                 },
             )?;
-            policies::set_members(conn, policy, &[member])?;
+            policies::set_members(conn, policy, &[client, son])?;
 
             // A second client proves the delete reaches for one book, not the table.
             let bystander = clients::create(conn, &sample_client("Sanjay Gupta"))?;
@@ -647,17 +701,25 @@ fn deleting_a_client_takes_their_policies_and_members_with_them() {
                 [client],
                 |row| row.get(0),
             )?;
-            let members_left: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM insured_members WHERE client_id = ?1",
-                [client],
-                |row| row.get(0),
-            )?;
+            let edges_left: i64 =
+                conn.query_row("SELECT COUNT(*) FROM client_relations", [], |row| {
+                    row.get(0)
+                })?;
             let links_left: i64 =
                 conn.query_row("SELECT COUNT(*) FROM policy_members", [], |row| row.get(0))?;
             assert_eq!(
-                (policies_left, members_left, links_left),
+                (policies_left, edges_left, links_left),
                 (0, 0, 0),
-                "policies, members and the links between them all go"
+                "the policies, the relationship and the cover rows all go"
+            );
+
+            // The son is a client, not a detail of his mother's record. Losing him
+            // with her is what the old member table did, and what a book that has
+            // his own motor policy next year cannot afford to do.
+            assert_eq!(
+                clients::get(conn, son)?.full_name,
+                "Aarav Kulkarni",
+                "the family stay in the book when the client they were listed under goes"
             );
 
             let survivors: i64 =
@@ -667,6 +729,393 @@ fn deleting_a_client_takes_their_policies_and_members_with_them() {
                 clients::get(conn, client),
                 Err(crate::error::AppError::NotFound("Client"))
             ));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn deleting_a_family_reaches_one_step_and_stops() {
+    let temp = TempDb::new("family-delete");
+    temp.db
+        .with(|conn| {
+            let holder = clients::create(conn, &sample_client("Rajesh Kumar"))?;
+            let wife = clients::create(conn, &sample_client("Priya Kumar"))?;
+            let son = clients::create(conn, &sample_client("Aarav Kumar"))?;
+            // One step further out: the wife's father, connected to the holder
+            // only through her.
+            let father_in_law = clients::create(conn, &sample_client("Suresh Rao"))?;
+
+            for (a, b, rel) in [
+                (holder, wife, "spouse"),
+                (holder, son, "son"),
+                (wife, father_in_law, "father"),
+            ] {
+                relations::link(
+                    conn,
+                    &RelationInput {
+                        client_id: a,
+                        related_client_id: b,
+                        relationship: rel.into(),
+                    },
+                )?;
+            }
+
+            let deleted = clients::delete_with_immediate_family(conn, holder)?;
+            assert_eq!(deleted.len(), 3, "the holder, the wife and the son");
+
+            // The whole family is reachable from the holder, so a walk would have
+            // taken the father-in-law too. Recording an in-law must not widen what
+            // a delete removes.
+            assert_eq!(
+                clients::get(conn, father_in_law)?.full_name,
+                "Suresh Rao",
+                "one step out, so an in-law reached only through the wife stays"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_family_is_the_same_walked_from_any_of_them() {
+    let temp = TempDb::new("family-walk");
+    temp.db
+        .with(|conn| {
+            let grandfather = clients::create(conn, &sample_client("Mohan Kumar"))?;
+            let holder = clients::create(conn, &sample_client("Rajesh Kumar"))?;
+            let wife = clients::create(conn, &sample_client("Priya Kumar"))?;
+            let son = clients::create(conn, &sample_client("Aarav Kumar"))?;
+            let unrelated = clients::create(conn, &sample_client("Nobody Here"))?;
+
+            for (a, b, rel) in [
+                (grandfather, holder, "son"),
+                (holder, wife, "spouse"),
+                (holder, son, "son"),
+            ] {
+                relations::link(
+                    conn,
+                    &RelationInput {
+                        client_id: a,
+                        related_client_id: b,
+                        relationship: rel.into(),
+                    },
+                )?;
+            }
+
+            // Three generations, entered from the middle and from the bottom. The
+            // old member table could not answer the second question at all: a
+            // grandfather was not reachable from a son.
+            let from_holder = relations::family(conn, holder)?;
+            let from_son = relations::family(conn, son)?;
+
+            let mut ids_from_holder: Vec<i64> =
+                from_holder.members.iter().map(|m| m.client_id).collect();
+            let mut ids_from_son: Vec<i64> = from_son.members.iter().map(|m| m.client_id).collect();
+            ids_from_holder.sort();
+            ids_from_son.sort();
+
+            assert_eq!(
+                ids_from_holder, ids_from_son,
+                "the same four people whichever end the walk starts from"
+            );
+            assert_eq!(ids_from_holder.len(), 4);
+            assert!(
+                !ids_from_holder.contains(&unrelated),
+                "a client with no edge to the family is not in it"
+            );
+
+            let grandfather_steps = from_son
+                .members
+                .iter()
+                .find(|m| m.client_id == grandfather)
+                .map(|m| m.steps);
+            assert_eq!(
+                grandfather_steps,
+                Some(2),
+                "two edges from the son, and the tree says so"
+            );
+            assert_eq!(from_son.edges.len(), 3, "every edge among the people found");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_relationship_is_one_edge_however_many_times_it_is_recorded() {
+    let temp = TempDb::new("family-edges");
+    temp.db
+        .with(|conn| {
+            let father = clients::create(conn, &sample_client("Rajesh Kumar"))?;
+            let son = clients::create(conn, &sample_client("Aarav Kumar"))?;
+
+            relations::link(
+                conn,
+                &RelationInput {
+                    client_id: father,
+                    related_client_id: son,
+                    relationship: "son".into(),
+                },
+            )?;
+            // The same fact entered from the son's page, the other way round.
+            relations::link(
+                conn,
+                &RelationInput {
+                    client_id: son,
+                    related_client_id: father,
+                    relationship: "father".into(),
+                },
+            )?;
+
+            let edges: i64 =
+                conn.query_row("SELECT COUNT(*) FROM client_relations", [], |row| {
+                    row.get(0)
+                })?;
+            assert_eq!(edges, 1, "one pair, one edge, whichever page recorded it");
+
+            let seen = relations::list_for_client(conn, son)?;
+            assert_eq!(seen.len(), 1);
+            assert_eq!(seen[0].relationship, "father");
+            assert!(
+                seen[0].outgoing,
+                "the last word entered is the one stored, in the direction it was said"
+            );
+
+            // Read from the other side, the same edge is the same word, not its
+            // opposite: "father of", which needs no gender to say.
+            let from_father = relations::list_for_client(conn, father)?;
+            assert_eq!(from_father[0].relationship, "father");
+            assert!(!from_father[0].outgoing);
+
+            relations::unlink(conn, father, son)?;
+            assert!(
+                relations::list_for_client(conn, father)?.is_empty(),
+                "unlinking works whichever way round the edge is stored"
+            );
+            assert_eq!(
+                clients::get(conn, son)?.full_name,
+                "Aarav Kumar",
+                "and it takes the edge, not the person"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn nobody_can_be_their_own_ancestor() {
+    let temp = TempDb::new("family-loop");
+    temp.db
+        .with(|conn| {
+            let grandfather = clients::create(conn, &sample_client("Mohan Kumar"))?;
+            let father = clients::create(conn, &sample_client("Rajesh Kumar"))?;
+            let son = clients::create(conn, &sample_client("Aarav Kumar"))?;
+
+            for (a, b) in [(grandfather, father), (father, son)] {
+                relations::link(
+                    conn,
+                    &RelationInput {
+                        client_id: a,
+                        related_client_id: b,
+                        relationship: "son".into(),
+                    },
+                )?;
+            }
+
+            let closing = relations::link(
+                conn,
+                &RelationInput {
+                    client_id: son,
+                    related_client_id: grandfather,
+                    relationship: "son".into(),
+                },
+            );
+            assert!(
+                matches!(closing, Err(crate::error::AppError::Validation(_))),
+                "a son cannot be his own grandfather's father"
+            );
+
+            // A loop that is not ancestry is a family with two ways through it,
+            // and stays allowed: cousins who marry are one family, not a fault.
+            let cousin = clients::create(conn, &sample_client("Kavita Rao"))?;
+            relations::link(
+                conn,
+                &RelationInput {
+                    client_id: grandfather,
+                    related_client_id: cousin,
+                    relationship: "daughter".into(),
+                },
+            )?;
+            relations::link(
+                conn,
+                &RelationInput {
+                    client_id: son,
+                    related_client_id: cousin,
+                    relationship: "spouse".into(),
+                },
+            )?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_dependent_stops_being_one_by_holding_a_policy() {
+    let temp = TempDb::new("dependents");
+    temp.db
+        .with(|conn| {
+            let holder = clients::create(conn, &sample_client("Rajesh Kumar"))?;
+            let wife = clients::create(conn, &sample_client("Priya Kumar"))?;
+            let insurer = insurers::find_or_create(conn, "Niva Bupa")?;
+            policies::create(conn, &sample_policy(holder, insurer, "NB-1", "2027-06-30"))?;
+            relations::link(
+                conn,
+                &RelationInput {
+                    client_id: holder,
+                    related_client_id: wife,
+                    relationship: "spouse".into(),
+                },
+            )?;
+
+            let browsing = clients::list(conn, &ClientFilter::default())?;
+            let names: Vec<&str> = browsing.rows.iter().map(|c| c.full_name.as_str()).collect();
+            assert_eq!(
+                names,
+                vec!["Rajesh Kumar"],
+                "browsing the book shows the policyholder, not the life on his floater"
+            );
+
+            // But asked for by name she is there. A book that held her and would
+            // not admit it would be worse than one that never held her.
+            let searched = clients::list(
+                conn,
+                &ClientFilter {
+                    search: Some("Priya".into()),
+                    ..Default::default()
+                },
+            )?;
+            assert_eq!(searched.rows.len(), 1);
+            assert!(searched.rows[0].is_dependent);
+            assert_eq!(searched.rows[0].relatives, 1);
+
+            let with_family = clients::list(
+                conn,
+                &ClientFilter {
+                    include_family: Some(true),
+                    ..Default::default()
+                },
+            )?;
+            assert_eq!(with_family.total, 2, "the toggle brings her into the list");
+
+            // Her own term plan makes her a policyholder, and nothing had to be
+            // corrected for that to be true.
+            policies::create(conn, &sample_policy(wife, insurer, "NB-2", "2027-09-30"))?;
+            let after = clients::list(conn, &ClientFilter::default())?;
+            assert_eq!(
+                after.total, 2,
+                "a dependent who buys cover appears without being reclassified"
+            );
+            assert!(!clients::get(conn, wife)?.is_dependent);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn the_dashboard_counts_policyholders_not_people() {
+    let temp = TempDb::new("dashboard-holders");
+    temp.db
+        .with(|conn| {
+            let holder = clients::create(conn, &sample_client("Rajesh Kumar"))?;
+            let insurer = insurers::find_or_create(conn, "Niva Bupa")?;
+            policies::create(conn, &sample_policy(holder, insurer, "NB-1", "2027-06-30"))?;
+
+            let before = dashboard::load(conn)?;
+
+            // A wife and a son on his floater. Both are clients, neither has an
+            // email address, and neither is somebody the agency is failing to
+            // reach — so the one figure on this screen meant to be acted on must
+            // not move.
+            for (name, relationship) in [("Priya Kumar", "spouse"), ("Aarav Kumar", "son")] {
+                let relative = clients::create(
+                    conn,
+                    &ClientInput {
+                        full_name: name.into(),
+                        ..Default::default()
+                    },
+                )?;
+                relations::link(
+                    conn,
+                    &RelationInput {
+                        client_id: holder,
+                        related_client_id: relative,
+                        relationship: relationship.into(),
+                    },
+                )?;
+            }
+
+            let after = dashboard::load(conn)?;
+            assert_eq!(after.total_clients, before.total_clients);
+            assert_eq!(after.active_clients, before.active_clients);
+            assert_eq!(after.clients_without_email, before.clients_without_email);
+
+            // Until one of them buys cover of her own.
+            let wife: i64 = conn.query_row(
+                "SELECT id FROM clients WHERE full_name = 'Priya Kumar'",
+                [],
+                |row| row.get(0),
+            )?;
+            policies::create(conn, &sample_policy(wife, insurer, "NB-2", "2027-09-30"))?;
+
+            let counted = dashboard::load(conn)?;
+            assert_eq!(counted.total_clients, before.total_clients + 1);
+            assert_eq!(
+                counted.clients_without_email,
+                before.clients_without_email + 1,
+                "a policyholder with no email address is worth chasing"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn archiving_a_family_moves_the_household_and_stops() {
+    let temp = TempDb::new("family-archive");
+    temp.db
+        .with(|conn| {
+            let holder = clients::create(conn, &sample_client("Rajesh Kumar"))?;
+            let wife = clients::create(conn, &sample_client("Priya Kumar"))?;
+            let father_in_law = clients::create(conn, &sample_client("Suresh Rao"))?;
+            relations::link(
+                conn,
+                &RelationInput {
+                    client_id: holder,
+                    related_client_id: wife,
+                    relationship: "spouse".into(),
+                },
+            )?;
+            relations::link(
+                conn,
+                &RelationInput {
+                    client_id: wife,
+                    related_client_id: father_in_law,
+                    relationship: "father".into(),
+                },
+            )?;
+
+            let moved = clients::set_family_archived(conn, holder, true)?;
+            assert_eq!(moved, 2, "the holder and his wife");
+            assert!(clients::get(conn, holder)?.is_archived);
+            assert!(clients::get(conn, wife)?.is_archived);
+            assert!(
+                !clients::get(conn, father_in_law)?.is_archived,
+                "one step out, so the in-law is left where he is"
+            );
+
+            let back = clients::set_family_archived(conn, holder, false)?;
+            assert_eq!(back, 2, "and it reverses");
+            assert!(!clients::get(conn, holder)?.is_archived);
             Ok(())
         })
         .unwrap();
@@ -1678,7 +2127,7 @@ fn deleting_a_year_leaves_the_earlier_ones_standing() {
 }
 
 #[test]
-fn members_attach_only_to_their_own_client() {
+fn a_policy_covers_its_holder_or_someone_related_to_them() {
     let temp = TempDb::new("members");
     temp.db
         .with(|conn| {
@@ -1688,20 +2137,64 @@ fn members_attach_only_to_their_own_client() {
             let policy =
                 policies::create(conn, &sample_policy(owner, insurer, "M-1", "2027-06-30"))?;
 
-            let mine = members::find_or_create(conn, owner, "Spouse Name", Some("wife"))?;
-            let theirs = members::find_or_create(conn, stranger, "Other Person", None)?;
+            let mine =
+                relations::find_or_create_relative(conn, owner, "Spouse Name", Some("wife"))?;
+            let theirs = relations::find_or_create_relative(conn, stranger, "Other Person", None)?;
 
-            policies::set_members(conn, policy, &[mine, theirs])?;
-            let attached = policies::members_of(conn, policy)?;
+            // The holder themselves, the spouse, and somebody from another family.
+            policies::set_members(conn, policy, &[owner, mine, theirs])?;
+            let attached = policies::insured_of(conn, policy)?;
+            let mut expected = vec![owner, mine];
+            expected.sort();
             assert_eq!(
-                attached,
-                vec![mine],
-                "a member from another client must be ignored"
+                attached, expected,
+                "the holder and his own family, and nobody else's"
             );
 
-            let listed = members::list_for_client(conn, owner)?;
+            let listed = relations::list_for_client(conn, owner)?;
             assert_eq!(listed.len(), 1);
-            assert_eq!(listed[0].relationship, "spouse");
+            assert_eq!(
+                listed[0].relationship, "spouse",
+                "\"wife\" from a spreadsheet is the spouse edge"
+            );
+            assert!(
+                listed[0].own_policies == 0 && listed[0].client_code.starts_with("CL-"),
+                "a life named on a policy became a client with a code of her own"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_life_named_on_a_policy_is_not_entered_twice() {
+    let temp = TempDb::new("member-dedupe");
+    temp.db
+        .with(|conn| {
+            let holder = clients::create(conn, &sample_client("Rajesh Kumar"))?;
+
+            // The holder's own name in his cover list is him, not a second Rajesh.
+            // This is what the 'self' member row used to stand for.
+            let himself = relations::find_or_create_relative(conn, holder, "Rajesh Kumar", None)?;
+            assert_eq!(himself, holder);
+
+            let wife =
+                relations::find_or_create_relative(conn, holder, "Priya Kumar", Some("wife"))?;
+            // The same sheet imported again finds her rather than opening a second
+            // client, which is what makes a re-import idempotent.
+            let again = relations::find_or_create_relative(conn, holder, "priya kumar", None)?;
+            assert_eq!(again, wife, "matched within the family, case-insensitively");
+
+            let clients_total: i64 =
+                conn.query_row("SELECT COUNT(*) FROM clients", [], |row| row.get(0))?;
+            assert_eq!(clients_total, 2, "the holder and his wife");
+
+            // She inherited the household's city, so the client list's filters
+            // still find her where she lives.
+            assert_eq!(
+                clients::get(conn, wife)?.city,
+                clients::get(conn, holder)?.city
+            );
             Ok(())
         })
         .unwrap();
@@ -1824,7 +2317,18 @@ Broken Row,,,,,,,,,,,,\n",
             )?;
             assert_eq!(motor.total, 1);
 
-            assert_eq!(members::list_for_client(conn, row.client_id)?.len(), 2);
+            // The sheet's cover list is "Rohit Sharma; Anita Sharma", and Rohit is
+            // the policyholder. He resolves to himself rather than to a second
+            // client of the same name, so the policy covers two people while the
+            // book gained one.
+            assert_eq!(
+                policies::insured_of(conn, row.id)?.len(),
+                2,
+                "the holder and his wife are both covered"
+            );
+            let family = relations::list_for_client(conn, row.client_id)?;
+            assert_eq!(family.len(), 1, "and only she was added to the book");
+            assert_eq!(family[0].full_name, "Anita Sharma");
             Ok(())
         })
         .unwrap();
@@ -1841,7 +2345,10 @@ Broken Row,,,,,,,,,,,,\n",
                 conn.query_row("SELECT COUNT(*) FROM clients", [], |r| r.get(0))?;
             let policies_total: i64 =
                 conn.query_row("SELECT COUNT(*) FROM policies", [], |r| r.get(0))?;
-            assert_eq!((clients_total, policies_total), (2, 2));
+            // Two policyholders and the wife named in the cover column, who is a
+            // client like them. The second import found her instead of opening a
+            // fourth row, which is the whole point of matching within the family.
+            assert_eq!((clients_total, policies_total), (3, 2));
             Ok(())
         })
         .unwrap();

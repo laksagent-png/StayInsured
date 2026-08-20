@@ -63,10 +63,13 @@ backend().book.clients = [];                       // empty state
 backend().book.policies[0].status = "cancelled";   // one awkward row
 ```
 
-Useful landmarks: client 1 is Rohit Sharma with three members and four
-documents; client 3 has no email; policy 1 (`SH/2025/0091823`) expires in 7
-days; policies 5 and 12 are expired and unrenewed; chain `chain-c` has three
-years of history.
+Useful landmarks: client 1 is Rohit Sharma, with a wife and son of his own
+(clients 9 and 10, related to him by `book.relations`) and four documents;
+client 3 has no email; policy 1 (`SH/2025/0091823`) expires in 7 days and covers
+all three of them through `book.cover`; policies 5 and 12 are expired and
+unrenewed; chain `chain-c` has three years of history. Clients 9, 10 and 11 hold
+no cover of their own, so they are dependents: browsing the list passes over
+them, and searching by name finds them.
 
 For a row the book does not hold, build one — `daysToExpiry` and the expected
 commission are derived for you:
@@ -99,8 +102,10 @@ with the core's own wording: "Client name is required", "Expiry date must be
 after the start date", "Choose the message this rule sends to the client",
 "Subject is required".
 
-Deletes cascade the way the schema does: a client takes their policies, members
-and documents, and an insurer takes its plans. A rule saved without a place on
+Deletes cascade the way the schema does: a client takes their policies,
+relationship links and documents — but not the people on the other end of those
+links, unless the delete was asked to reach the immediate family — and an insurer
+takes its plans. A rule saved without a place on
 the ladder is appended, as `rules::create` appends it, and the ladder reads
 furthest-ahead first. If a screen passes here and fails in the app, suspect the
 fake before the screen and say so — the two are meant to agree.

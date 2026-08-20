@@ -3,6 +3,50 @@
 Upgrading replaces the app and never the data: your book, your backups and your
 settings survive every version below.
 
+## Upcoming
+
+### Changed
+
+- **The people on a family floater are clients now, not entries inside one.** A
+  wife, a son, a father — each is somebody in your book, with their own client
+  code, their own page, and their own policies if they ever buy one. They are
+  linked to the policyholder as spouse, son, mother and so on, and the link reads
+  correctly from either page: **Son** on the father's, **Son of** on the son's.
+  Your existing families are moved across when you open this version. Nothing is
+  asked of you, and nobody who was on file is lost — where a family member turned
+  out to be someone already in your book under the same name, the two are joined
+  rather than duplicated, and anything the member's record held that the client's
+  did not, such as a date of birth, is kept.
+
+  The day a son buys his own two-wheeler policy, he is therefore already a client
+  and the policy just goes against him. Nothing is re-typed and his place in the
+  family stays.
+
+- **The clients list browses the people who hold the cover.** Otherwise a book of
+  two thousand policyholders would list several thousand names. Anybody covered
+  under somebody else's policy, with none of their own, is marked **Family member**
+  and kept back until you tick **Include family members** — but searching by name
+  always finds them, and the dashboard's client counts are counts of
+  policyholders, so the "no email address" figure no longer counts children.
+
+### Added
+
+- **A client's page shows the family, and links to each of them.** **Link
+  relative** finds somebody already in your book or opens a client for somebody
+  new, at the same address. Each row says how they are related, whether they hold
+  cover of their own, and unlinking one removes only the link — the person stays
+  in your book.
+
+- **A household can be archived or deleted together.** **Archive family** on a
+  client's page moves them and the people linked to them at once. Deleting now
+  asks which you meant: this client alone, leaving their relatives standing as
+  clients, or this client and the people linked to them. Both reach one step out
+  and stop, so an in-law's own parents are never swept up.
+
+- **A policy names the lives it covers, by client.** Only the policyholder and the
+  people related to them can be ticked, and renewing carries the same lives into
+  the new year.
+
 ## 0.3.5 — 17 August 2026
 
 ### Fixed

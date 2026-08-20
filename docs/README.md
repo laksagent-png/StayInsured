@@ -18,7 +18,7 @@ is building the app.
 | [Find your way around](guide/getting-around.md) | The eight screens, search, reading the dashboard |
 | [Import your book](guide/import-your-book.md) | Every recognised column, the mapping, the dry run, failed rows |
 | [Manage clients](guide/clients.md) | Adding, finding, editing, archiving, deleting, exporting |
-| [Record insured members](guide/insured-members.md) | The lives covered under a floater |
+| [Record a family](guide/families.md) | Linking relatives, and who a floater covers |
 | [Keep the paperwork](guide/documents.md) | Attaching scans to a client or policy, and reading them back |
 | [Manage policies](guide/policies.md) | The policy form field by field, filters, statuses |
 | [Work the renewals](guide/renewals.md) | The urgency tabs, copy emails, recording a renewal, history |

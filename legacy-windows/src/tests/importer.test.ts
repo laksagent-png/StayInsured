@@ -19,8 +19,8 @@ import * as XLSX from "xlsx";
 import { dispatch } from "../core/commands";
 import * as importer from "../core/importer";
 import * as clients from "../core/repo/clients";
-import * as members from "../core/repo/members";
 import * as policies from "../core/repo/policies";
+import * as relations from "../core/repo/relations";
 import type { ImportFieldInfo, ImportOptions, ImportPreview } from "../core/types";
 import { expect, suite, test, throwsKind } from "./harness";
 import { daysFromToday, scalar, tempDb, tempDir, unlockedSession } from "./support";
@@ -150,7 +150,18 @@ suite("a book the agency already keeps", () => {
       expect.equal(row.productName, "Family Health Optima");
 
       expect.equal(policies.list(conn, { categories: ["motor"] }).total, 1);
-      expect.equal(members.listForClient(conn, row.clientId).length, 2);
+
+      // The sheet's cover list is "Rohit Sharma; Anita Sharma", and Rohit is the
+      // policyholder. He resolves to himself rather than to a second client of the
+      // same name, so the policy covers two people while the book gained one.
+      expect.equal(
+        policies.insuredOf(conn, row.id).length,
+        2,
+        "the holder and his wife are both covered",
+      );
+      const family = relations.listForClient(conn, row.clientId);
+      expect.equal(family.length, 1, "and only she was added to the book");
+      expect.equal(family[0]?.fullName, "Anita Sharma");
     });
     db.close();
   });
@@ -168,12 +179,15 @@ suite("a book the agency already keeps", () => {
     expect.equal(again.clientsCreated, 0);
 
     db.with((conn) => {
+      // Two policyholders and the wife named in the cover column, who is a client
+      // like them. The second import found her instead of opening a fourth row,
+      // which is the whole point of matching within the family.
       expect.deepEqual(
         [
           scalar<number>(conn, "SELECT COUNT(*) AS n FROM clients"),
           scalar<number>(conn, "SELECT COUNT(*) AS n FROM policies"),
         ],
-        [2, 2],
+        [3, 2],
       );
     });
     db.close();

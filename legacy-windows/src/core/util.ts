@@ -334,12 +334,38 @@ export function normaliseGender(raw: string): string | null {
   }
 }
 
-export function normaliseRelationship(raw: string): string {
-  switch (raw.trim().toLowerCase()) {
+/** The words `client_relations.relationship` accepts, matching its `CHECK`. */
+export const RELATIONSHIPS = [
+  "spouse",
+  "son",
+  "daughter",
+  "father",
+  "mother",
+  "brother",
+  "sister",
+  "other",
+];
+
+/**
+ * Whether a spreadsheet or an operator means the policyholder themselves rather
+ * than a second person. There is no `self` relationship: a client does not relate
+ * to themselves, so a life named this way resolves to the client's own row.
+ */
+export function isSelfRelationship(raw: string | null | undefined): boolean {
+  switch (raw?.trim().toLowerCase()) {
     case "self":
     case "proposer":
     case "primary":
-      return "self";
+    case "insured":
+    case "policyholder":
+      return true;
+    default:
+      return false;
+  }
+}
+
+export function normaliseRelationship(raw: string): string {
+  switch (raw.trim().toLowerCase()) {
     case "spouse":
     case "wife":
     case "husband":
@@ -353,11 +379,19 @@ export function normaliseRelationship(raw: string): string {
       return "daughter";
     case "father":
     case "dad":
+    case "papa":
       return "father";
     case "mother":
     case "mom":
     case "mum":
+    case "mummy":
       return "mother";
+    case "brother":
+    case "bro":
+      return "brother";
+    case "sister":
+    case "sis":
+      return "sister";
     default:
       return "other";
   }
