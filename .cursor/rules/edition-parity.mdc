@@ -1,0 +1,56 @@
+---
+description: Carry a change to the Rust core into the Electron edition for Windows 7
+globs: src-tauri/src/**/*.rs,src-tauri/src/db/schema/*.sql
+alwaysApply: false
+---
+
+# Both editions or neither
+
+`legacy-windows/` is a second implementation of this core in TypeScript, shipped
+to agencies on Windows 7 who cannot run the app at all. It answers the same 73
+commands to the same screens, so a rule changed here and not there is not a
+missing feature: it is two copies of the book behaving differently on the same
+spreadsheet, and nothing raises an error when they do.
+
+Change the counterpart in the same commit, and port the test that proves it.
+
+| Changed | Also change |
+| --- | --- |
+| `commands.rs`, the `generate_handler!` list in `lib.rs` | `legacy-windows/src/core/commands.ts` |
+| `models.rs` | `legacy-windows/src/core/types.ts` |
+| `error.rs`, `query.rs`, `util.rs` | `core/errors.ts`, `core/query.ts`, `core/util.ts` |
+| `repo/*.rs` | `core/repo/*.ts` of the same name |
+| `importer.rs`, `exporter.rs`, `templating.rs`, `reminders.rs`, `mail.rs` | `core/` file of the same name |
+| `tray.rs`, `scheduler.rs` | `src/shell.ts`, the sweep timer in `src/main.ts` |
+| `tests.rs` | The `src/tests/*.test.ts` case naming that Rust test |
+
+## What is already shared, and must not be copied
+
+The schema and the interface. `legacy-windows` reads
+`src-tauri/src/db/schema/*.sql` and builds the app's own `src/` through Vite
+aliases, so a migration or a screen arrives there on the next build. Copying
+either creates the drift this rule exists to prevent.
+
+A migration is written once but has to work twice: the edition bundles an older
+SQLite than the app, so anything resting on a version's behaviour rather than on
+what SQLite promises can hold in one and not the other. `004_search_index.sql`
+fixes an FTS trigger with a `WHEN` clause instead of reordering two triggers,
+because the order they fire in is not promised and the two editions need not
+agree on it.
+
+## What deliberately differs
+
+Encryption — the edition opens a plain file and `session.ts` answers
+`encrypted: false`, and screens read that flag rather than assuming. Sending,
+which is `nodemailer` against `lettre`. Paths, secrets and notifications, which
+live in `src/env.ts` rather than in `core/`. Do not port `vault.rs`.
+
+## Proving it
+
+```bash
+cd legacy-windows && npm test
+```
+
+`parity.test.ts` reads the command list out of `lib.rs` and fails if the two
+disagree about a name; the rest hold the ported rules to the Rust cases. CI runs
+this only when an edition release is tagged, so run it before pushing.
