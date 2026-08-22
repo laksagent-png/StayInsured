@@ -324,6 +324,20 @@ Consequences worth knowing, all of them enforced in `repo::relations`:
 - **A policy covers its holder or somebody related to them.** `set_members` writes
   the set through an `INSERT … WHERE`, so an id from outside the family is dropped
   rather than trusted.
+- **A cover list is read for relationships, not just names.** Registers write the
+  word beside the person, so `util::split_relationship` takes it off the entry —
+  `Sneha Sharma (Wife)`, `Wife - Sneha Sharma`, `Sneha Sharma - wife` — and only a
+  word `recognised_relationship` knows is taken, leaving a bracket or a hyphen
+  inside a name where it is. Without this the book gained a client called "Sneha
+  Sharma (wife)" and a second copy of the policyholder called "Rohit Sharma
+  (self)". Failing that, a bare name equal to the policy's nominee takes
+  `nominee_relation`. An entry that is only a relationship names nobody and is
+  dropped, `self` and its synonyms excepted: a client called "Wife" would be
+  matched by name on the next import and cover the wrong household.
+- **A relationship the file states wins; silence changes nothing.**
+  `find_or_create_relative` re-`link`s a pair it already found when the row carries
+  a word, which is what makes re-importing a corrected column a repair for a whole
+  book, and leaves the recorded word alone when the row carries none.
 
 ### Stored documents
 
@@ -582,6 +596,12 @@ database in a temporary directory, with no window:
 - a family reads the same walked from any of them
 - a relationship recorded twice, once from each end, is still one edge
 - nobody can be their own ancestor
+- a relationship written beside a name in a cover list is read rather than
+  swallowed into the name, and a bare relationship names nobody
+- a cover list takes its relationships from the row: the word beside the name, or
+  failing that the nominee columns
+- a relationship a file states corrects a pair already recorded, and a file that
+  says nothing leaves the recorded word alone
 - a dependent is hidden from the browse list, found by name, brought in by the
   toggle, and stops being one by holding a policy
 - the dashboard counts policyholders rather than people, so a child with no

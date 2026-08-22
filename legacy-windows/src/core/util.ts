@@ -347,24 +347,15 @@ export const RELATIONSHIPS = [
 ];
 
 /**
- * Whether a spreadsheet or an operator means the policyholder themselves rather
- * than a second person. There is no `self` relationship: a client does not relate
- * to themselves, so a life named this way resolves to the client's own row.
+ * The relationship a word stands for, or `null` when the word is not one at all.
+ *
+ * `normaliseRelationship` answers `other` for everything it does not know, which
+ * cannot tell a stranger's name from a relationship written beside it. Telling
+ * those apart is what this is for, so it is the one place the vocabulary lives.
+ * `self` is in it because registers write it, though it is not a relationship the
+ * schema stores — see `isSelfRelationship`.
  */
-export function isSelfRelationship(raw: string | null | undefined): boolean {
-  switch (raw?.trim().toLowerCase()) {
-    case "self":
-    case "proposer":
-    case "primary":
-    case "insured":
-    case "policyholder":
-      return true;
-    default:
-      return false;
-  }
-}
-
-export function normaliseRelationship(raw: string): string {
+export function recognisedRelationship(raw: string): string | null {
   switch (raw.trim().toLowerCase()) {
     case "spouse":
     case "wife":
@@ -392,9 +383,75 @@ export function normaliseRelationship(raw: string): string {
     case "sister":
     case "sis":
       return "sister";
+    case "self":
+    case "proposer":
+    case "primary":
+    case "insured":
+    case "policyholder":
+      return "self";
     default:
-      return "other";
+      return null;
   }
+}
+
+/**
+ * Whether a spreadsheet or an operator means the policyholder themselves rather
+ * than a second person. There is no `self` relationship: a client does not relate
+ * to themselves, so a life named this way resolves to the client's own row.
+ */
+export function isSelfRelationship(raw: string | null | undefined): boolean {
+  return raw != null && recognisedRelationship(raw) === "self";
+}
+
+export function normaliseRelationship(raw: string): string {
+  const word = recognisedRelationship(raw);
+  return word === null || word === "self" ? "other" : word;
+}
+
+/**
+ * Splits a cover list entry into the person and the relationship written beside
+ * them. A register writes `Sneha Sharma (Wife)`, `Wife - Sneha Sharma` or
+ * `Sneha Sharma - Wife`, and all three used to be read as the whole name: the book
+ * gained a client called "Sneha Sharma (wife)", and the one fact the file was
+ * offering about her was thrown away.
+ *
+ * Only a word the app recognises is taken as a relationship, so a bracket or a
+ * hyphen inside somebody's own name stays part of it. An entry that is nothing but
+ * a relationship comes back with an empty name, because there is no person in it —
+ * the caller decides what to do about that.
+ */
+export function splitRelationship(entry: string): { name: string; relationship: string | null } {
+  const text = entry.trim();
+
+  const whole = recognisedRelationship(text);
+  if (whole !== null) return { name: "", relationship: whole };
+
+  // Trailing bracket: the common shape, and unambiguous.
+  const bracket = /^(.*?)\s*(?:\(([^)]*)\)|\[([^\]]*)\])$/.exec(text);
+  if (bracket) {
+    const word = recognisedRelationship(bracket[2] ?? bracket[3] ?? "");
+    if (word !== null) return { name: (bracket[1] ?? "").trim(), relationship: word };
+  }
+
+  // A separator, with the word on either side of it. The name is whatever is left,
+  // which is why an unrecognised word is left alone rather than guessed at:
+  // "Anne-Marie Fernandes" is a name, not a relationship and a name.
+  for (const separator of [":", "-", "\u2013", "\u2014"]) {
+    const first = text.indexOf(separator);
+    if (first > -1) {
+      const head = recognisedRelationship(text.slice(0, first));
+      const tail = text.slice(first + 1).trim();
+      if (head !== null && tail !== "") return { name: tail, relationship: head };
+    }
+    const last = text.lastIndexOf(separator);
+    if (last > -1) {
+      const head = text.slice(0, last).trim();
+      const tail = recognisedRelationship(text.slice(last + 1));
+      if (tail !== null && head !== "") return { name: head, relationship: tail };
+    }
+  }
+
+  return { name: text, relationship: null };
 }
 
 /** Keeps only digits (and a leading +) from a phone number. */

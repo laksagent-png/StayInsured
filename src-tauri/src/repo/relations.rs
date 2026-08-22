@@ -261,6 +261,20 @@ pub fn find_or_create_relative(
         )
         .ok();
     if let Some(id) = related {
+        // The pair stands either way. Where the file states the relationship,
+        // recording it is what lets a re-import correct a book whose families
+        // came in as `other` before anyone was reading the word beside the name.
+        // Silence leaves the existing word alone rather than flattening it.
+        if let Some(word) = relationship.filter(|r| !util::is_self_relationship(Some(r))) {
+            link(
+                conn,
+                &RelationInput {
+                    client_id,
+                    related_client_id: id,
+                    relationship: util::normalise_relationship(word),
+                },
+            )?;
+        }
         return Ok(id);
     }
 

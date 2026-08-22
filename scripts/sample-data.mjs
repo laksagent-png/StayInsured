@@ -141,6 +141,185 @@ const policies = [
   { code: "CL-00034", number: "TA/PA/551408", insurer: "Tata AIG General Insurance", plan: "Accident Guard", category: "Personal Accident", days: 100, si: 5000000, premium: 8900, gst: 1602, freq: "Annual", mode: "Card", rate: 15, commission: 1335 },
 ];
 
+// ------------------------------------------------------------- the families --
+
+/**
+ * A second book whose whole purpose is the relationships. Everybody on a floater
+ * is a client, so a cover list is how a family gets into the book, and these rows
+ * are ordered to build one deliberate shape: three generations entered a policy
+ * at a time, a daughter-in-law who belongs to two households, and two unrelated
+ * families joined by a name common enough to catch the importer out.
+ *
+ * The codes below join these two arrays and are written out blank, which is the
+ * honest shape for a file like this: an agency listing families has names, not
+ * numbers. Declaring them would collide — a relative created by an early row
+ * takes the next code going, and a later row claiming that code for its holder
+ * would land its policy on the relative, because a code outranks every other way
+ * of matching a row.
+ */
+const familyClients = [
+  { code: "CL-00301", name: "Mohan Rangan", email: "mohan.rangan@example.com", phone: "98410 30001", dob: "06/06/1954", gender: "Male", addr: "3 Luz Church Road", city: "Chennai", state: "Tamil Nadu", pin: "600004", job: "Retired", pan: "AMRPR3001A" },
+  { code: "CL-00302", name: "Rajesh Rangan", email: "rajesh.rangan@example.com", phone: "98410 30002", dob: "18/02/1984", gender: "Male", addr: "12 Besant Nagar", city: "Chennai", state: "Tamil Nadu", pin: "600090", job: "Banker", pan: "ARRPR3002B" },
+  { code: "CL-00303", name: "Lakshmi Menon", email: "lakshmi.menon@example.com", phone: "94470 30003", dob: "22/08/1959", gender: "Female", addr: "Kadavanthra", city: "Kochi", state: "Kerala", pin: "682020", job: "Retired teacher", pan: "ALMPM3003C" },
+  { code: "CL-00304", name: "Ganesh Pai", email: "ganesh.pai@example.com", phone: "98450 30004", dob: "11/03/1978", gender: "Male", addr: "5 Malleswaram 8th Cross", city: "Bengaluru", state: "Karnataka", pin: "560003", job: "Printer", pan: "AGPPP3004D" },
+  { code: "CL-00305", name: "Sunil Pai", email: "sunil.pai@example.com", phone: "98220 30005", dob: "29/07/1981", gender: "Male", addr: "Kothrud Depot Road", city: "Pune", state: "Maharashtra", pin: "411038", job: "Electrician", pan: "ASPPP3005E" },
+];
+
+/**
+ * `lives` is the cover list, and the order of these rows is the point of them.
+ * Rajesh arrives as a name on his father's policy and is a client from that
+ * moment; his own floater two rows later finds him rather than opening a second
+ * copy, and the policy makes him a policyholder with nothing to correct.
+ */
+const familyPolicies = [
+  { code: "CL-00301", number: "SH/2026/0301551", insurer: "Star Health and Allied Insurance", plan: "Senior Citizens Red Carpet", category: "Health", days: 24, si: 1000000, premium: 43600, gst: 7848, freq: "Annual", mode: "Cheque", rate: 12.5, commission: 5450, nominee: "Vasanthi Rangan", relation: "Spouse", lives: "Mohan Rangan; Vasanthi Rangan; Rajesh Rangan (Son)", notes: "Three lives, two of them new to the book. His wife is named only in the nominee column, and that is where her relationship comes from." },
+  { code: "CL-00302", number: "NB/RA2/302118", insurer: "Niva Bupa Health Insurance", plan: "ReAssure 2.0", category: "Health", days: 41, si: 2000000, premium: 28900, gst: 5202, freq: "Annual", mode: "Auto debit", rate: 12.5, commission: 3612.5, nominee: "Priya Rangan", relation: "Spouse", lives: "Self; Priya Rangan; Aarav Rangan (Son)", notes: "The holder was entered by the row above as somebody's son, and is written here the way a register writes him." },
+  { code: "CL-00302", number: "HE/PAS/302904", insurer: "HDFC ERGO General Insurance", plan: "Personal Accident Shield", category: "Personal Accident", days: 96, si: 2500000, premium: 6100, gst: 1098, freq: "Annual", mode: "Card", rate: 15, commission: 915, lives: "Rajesh Rangan / Aarav Rangan", notes: "A second policy over two of the same people, so nobody is entered again." },
+  { code: "CL-00302", number: "IL/MOT/302774", insurer: "ICICI Lombard General Insurance", plan: "Motor Secure Comprehensive", category: "Motor", days: 130, si: 900000, premium: 13400, gst: 2412, freq: "Annual", mode: "Net banking", rate: 10, commission: 1340, vehicle: "TN07RN2024", notes: "A policy covering nobody but its holder, on a client who has a family." },
+  { code: "CL-00303", number: "CH/2026/303028", insurer: "Care Health Insurance", plan: "Care Supreme", category: "Health", days: 11, si: 1200000, premium: 39400, gst: 7092, freq: "Annual", mode: "UPI", rate: 12.5, commission: 4925, lives: "Lakshmi Menon | Daughter - Priya Rangan", notes: "Her daughter is already in the book, so this joins two households rather than adding a second Priya." },
+  { code: "CL-00304", number: "HE/OS/304190", insurer: "HDFC ERGO General Insurance", plan: "Optima Secure", category: "Health", days: 63, si: 1000000, premium: 26300, gst: 4734, freq: "Annual", mode: "UPI", rate: 12.5, commission: 3287.5, lives: "Ganesh Pai, Anil Kumar (Brother)", notes: "A common name, entered here first." },
+  { code: "CL-00305", number: "CH/2026/305412", insurer: "Care Health Insurance", plan: "Care Freedom", category: "Health", days: 77, si: 700000, premium: 17900, gst: 3222, freq: "Annual", mode: "Cash", rate: 12.5, commission: 2237.5, lives: "Sunil Pai; Anil Kumar (Brother)", notes: "The same common name, a different family. One person of that name is in the book, so this links to him — see the README." },
+];
+
+/**
+ * Mirrors `relations::find_or_create_relative` and the dependent rule, so the
+ * numbers the README states are the ones the importer will produce rather than a
+ * description of them that can quietly go stale.
+ */
+function resolveCover(book, rows, coverOf) {
+  const people = book.map((c) => ({ name: c.name, code: c.code, created: false }));
+  const idOf = (name) => people.findIndex((p) => p.name.toLowerCase() === name.toLowerCase());
+  const edges = new Map();
+  const holders = new Set();
+  const cover = [];
+
+  // The pair is what is unique, not the direction, so the key is sorted. `from` is
+  // the end the word was said from: "son" said by Mohan about Rajesh reads "son of"
+  // on Rajesh's page. Silence leaves a recorded word and its direction alone; a
+  // word the file states replaces both, exactly as `relations::link` does.
+  const pair = (a, b) => [a, b].sort((x, y) => x - y).join("|");
+  const related = (a, b) => edges.has(pair(a, b));
+  const edge = (a, b, word) =>
+    edges.set(pair(a, b), word ? { word, from: a } : edges.get(pair(a, b)) ?? { word: "other", from: a });
+
+  // `util.splitRelationship`, kept to the same vocabulary as both editions.
+  const WORDS = {
+    spouse: "spouse", wife: "spouse", husband: "spouse", partner: "spouse",
+    son: "son", daughter: "daughter", father: "father", dad: "father",
+    mother: "mother", mom: "mother", brother: "brother", sister: "sister",
+    self: "self", proposer: "self", primary: "self", insured: "self", policyholder: "self",
+  };
+  const split = (entry) => {
+    const text = entry.trim();
+    if (WORDS[text.toLowerCase()]) return { name: "", word: WORDS[text.toLowerCase()] };
+
+    const bracket = /^(.*?)\s*(?:\(([^)]*)\)|\[([^\]]*)\])$/.exec(text);
+    const inner = (bracket?.[2] ?? bracket?.[3] ?? "").trim().toLowerCase();
+    if (bracket && WORDS[inner]) return { name: bracket[1].trim(), word: WORDS[inner] };
+    for (const separator of [":", "-"]) {
+      const [head, ...rest] = text.split(separator);
+      if (rest.length > 0 && WORDS[head.trim().toLowerCase()] && rest.join(separator).trim()) {
+        return { name: rest.join(separator).trim(), word: WORDS[head.trim().toLowerCase()] };
+      }
+    }
+    return { name: text, word: null };
+  };
+
+  for (const row of rows) {
+    const holder = people.findIndex((p) => p.code === row.code);
+    holders.add(holder);
+
+    const named = (coverOf(row) ?? "")
+      .split(/[,;/|]/)
+      .map((n) => n.trim().replace(/\s+/g, " "))
+      .filter(Boolean);
+
+    const covered = [];
+    for (const entry of named) {
+      const { name, word } = split(entry);
+
+      // A cell that is only a relationship names nobody, except 'self'.
+      if (name === "") {
+        if (word === "self") covered.push(holder);
+        continue;
+      }
+
+      // Where no word was written beside the name, the nominee columns may carry
+      // one for this person.
+      const stated = word
+        ?? (row.nominee?.toLowerCase() === name.toLowerCase() ? WORDS[row.relation?.toLowerCase()] : null)
+        ?? null;
+
+      if (people[holder].name.toLowerCase() === name.toLowerCase()) {
+        covered.push(holder);
+        continue;
+      }
+
+      const already = people.findIndex((_, i) => i !== holder && related(holder, i)
+        && people[i].name.toLowerCase() === name.toLowerCase());
+      if (already !== -1) {
+        edge(holder, already, stated);
+        covered.push(already);
+        continue;
+      }
+
+      // One client of that name is a person; two are two people, and the
+      // importer will not choose between them.
+      const matches = people.filter((p) => p.name.toLowerCase() === name.toLowerCase()).length;
+      const id = matches === 1 ? idOf(name) : people.push({ name, code: "", created: true }) - 1;
+      edge(holder, id, stated);
+      covered.push(id);
+    }
+
+    if (covered.length > 0) cover.push({ policy: row.number, covered });
+  }
+
+  const ends = (e) => e.split("|").map(Number);
+  const linked = (i) => [...edges.keys()].some((e) => ends(e).includes(i));
+  const dependents = people.filter((_, i) => !holders.has(i) && linked(i));
+
+  // The walk both editions do in code: everybody reachable by following edges in
+  // either direction, which is what makes a family the same from any of them.
+  const walk = (start) => {
+    const seen = new Set([start]);
+    for (const queue = [start]; queue.length > 0; ) {
+      const at = queue.shift();
+      for (const e of edges.keys()) {
+        const [a, b] = ends(e);
+        const next = a === at ? b : b === at ? a : null;
+        if (next !== null && !seen.has(next)) {
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+    }
+    return [...seen].map((i) => people[i].name);
+  };
+  const step = (start) => [...edges]
+    .filter(([e]) => ends(e).includes(start))
+    .map(([e, { word, from }]) => {
+      const [a, b] = ends(e);
+      return {
+        name: people[a === start ? b : a].name,
+        relationship: from === start ? word : `${word} of`,
+      };
+    });
+
+  return {
+    people,
+    holders: [...holders].map((i) => people[i].name),
+    added: people.filter((p) => p.created).map((p) => p.name),
+    dependents: dependents.map((p) => p.name),
+    edges: edges.size,
+    // What the file managed to say about each pair, which is the difference
+    // between a family tree and a list of people who share a policy.
+    named: [...edges.values()].filter(({ word }) => word !== "other").length,
+    cover,
+    walk: (name) => walk(idOf(name)),
+    step: (name) => step(idOf(name)),
+  };
+}
+
 // -------------------------------------------------------------- file shapes --
 
 const BOOK_HEADERS = [
@@ -152,8 +331,8 @@ const BOOK_HEADERS = [
   "Covered members", "Notes",
 ];
 
-function bookRow(policy) {
-  const client = clients.find((c) => c.code === policy.code);
+function bookRow(policy, book = clients) {
+  const client = book.find((c) => c.code === policy.code);
   const start = policy.startDays ?? policy.days - 364;
   return [
     client.name, client.code, client.email, client.phone, client.alt ?? "", client.dob, client.gender,
@@ -162,7 +341,7 @@ function bookRow(policy) {
     policy.startBlank ? "" : dmy(start), dmy(policy.days),
     policy.si, policy.premium, policy.gst, policy.freq, policy.mode,
     policy.rate, policy.commission, policy.nominee ?? "", policy.relation ?? "", policy.vehicle ?? "",
-    policy.members ?? "", policy.notes ?? "",
+    policy.members ?? policy.lives ?? "", policy.notes ?? "",
   ];
 }
 
@@ -533,6 +712,9 @@ function volumeRows() {
 
 // ------------------------------------------------------------------ report ---
 
+const cleanBook = resolveCover(clients, policies, (p) => p.members);
+const family = resolveCover(familyClients, familyPolicies, (p) => p.lives);
+
 function counts() {
   const inWindow = (lo, hi) => policies.filter((p) => p.days >= lo && p.days <= hi).length;
   // The dashboard's category mix counts active policies only.
@@ -543,6 +725,10 @@ function counts() {
 
   return {
     clients: clients.length,
+    // A named life is a client, so importing the clean book puts more people in
+    // the book than it has policyholders.
+    relatives: cleanBook.added.length,
+    people: clients.length + cleanBook.added.length,
     policies: policies.length,
     noEmail: clients.filter((c) => !c.email).length,
     overdue: policies.filter((p) => p.days < 0).length,
@@ -563,6 +749,13 @@ function counts() {
     commission: policies.filter((p) => p.days >= 0).reduce((sum, p) => sum + p.commission, 0),
     ruleDays: [60, 30, 15, 7, 1].map((d) => [d, policies.filter((p) => p.days === d).length]),
   };
+}
+
+/** The relatives of one person, worded the way their page labels them. */
+function label(relatives) {
+  const one = ({ name, relationship }) =>
+    `**${relationship[0].toUpperCase()}${relationship.slice(1)}** ${name.split(" ")[0]}`;
+  return relatives.map(one).join(", ");
 }
 
 function readme(files) {
@@ -598,9 +791,15 @@ seeing that is the point of it.
 
 ## 1. The clean book
 
-${c.clients} clients and ${c.policies} policies, with headers named exactly as the
-import screen names its fields, so every column maps on the first pass and
+${c.clients} policyholders and ${c.policies} policies, with headers named exactly as
+the import screen names its fields, so every column maps on the first pass and
 **Unmapped** stays empty.
+
+The **Covered members** column names ${c.relatives} more people, and everybody on a
+floater is a client, so the book ends up holding ${c.people}. They are family
+members with no cover of their own, so the clients list shows ${c.clients} until you
+tick **Include family members** — and the dashboard tiles below count
+policyholders throughout. File 9 is the one that exercises this properly.
 
 After importing with **Update records that already exist** on, the dashboard
 should read:
@@ -724,6 +923,125 @@ screen must offer the sheet picker and you have to choose **Policies** yourself.
 Dates and amounts are stored as Excel dates and numbers rather than text, except
 the last row where everything is a string — both should import identically.
 
+## 9. Families
+
+${family.holders.length} policyholders and ${familyPolicies.length} policies whose cover lists build one deliberate
+family shape. Import it and the book gains ${family.people.length} people joined by
+${family.edges} relationships, every one of them named by the file, of whom ${family.dependents.length} have no cover
+of their own.
+
+The rows are ordered on purpose. **Rajesh Rangan** is a name on his father's
+policy in row 1, which makes him a client there and then; row 2 gives him a
+floater of his own and finds him rather than opening a second copy of him. That
+is the whole reason a family member is a client — nothing had to be migrated at
+the counter on the day he bought cover.
+
+What the shape is for:
+
+| Open | And see |
+| --- | --- |
+| Aarav Rangan | A family of ${family.walk("Aarav Rangan").length} read from the bottom of it: his grandfather is two steps away, and the old member table could not answer that at all |
+| Rajesh Rangan | ${family.step("Rajesh Rangan").length} relatives on his page — ${label(family.step("Rajesh Rangan"))} — three policies, and a family of ${family.walk("Rajesh Rangan").length} once the walk goes past them |
+| Priya Rangan | Two edges from one person, ${label(family.step("Priya Rangan"))}, from two different rows — which is why a family is edges and not a household id |
+| Lakshmi Menon | Her daughter, covered on her policy as well as on her husband's. A life may be named on any policy in the family |
+| Anil Kumar | Two families, wrongly. Read on |
+
+### The sharp edge, on purpose
+
+Rows 6 and 7 both cover somebody called **Anil Kumar**, in two families that have
+nothing to do with each other. One person of that name was already in the book by
+the time the second row arrived, so the importer linked to him instead of opening
+a second file on him, and the two households are now one family.
+
+That is the documented rule doing exactly what it says, and it is worth seeing
+once: a cover list is a column of names, and names are not identifiers. Open Anil
+Kumar, and **Unlink** the relationship that does not belong. Nothing else in the
+sample data gives you a reason to unlink anything.
+
+A name is resolved in four steps, and the order is what matters here: the holder
+themselves, then somebody already related to the holder, then one unambiguous
+client of that name, and only then a new person.
+
+The second step is why importing this file twice adds nobody — each Pai is already
+related to an Anil Kumar, so that match is found before the book at large is
+searched. It holds even if you add another client of the same name in between.
+
+The last step is what refuses to guess. Add **two** clients called *Anil Kumar* by
+hand to an empty book, then import this file: two people already answer to that
+name, so neither row chooses between them and each enters a new person instead.
+Four of them, and the report says two clients were created.
+
+### Where the relationships come from
+
+All ${family.named} relationships are named by the file, because this one writes the word where
+an agency register writes it. Every shape it might use is in here, and each is read
+the same way:
+
+| The file says | The book records |
+| --- | --- |
+| \`Rajesh Rangan (Son)\` | Mohan's son |
+| \`Daughter - Priya Rangan\` | Lakshmi's daughter |
+| \`Vasanthi Rangan\`, with **Nominee relation** *Spouse* | Mohan's spouse, taken from the nominee columns because the cover list said nothing |
+| \`Self\` | The holder, not a second client of his own name |
+
+Only a word the app knows is taken as a relationship, so a name with a bracket or a
+hyphen in it survives intact. Anything unrecognised stays part of the name, and a
+pair the file says nothing about reads **other** until somebody sets it.
+
+### What a cover list cannot say
+
+A cover list ties each life to the policyholder and to nobody else. Priya and Aarav
+are both on Rajesh's floater, so she is his spouse and the boy is his son — and the
+tie between the two of them is not on his page, on hers, or anywhere in the file.
+Nothing guesses it. Adding it is the demonstration:
+
+1. Open Priya Rangan, **Link a relative**, and record Aarav as **Son**. His page now
+   reads *Son of* for the same relationship — one edge, read from either end, with a
+   preposition rather than a guess at gender.
+2. From Aarav's page, set that same relationship to **Mother**. There is still one
+   relationship, now recorded the other way round; it is corrected, not contradicted.
+3. From Aarav's page, try to record Mohan — his grandfather — as *his* son. It is
+   refused: nobody can be their own ancestor. Only parent and child edges can
+   contradict themselves this way, which is why step 4 stands.
+4. Priya now holds three relationships from three sources: a husband her floater
+   gave her, a mother her own policy did, and a son you added. She belongs to two
+   households at once, which is the case a household id cannot hold.
+
+Import the file again afterwards. It restates the ${family.named} relationships it named and
+leaves the one you added alone — a file silent about a pair does not flatten it, and
+a file that names one corrects it.
+
+### Archive and delete stop one step out
+
+Rajesh's page offers **Archive family** and, on delete, a choice. His immediate
+family is ${family.step("Rajesh Rangan").map((n) => n.name.split(" ")[0]).join(", ")}, so:
+
+- **Archive family** moves ${family.step("Rajesh Rangan").length + 1} people. Vasanthi and Lakshmi stay where they are, though the
+  walk reaches both of them.
+- **Delete this client and ${family.step("Rajesh Rangan").length} relatives** takes the same ${family.step("Rajesh Rangan").length + 1}. An in-law's own parents are
+  their own household, and a delete confirmed against a list of three should not
+  quietly take five.
+- **Delete this client only, and keep the family** leaves all ${family.people.length - 1} of the others
+  standing. It takes his relationships, not the people in them.
+
+### Browsing, searching and counting
+
+| Check | Expect |
+| --- | --- |
+| Clients list, as it opens | The ${family.holders.length} policyholders |
+| Tick **Include family members** | All ${family.people.length}, the family ones badged as such |
+| Search *Vasanthi* with the box unticked | She is found. A book that held her and would not admit it would be worse than one that never held her |
+| Dashboard, total clients | ${family.holders.length}. Counting people would report ${family.people.length}, and every child as a client with no email address |
+| Add a policy for Aarav by hand | He is in the list with the box clear, and no longer badged. Buying cover is all it took |
+
+### Cover lists on the policy form
+
+Open any of these policies and the lives are the holder and the people related to
+them, and nobody else. Rajesh's motor policy covers only him, though his family
+panel is full — a cover list is per policy. Try the form on Ganesh Pai before you
+unlink, and Sunil Pai is offered, which is the same wrong join seen from the other
+side.
+
 ## Reminders
 
 The clean book puts exactly one policy on each active rule day, so the ladder
@@ -773,7 +1091,8 @@ is loaded.
 | Renew something in the overdue tab | The tab emptying by one, and the reminder queued against it being cancelled |
 | Try to delete Star Health in **Insurers & plans** | The refusal — an insurer holding policies can only be deactivated |
 | Deactivate Acko, then tick **Show inactive** | Both halves of the insurer list |
-| Add a member to a client, then attach them to one of their policies | The member picker on the policy form |
+| Link a relative to a client, then tick them on one of their policies | The cover list on the policy form, which offers the holder and their family and nobody else |
+| Set the relationships on the family in file 9, then archive and delete it | The words read from either end, the ancestry refusal, and both delete scopes |
 | Settings → fill in the SMTP block, save a password, then **Send test** | The mail path, without touching a client |
 | Settings → turn **Dry run** off, then run the reminders | Sending for real, against the rehearsal |
 | Reminders → turn a rule off and plan again | The ladder shortening by one |
@@ -792,7 +1111,7 @@ so \`cancelled\` cannot be reached by hand today.
 
 mkdirSync(OUT, { recursive: true });
 
-const bookRows = policies.map(bookRow);
+const bookRows = policies.map((policy) => bookRow(policy));
 const files = [];
 
 files.push([write("01-clean-book.csv", delimited(BOOK_HEADERS, bookRows, ",")),
@@ -832,9 +1151,15 @@ writeFileSync(join(OUT, "08-workbook.xlsx"), workbook([
 ]));
 files.push(["08-workbook.xlsx", "A two-sheet Excel file with real dates and real numbers, so the sheet picker has something to pick"]);
 
+const codeColumn = BOOK_HEADERS.indexOf("Client code");
+files.push([write("09-families.csv", delimited(BOOK_HEADERS,
+  familyPolicies.map((p) => bookRow(p, familyClients).map((cell, i) => (i === codeColumn ? "" : cell))), ",")),
+  "Three generations, a relative who belongs to two households, and two families joined by a name common enough to catch the importer out"]);
+
 writeFileSync(join(OUT, "README.md"), readme(files));
 
 const c = counts();
 console.log(`sample-data/ written for ${iso(0)}`);
-console.log(`  ${c.clients} clients, ${c.policies} policies in the clean book, 240 more in the volume file`);
+console.log(`  ${c.clients} policyholders and ${c.policies} policies in the clean book, whose cover lists name ${c.relatives} more people`);
+console.log(`  ${family.people.length} people in ${family.edges} relationships in the families file, 240 more clients in the volume file`);
 console.log(`  ${files.length + 1} files including the README`);

@@ -47,6 +47,20 @@ settings survive every version below.
   people related to them can be ticked, and renewing carries the same lives into
   the new year.
 
+- **Importing reads how the people on a floater are related, instead of leaving
+  every one of them as "other".** If your covered-members column writes the word
+  the way a register does — *Priya Sharma (Wife)*, *Wife - Priya Sharma*, *Priya
+  Sharma - wife* — that is how they are recorded. Where it gives a bare name that
+  is also the policy's nominee, the relationship comes from **Nominee relation**.
+  *Self*, *Proposer* and *Insured* are understood to mean the policyholder.
+
+  Those words also no longer end up inside people's names: a file saying *Priya
+  Sharma (Wife)* used to put a client called "Priya Sharma (wife)" in your book,
+  and one saying *Self* used to add a second copy of the policyholder. Correcting
+  that column and importing the file again fixes the relationships across your whole
+  book at once — it puts back what the file says, and leaves anything you set by
+  hand where the file is silent.
+
 ## 0.3.5 — 17 August 2026
 
 ### Fixed

@@ -42,6 +42,7 @@ import {
   normalisePhone,
   parseDate,
   parseNumber,
+  splitRelationship,
   todayIso,
 } from "./util";
 
@@ -887,11 +888,33 @@ function importRow(
   // copies of them.
   const list = reader.get("memberNames");
   if (list !== null) {
-    const insuredClientIds = list
-      .split(/[,;/|]/)
-      .map((part) => part.trim())
-      .filter((part) => part !== "")
-      .map((part) => relations.findOrCreateRelative(conn, clientId, part, null));
+    const nominee = reader.get("nomineeName");
+    const nomineeRelation = reader.get("nomineeRelation");
+    const insuredClientIds: number[] = [];
+
+    for (const entry of list.split(/[,;/|]/)) {
+      const { name, relationship } = splitRelationship(entry);
+
+      // A cell that is only a relationship names nobody, and a client called
+      // "Wife" would be worse than the cover going unrecorded: the next import
+      // would match that name and cover somebody else's wife. "Self" and its
+      // synonyms are the exception — that is the holder.
+      if (name === "") {
+        if (relationship === "self") insuredClientIds.push(clientId);
+        continue;
+      }
+
+      // Where the file wrote no word beside the name, the nominee columns often
+      // carry one for exactly one of these people.
+      const word =
+        relationship ??
+        (nominee !== null && nominee.trim().toLowerCase() === name.toLowerCase()
+          ? nomineeRelation
+          : null);
+
+      insuredClientIds.push(relations.findOrCreateRelative(conn, clientId, name, word));
+    }
+
     if (insuredClientIds.length > 0) policies.setMembers(conn, policyId, insuredClientIds);
   }
 

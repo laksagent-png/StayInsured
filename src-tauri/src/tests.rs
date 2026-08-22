@@ -2195,6 +2195,126 @@ fn a_life_named_on_a_policy_is_not_entered_twice() {
                 clients::get(conn, wife)?.city,
                 clients::get(conn, holder)?.city
             );
+
+            // A relationship the file states corrects one that arrived blank,
+            // which is what makes a re-import a way to repair a book rather than
+            // only a way to avoid duplicating it.
+            assert_eq!(
+                relations::list_for_client(conn, holder)?[0].relationship,
+                "spouse"
+            );
+            relations::find_or_create_relative(conn, holder, "Priya Kumar", Some("mother"))?;
+            assert_eq!(
+                relations::list_for_client(conn, holder)?[0].relationship,
+                "mother",
+                "the word the file gives is recorded on the pair already there"
+            );
+            relations::find_or_create_relative(conn, holder, "Priya Kumar", None)?;
+            assert_eq!(
+                relations::list_for_client(conn, holder)?[0].relationship,
+                "mother",
+                "and a file that says nothing does not flatten it back to other"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_relationship_written_beside_a_name_is_read_rather_than_swallowed() {
+    // Agency registers write the word next to the person. It used to become part
+    // of the name: the book gained a client called "Sneha Sharma (wife)" and a
+    // second copy of the policyholder called "Rohit Sharma (self)".
+    for (entry, expected_name, expected_word) in [
+        ("Sneha Sharma (Wife)", "Sneha Sharma", Some("spouse")),
+        ("Sneha Sharma [wife]", "Sneha Sharma", Some("spouse")),
+        ("Wife - Sneha Sharma", "Sneha Sharma", Some("spouse")),
+        ("Wife: Sneha Sharma", "Sneha Sharma", Some("spouse")),
+        ("Sneha Sharma - wife", "Sneha Sharma", Some("spouse")),
+        ("Aarav Sharma (son)", "Aarav Sharma", Some("son")),
+        ("Rohit Sharma (Self)", "Rohit Sharma", Some("self")),
+        // Nothing recognised, so nothing is taken out of the name.
+        ("Anne-Marie Fernandes", "Anne-Marie Fernandes", None),
+        ("T. R. Krishnan", "T. R. Krishnan", None),
+        ("Maria D'Souza & Sons", "Maria D'Souza & Sons", None),
+        ("Priya Menon (nominee)", "Priya Menon (nominee)", None),
+        // A word with nobody attached to it names nobody.
+        ("Self", "", Some("self")),
+        ("wife", "", Some("spouse")),
+    ] {
+        let (name, word) = util::split_relationship(entry);
+        assert_eq!(
+            (name, word),
+            (expected_name, expected_word),
+            "reading {entry:?}"
+        );
+    }
+}
+
+#[test]
+fn a_cover_list_takes_its_relationships_from_the_row() {
+    let temp = TempDb::new("cover-relationships");
+    temp.db
+        .with(|conn| {
+            let insurer = insurers::find_or_create(conn, "Star Health")?;
+            let holder = clients::create(conn, &sample_client("Rohit Sharma"))?;
+            let policy = policies::create(
+                conn,
+                &PolicyInput {
+                    nominee_name: Some("Lakshmi Sharma".into()),
+                    nominee_relation: Some("Mother".into()),
+                    ..sample_policy(holder, insurer, "SH-1", "2027-06-30")
+                },
+            )?;
+
+            // Two words written beside the name, one taken from the nominee
+            // columns, and the holder named the way a register names them.
+            let mut ids = Vec::new();
+            for entry in [
+                "Self",
+                "Sneha Sharma (Wife)",
+                "son - Aarav Sharma",
+                "Lakshmi Sharma",
+            ] {
+                let (name, beside) = util::split_relationship(entry);
+                if name.is_empty() {
+                    ids.push(holder);
+                    continue;
+                }
+                let word = beside.map(str::to_owned).or_else(|| {
+                    "Lakshmi Sharma"
+                        .eq_ignore_ascii_case(name)
+                        .then(|| "Mother".to_string())
+                });
+                ids.push(relations::find_or_create_relative(
+                    conn,
+                    holder,
+                    name,
+                    word.as_deref(),
+                )?);
+            }
+            policies::set_members(conn, policy, &ids)?;
+
+            let mut recorded: Vec<(String, String)> = relations::list_for_client(conn, holder)?
+                .into_iter()
+                .map(|r| (r.full_name, r.relationship))
+                .collect();
+            recorded.sort();
+            assert_eq!(
+                recorded,
+                vec![
+                    ("Aarav Sharma".to_string(), "son".to_string()),
+                    ("Lakshmi Sharma".to_string(), "mother".to_string()),
+                    ("Sneha Sharma".to_string(), "spouse".to_string()),
+                ],
+                "every relationship the row carried, and no client named after one"
+            );
+
+            assert_eq!(
+                policies::insured_of(conn, policy)?.len(),
+                4,
+                "the holder and the three lives named beside him"
+            );
             Ok(())
         })
         .unwrap();

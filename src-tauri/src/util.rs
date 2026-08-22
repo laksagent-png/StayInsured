@@ -263,29 +263,94 @@ pub const RELATIONSHIPS: &[&str] = &[
     "spouse", "son", "daughter", "father", "mother", "brother", "sister", "other",
 ];
 
+/// The relationship a word stands for, or `None` when the word is not one at all.
+///
+/// `normalise_relationship` answers `other` for everything it does not know, which
+/// cannot tell a stranger's name from a relationship written beside it. Telling
+/// those apart is what this is for, so it is the one place the vocabulary lives.
+/// `self` is in it because registers write it, though it is not a relationship the
+/// schema stores — see `is_self_relationship`.
+pub fn recognised_relationship(raw: &str) -> Option<&'static str> {
+    Some(match raw.trim().to_lowercase().as_str() {
+        "spouse" | "wife" | "husband" | "partner" => "spouse",
+        "son" | "child (male)" => "son",
+        "daughter" | "child (female)" => "daughter",
+        "father" | "dad" | "papa" => "father",
+        "mother" | "mom" | "mum" | "mummy" => "mother",
+        "brother" | "bro" => "brother",
+        "sister" | "sis" => "sister",
+        "self" | "proposer" | "primary" | "insured" | "policyholder" => "self",
+        _ => return None,
+    })
+}
+
 /// Whether a spreadsheet or an operator means the policyholder themselves rather
 /// than a second person. There is no `self` relationship: a client does not
 /// relate to themselves, so a life named this way resolves to the client's own
 /// row.
 pub fn is_self_relationship(raw: Option<&str>) -> bool {
-    matches!(
-        raw.map(|r| r.trim().to_lowercase()).as_deref(),
-        Some("self" | "proposer" | "primary" | "insured" | "policyholder")
-    )
+    raw.and_then(recognised_relationship) == Some("self")
 }
 
 pub fn normalise_relationship(raw: &str) -> String {
-    let text = raw.trim().to_lowercase();
-    match text.as_str() {
-        "spouse" | "wife" | "husband" | "partner" => "spouse".into(),
-        "son" | "child (male)" => "son".into(),
-        "daughter" | "child (female)" => "daughter".into(),
-        "father" | "dad" | "papa" => "father".into(),
-        "mother" | "mom" | "mum" | "mummy" => "mother".into(),
-        "brother" | "bro" => "brother".into(),
-        "sister" | "sis" => "sister".into(),
-        _ => "other".into(),
+    match recognised_relationship(raw) {
+        Some("self") | None => "other".into(),
+        Some(word) => word.into(),
     }
+}
+
+/// Splits a cover list entry into the person and the relationship written beside
+/// them. A register writes `Sneha Sharma (Wife)`, `Wife - Sneha Sharma` or
+/// `Sneha Sharma - Wife`, and all three used to be read as the whole name: the
+/// book gained a client called "Sneha Sharma (wife)", and the one fact the file
+/// was offering about her was thrown away.
+///
+/// Only a word the app recognises is taken as a relationship, so a bracket or a
+/// hyphen inside somebody's own name stays part of it. An entry that is nothing
+/// but a relationship comes back with an empty name, because there is no person
+/// in it — the caller decides what to do about that.
+pub fn split_relationship(entry: &str) -> (&str, Option<&'static str>) {
+    let text = entry.trim();
+
+    if let Some(whole) = recognised_relationship(text) {
+        return ("", Some(whole));
+    }
+
+    // Trailing bracket: the common shape, and unambiguous.
+    if let Some(open) = text.rfind(['(', '[']) {
+        let closer = if text[open..].starts_with('(') {
+            ')'
+        } else {
+            ']'
+        };
+        if let Some(inner) = text[open + 1..].trim_end().strip_suffix(closer) {
+            if let Some(word) = recognised_relationship(inner) {
+                return (text[..open].trim(), Some(word));
+            }
+        }
+    }
+
+    // A separator, with the word on either side of it. The name is whatever is
+    // left, which is why an unrecognised word is left alone rather than guessed
+    // at: "Anne-Marie Fernandes" is a name, not a relationship and a name.
+    for separator in [':', '-', '\u{2013}', '\u{2014}'] {
+        if let Some((left, right)) = text.split_once(separator) {
+            if let Some(word) = recognised_relationship(left) {
+                if !right.trim().is_empty() {
+                    return (right.trim(), Some(word));
+                }
+            }
+        }
+        if let Some((left, right)) = text.rsplit_once(separator) {
+            if let Some(word) = recognised_relationship(right) {
+                if !left.trim().is_empty() {
+                    return (left.trim(), Some(word));
+                }
+            }
+        }
+    }
+
+    (text, None)
 }
 
 /// Keeps only digits (and a leading +) from a phone number.

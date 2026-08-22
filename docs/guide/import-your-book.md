@@ -166,6 +166,9 @@ the words is used. Anything it cannot place is left for you to map by hand.
 | An unknown insurer or plan is created | You do not have to set up [insurers](insurers-and-plans.md) before importing |
 | A start date you leave out is taken as one year less a day before expiry | Files that only carry renewal dates still import |
 | Covered members split on commas, semicolons, slashes and pipes | "Priya; Aarav" records two [relatives](families.md) of the client and covers them on the policy |
+| A relationship written beside a name is read | "Priya Sharma (Wife)", "Wife - Priya Sharma" and "Priya Sharma - wife" all record her as a spouse. So does writing nothing, if she is also the **Nominee** and you filled in **Nominee relation** |
+| "Self", "Proposer" and "Insured" mean the policyholder | The row covers the client themselves rather than opening a second client of the same name |
+| A covered name already in your book is linked, not copied | Your client count rises by the number of people genuinely new to it. Check a common name afterwards: one spelling can only mean one person |
 
 ## When a row fails
 

@@ -75,10 +75,28 @@ cannot quietly cover a stranger.
 
 An [imported file](import-your-book.md) with a covered-members column does this
 for you. Names split on commas, semicolons, slashes and pipes are matched against
-the client themselves, then the people already in their family, then clients of
-that name — and only failing all three is a new client opened for them. Importing
-the same sheet twice therefore finds the same people rather than making second
-copies of them.
+the client themselves, then the people already in their family, then a client of
+that name where exactly one person answers to it — and only failing all three is a
+new client opened for them. Importing the same sheet twice therefore finds the
+same people rather than making second copies of them.
+
+If your file writes the relationship beside the name — *Priya Sharma (Wife)*,
+*Wife - Priya Sharma*, *Priya Sharma - wife* — that word is recorded rather than
+becoming part of her name, and *Self* or *Proposer* is understood to mean the
+policyholder. Where the cover list gives a bare name that is also the policy's
+**Nominee**, the relationship is taken from **Nominee relation**. Anything the
+file does not say arrives as **other** for you to set here.
+
+Importing the file again puts back what the file states and leaves the rest alone,
+so correcting a column and re-importing is a way to fix a whole book's
+relationships at once. A word you set by hand survives, unless the file names that
+pair too.
+
+Worth a look afterwards, if your file covers common names: a spreadsheet gives a
+name and nothing else, so *Anil Kumar* on two unrelated floaters is read as one
+person and the two families become one. Open the client and unlink whichever
+relationship does not belong. Where two people already answer to the name, the
+import does not choose between them — it opens a new client instead.
 
 ## Family members in the clients list
 

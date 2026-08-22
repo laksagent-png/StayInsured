@@ -1020,12 +1020,43 @@ fn import_row(
     // holder. Re-importing the same sheet finds the same people rather than
     // opening second copies of them.
     if let Some(list) = reader.get("memberNames") {
-        let insured_client_ids = list
-            .split([',', ';', '/', '|'])
-            .map(str::trim)
-            .filter(|n| !n.is_empty())
-            .map(|n| relations::find_or_create_relative(conn, client_id, n, None))
-            .collect::<AppResult<Vec<i64>>>()?;
+        let nominee = reader.get("nomineeName");
+        let nominee_relation = reader.get("nomineeRelation");
+        let mut insured_client_ids = Vec::new();
+
+        for entry in list.split([',', ';', '/', '|']) {
+            let (name, beside) = util::split_relationship(entry);
+
+            // A cell that is only a relationship names nobody, and a client called
+            // "Wife" would be worse than the cover going unrecorded: the next
+            // import would match that name and cover somebody else's wife.
+            // "Self" and its synonyms are the exception — that is the holder.
+            if name.is_empty() {
+                if beside == Some("self") {
+                    insured_client_ids.push(client_id);
+                }
+                continue;
+            }
+
+            // Where the file wrote no word beside the name, the nominee columns
+            // often carry one for exactly one of these people.
+            let relationship = beside.map(str::to_owned).or_else(|| {
+                let nominee = nominee.as_deref()?;
+                nominee
+                    .trim()
+                    .eq_ignore_ascii_case(name)
+                    .then(|| nominee_relation.clone())
+                    .flatten()
+            });
+
+            insured_client_ids.push(relations::find_or_create_relative(
+                conn,
+                client_id,
+                name,
+                relationship.as_deref(),
+            )?);
+        }
+
         if !insured_client_ids.is_empty() {
             policies::set_members(conn, policy_id, &insured_client_ids)?;
         }

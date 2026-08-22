@@ -1,7 +1,7 @@
 # Sample book
 
 A dataset for exercising every screen by hand. Written by
-`scripts/sample-data.mjs` with expiry dates measured from **2026-08-15**, so the
+`scripts/sample-data.mjs` with expiry dates measured from **2026-08-22**, so the
 renewals tabs, the dashboard buckets and the reminder ladder all have policies
 sitting exactly on their boundaries. Regenerate whenever the dates go stale:
 
@@ -23,6 +23,7 @@ Every name, number, address and PAN here is invented.
 | `06-clean-book.tsv` | Eight rows of the clean book, tab separated |
 | `07-volume.csv` | 240 more clients, for pagination, sorting and a book that is not almost empty |
 | `08-workbook.xlsx` | A two-sheet Excel file with real dates and real numbers, so the sheet picker has something to pick |
+| `09-families.csv` | Three generations, a relative who belongs to two households, and two families joined by a name common enough to catch the importer out |
 
 Import them in number order, and run **Check without saving** before each one.
 Leave `04-corrections.csv` until last: it rewrites the policies it touches, and
@@ -30,9 +31,15 @@ seeing that is the point of it.
 
 ## 1. The clean book
 
-34 clients and 51 policies, with headers named exactly as the
-import screen names its fields, so every column maps on the first pass and
+34 policyholders and 51 policies, with headers named exactly as
+the import screen names its fields, so every column maps on the first pass and
 **Unmapped** stays empty.
+
+The **Covered members** column names 13 more people, and everybody on a
+floater is a client, so the book ends up holding 47. They are family
+members with no cover of their own, so the clients list shows 34 until you
+tick **Include family members** — and the dashboard tiles below count
+policyholders throughout. File 9 is the one that exercises this properly.
 
 After importing with **Update records that already exist** on, the dashboard
 should read:
@@ -163,6 +170,125 @@ screen must offer the sheet picker and you have to choose **Policies** yourself.
 Dates and amounts are stored as Excel dates and numbers rather than text, except
 the last row where everything is a string — both should import identically.
 
+## 9. Families
+
+5 policyholders and 7 policies whose cover lists build one deliberate
+family shape. Import it and the book gains 9 people joined by
+7 relationships, every one of them named by the file, of whom 4 have no cover
+of their own.
+
+The rows are ordered on purpose. **Rajesh Rangan** is a name on his father's
+policy in row 1, which makes him a client there and then; row 2 gives him a
+floater of his own and finds him rather than opening a second copy of him. That
+is the whole reason a family member is a client — nothing had to be migrated at
+the counter on the day he bought cover.
+
+What the shape is for:
+
+| Open | And see |
+| --- | --- |
+| Aarav Rangan | A family of 6 read from the bottom of it: his grandfather is two steps away, and the old member table could not answer that at all |
+| Rajesh Rangan | 3 relatives on his page — **Son of** Mohan, **Spouse** Priya, **Son** Aarav — three policies, and a family of 6 once the walk goes past them |
+| Priya Rangan | Two edges from one person, **Spouse of** Rajesh, **Daughter of** Lakshmi, from two different rows — which is why a family is edges and not a household id |
+| Lakshmi Menon | Her daughter, covered on her policy as well as on her husband's. A life may be named on any policy in the family |
+| Anil Kumar | Two families, wrongly. Read on |
+
+### The sharp edge, on purpose
+
+Rows 6 and 7 both cover somebody called **Anil Kumar**, in two families that have
+nothing to do with each other. One person of that name was already in the book by
+the time the second row arrived, so the importer linked to him instead of opening
+a second file on him, and the two households are now one family.
+
+That is the documented rule doing exactly what it says, and it is worth seeing
+once: a cover list is a column of names, and names are not identifiers. Open Anil
+Kumar, and **Unlink** the relationship that does not belong. Nothing else in the
+sample data gives you a reason to unlink anything.
+
+A name is resolved in four steps, and the order is what matters here: the holder
+themselves, then somebody already related to the holder, then one unambiguous
+client of that name, and only then a new person.
+
+The second step is why importing this file twice adds nobody — each Pai is already
+related to an Anil Kumar, so that match is found before the book at large is
+searched. It holds even if you add another client of the same name in between.
+
+The last step is what refuses to guess. Add **two** clients called *Anil Kumar* by
+hand to an empty book, then import this file: two people already answer to that
+name, so neither row chooses between them and each enters a new person instead.
+Four of them, and the report says two clients were created.
+
+### Where the relationships come from
+
+All 7 relationships are named by the file, because this one writes the word where
+an agency register writes it. Every shape it might use is in here, and each is read
+the same way:
+
+| The file says | The book records |
+| --- | --- |
+| `Rajesh Rangan (Son)` | Mohan's son |
+| `Daughter - Priya Rangan` | Lakshmi's daughter |
+| `Vasanthi Rangan`, with **Nominee relation** *Spouse* | Mohan's spouse, taken from the nominee columns because the cover list said nothing |
+| `Self` | The holder, not a second client of his own name |
+
+Only a word the app knows is taken as a relationship, so a name with a bracket or a
+hyphen in it survives intact. Anything unrecognised stays part of the name, and a
+pair the file says nothing about reads **other** until somebody sets it.
+
+### What a cover list cannot say
+
+A cover list ties each life to the policyholder and to nobody else. Priya and Aarav
+are both on Rajesh's floater, so she is his spouse and the boy is his son — and the
+tie between the two of them is not on his page, on hers, or anywhere in the file.
+Nothing guesses it. Adding it is the demonstration:
+
+1. Open Priya Rangan, **Link a relative**, and record Aarav as **Son**. His page now
+   reads *Son of* for the same relationship — one edge, read from either end, with a
+   preposition rather than a guess at gender.
+2. From Aarav's page, set that same relationship to **Mother**. There is still one
+   relationship, now recorded the other way round; it is corrected, not contradicted.
+3. From Aarav's page, try to record Mohan — his grandfather — as *his* son. It is
+   refused: nobody can be their own ancestor. Only parent and child edges can
+   contradict themselves this way, which is why step 4 stands.
+4. Priya now holds three relationships from three sources: a husband her floater
+   gave her, a mother her own policy did, and a son you added. She belongs to two
+   households at once, which is the case a household id cannot hold.
+
+Import the file again afterwards. It restates the 7 relationships it named and
+leaves the one you added alone — a file silent about a pair does not flatten it, and
+a file that names one corrects it.
+
+### Archive and delete stop one step out
+
+Rajesh's page offers **Archive family** and, on delete, a choice. His immediate
+family is Mohan, Priya, Aarav, so:
+
+- **Archive family** moves 4 people. Vasanthi and Lakshmi stay where they are, though the
+  walk reaches both of them.
+- **Delete this client and 3 relatives** takes the same 4. An in-law's own parents are
+  their own household, and a delete confirmed against a list of three should not
+  quietly take five.
+- **Delete this client only, and keep the family** leaves all 8 of the others
+  standing. It takes his relationships, not the people in them.
+
+### Browsing, searching and counting
+
+| Check | Expect |
+| --- | --- |
+| Clients list, as it opens | The 5 policyholders |
+| Tick **Include family members** | All 9, the family ones badged as such |
+| Search *Vasanthi* with the box unticked | She is found. A book that held her and would not admit it would be worse than one that never held her |
+| Dashboard, total clients | 5. Counting people would report 9, and every child as a client with no email address |
+| Add a policy for Aarav by hand | He is in the list with the box clear, and no longer badged. Buying cover is all it took |
+
+### Cover lists on the policy form
+
+Open any of these policies and the lives are the holder and the people related to
+them, and nobody else. Rajesh's motor policy covers only him, though his family
+panel is full — a cover list is per policy. Try the form on Ganesh Pai before you
+unlink, and Sunil Pai is offered, which is the same wrong join seen from the other
+side.
+
 ## Reminders
 
 The clean book puts exactly one policy on each active rule day, so the ladder
@@ -212,7 +338,8 @@ is loaded.
 | Renew something in the overdue tab | The tab emptying by one, and the reminder queued against it being cancelled |
 | Try to delete Star Health in **Insurers & plans** | The refusal — an insurer holding policies can only be deactivated |
 | Deactivate Acko, then tick **Show inactive** | Both halves of the insurer list |
-| Add a member to a client, then attach them to one of their policies | The member picker on the policy form |
+| Link a relative to a client, then tick them on one of their policies | The cover list on the policy form, which offers the holder and their family and nobody else |
+| Set the relationships on the family in file 9, then archive and delete it | The words read from either end, the ancestry refusal, and both delete scopes |
 | Settings → fill in the SMTP block, save a password, then **Send test** | The mail path, without touching a client |
 | Settings → turn **Dry run** off, then run the reminders | Sending for real, against the rehearsal |
 | Reminders → turn a rule off and plan again | The ladder shortening by one |

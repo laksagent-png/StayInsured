@@ -228,7 +228,20 @@ export function findOrCreateRelative(
         "LIMIT 1",
     )
     .get(clientId, tidy, clientId, tidy) as { id: number } | undefined;
-  if (related) return related.id;
+  if (related) {
+    // The pair stands either way. Where the file states the relationship,
+    // recording it is what lets a re-import correct a book whose families came in
+    // as `other` before anyone was reading the word beside the name. Silence
+    // leaves the existing word alone rather than flattening it.
+    if (relationship !== null && !isSelfRelationship(relationship)) {
+      link(conn, {
+        clientId,
+        relatedClientId: related.id,
+        relationship: normaliseRelationship(relationship),
+      });
+    }
+    return related.id;
+  }
 
   // In the book but not yet tied to this family, and unambiguously so. The same
   // rule migration 005 used: one match is a person, two are two people.
