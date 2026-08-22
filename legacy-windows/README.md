@@ -113,7 +113,7 @@ the notice that this edition has fallen behind.
 ## Building the installer
 
 ```bash
-npm run package:win    # dist/StayInsured-Win7-Probe-0.0.5.exe
+npm run package:win    # dist/StayInsured-Win7-Probe-0.0.6.exe
 ```
 
 One installer covers every Windows 7 machine. It carries both 64-bit and 32-bit
@@ -137,7 +137,7 @@ Windows is the whole point of this one.
 ## Building for a Mac
 
 ```bash
-npm run package:mac    # dist/StayInsured-Win7-Probe-0.0.5-arm64.dmg, and -x64
+npm run package:mac    # dist/StayInsured-Win7-Probe-0.0.6-arm64.dmg, and -x64
 ```
 
 A Mac build answers none of the Windows 7 questions. Chromium 108 on macOS says
