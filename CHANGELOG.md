@@ -5,6 +5,8 @@ settings survive every version below.
 
 ## Upcoming
 
+## 0.4.0 — 22 August 2026
+
 ### Changed
 
 - **The people on a family floater are clients now, not entries inside one.** A
