@@ -113,7 +113,7 @@ the notice that this edition has fallen behind.
 ## Building the installer
 
 ```bash
-npm run package:win    # dist/StayInsured-Win7-Probe-0.0.6.exe
+npm run package:win    # dist/StayInsured-Win7-Probe-0.0.7.exe
 ```
 
 One installer covers every Windows 7 machine. It carries both 64-bit and 32-bit
@@ -134,10 +134,37 @@ Note that this installer carries no Windows version guard, unlike the app's own
 installer. Refusing old Windows is the whole point of that one, and running on old
 Windows is the whole point of this one.
 
+## Updating an installed copy
+
+On Windows, an installed copy looks for a newer release once per launch and offers
+it, the same way the app's own edition does — the dialog is shared code, so the
+wording and the once-per-launch rule are the app's rather than a second version of
+them. `src/core/updates.ts` is what differs, and `src/tests/updates.test.ts` is what
+holds it in place.
+
+It picks the release itself, by the `legacy-v` tag prefix, because this edition
+publishes prereleases that `electron-updater`'s GitHub provider would look straight
+past on its way to the app's release — whose installer refuses Windows 7 by design.
+
+It also refuses to install anything whose `latest.json` is not signed by the release
+key, and refuses an installer whose digest is not the one that was signed. Nothing
+signs these builds for Windows to check, so that signature is the only evidence a
+machine has about where an installer came from. `DEVELOPER.md` covers the key and the
+repository secret that CI signs with; `scripts/update-keygen.js` makes the pair.
+
+Two consequences worth knowing. Releases built before this existed carry no manifest,
+so a copy of 0.0.6 or earlier finds the newer release and declines it, saying so in
+the log — those machines need one update by hand. And because Windows cannot replace
+the files of a running program, choosing to install ends with the installer's window
+open and this app closed, rather than an in-place update and a restart prompt.
+
+The Mac builds are never offered an update: they are unsigned developer builds, and
+a copy replaced behind Gatekeeper's back would not open.
+
 ## Building for a Mac
 
 ```bash
-npm run package:mac    # dist/StayInsured-Win7-Probe-0.0.6-arm64.dmg, and -x64
+npm run package:mac    # dist/StayInsured-Win7-Probe-0.0.7-arm64.dmg, and -x64
 ```
 
 A Mac build answers none of the Windows 7 questions. Chromium 108 on macOS says

@@ -31,7 +31,12 @@ jobs:
           - platform: windows-latest
             label: Windows
             script: package:win
-            files: legacy-windows/dist/*.exe
+            # `latest.json` travels with the installer it describes, because an
+            # installed copy will not take an update it cannot check the signature
+            # of. It is written by the signing step below, on tags only.
+            files: |
+              legacy-windows/dist/*.exe
+              legacy-windows/dist/latest.json
           # Answers nothing about Windows 7. It runs the packaged app on a
           # machine anyone here can reach, which is how a packaging mistake gets
           # caught before someone carries an installer to a virtual machine.
@@ -94,6 +99,23 @@ jobs:
       - name: Build
         run: npm run ${{ matrix.script }}
 
+      # What lets an installed copy accept this build. The signature is over the
+      # version and the installer's digest together, so a manifest cannot be
+      # replayed from an older release to vouch for a newer number. Only on a tag,
+      # since a manual run publishes nothing for anyone to update to.
+      #
+      # Windows only, and not because a Mac could not sign it: nothing signs the
+      # Mac builds for Gatekeeper, they exist to catch packaging mistakes, and a Mac
+      # copy replaced behind Gatekeeper's back would not open.
+      - name: Sign the update manifest
+        if: matrix.label == 'Windows' && github.ref_type == 'tag'
+        env:
+          LEGACY_UPDATE_SIGNING_KEY: ${{ secrets.LEGACY_UPDATE_SIGNING_KEY }}
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          node scripts/update-manifest.js "dist/StayInsured-Win7-Probe-$version.exe"
+
       - name: Keep the build
         uses: actions/upload-artifact@v4
         with:
@@ -146,6 +168,13 @@ jobs:
 
             It sits in the notification area, locks from there, and hands a second
             launch to the copy already running.
+
+            **From this version on, it keeps itself up to date.** On Windows it
+            looks for a newer release when it starts and offers it, the way the
+            app's own edition does, and installs nothing this project did not
+            sign. Copies of 0.0.6 and earlier cannot check that signature, so
+            they will find this release and decline it — install this one by
+            hand, and it updates itself from here.
 
             Run the `.exe` on Windows 7 SP1 or newer. It installs both the 64-bit
             and 32-bit builds and picks the one that fits. Launch it with

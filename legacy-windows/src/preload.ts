@@ -31,6 +31,10 @@ contextBridge.exposeInMainWorld("stayinsured", {
     disable: () => ipcRenderer.invoke("app:autostart", "disable"),
   },
   relaunch: () => ipcRenderer.invoke("app:relaunch"),
+  update: {
+    check: () => ipcRenderer.invoke("app:update-check"),
+    install: () => ipcRenderer.invoke("app:update-install"),
+  },
 });
 
 // The probe window still has its own channel, because the probe is still the

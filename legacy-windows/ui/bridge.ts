@@ -55,6 +55,11 @@ export interface Bridge {
     disable(): Promise<void>;
   };
   relaunch(): Promise<void>;
+  update: {
+    /** The version on offer, or null when this copy is the newest there is. */
+    check(): Promise<{ version: string } | null>;
+    install(): Promise<void>;
+  };
 }
 
 declare global {

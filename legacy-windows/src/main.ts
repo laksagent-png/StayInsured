@@ -24,6 +24,7 @@
  */
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -34,6 +35,7 @@ import * as mail from "./core/mail";
 import * as reminders from "./core/reminders";
 import * as settings from "./core/repo/settings";
 import { Session } from "./core/session";
+import * as updates from "./core/updates";
 import { electronEnv, trayIconPath } from "./env";
 import { runProbe, type ProbeReport } from "./probe";
 import {
@@ -388,6 +390,49 @@ function registerBridge(window: BrowserWindow, session: Session): void {
   ipcMain.handle("app:relaunch", () => {
     app.relaunch();
     app.quit();
+  });
+
+  // Not in the command table above, and deliberately: that table is held name for
+  // name against the Rust core's `generate_handler!`, and the app's edition has no
+  // commands for this because Tauri's updater plugin does it. These sit beside
+  // `app:version` for the same reason it does.
+  ipcMain.handle("app:update-check", async () => {
+    // Windows only. Nothing signs the Mac builds, they exist so a packaging
+    // mistake shows up without a virtual machine, and Gatekeeper would refuse a
+    // copy replaced behind its back.
+    if (process.platform !== "win32") return null;
+
+    try {
+      const found = await updates.check(app.getVersion());
+      return found === null ? null : { version: found.version };
+    } catch (error) {
+      // An update check is never the reason to interrupt somebody's morning. A
+      // missing network, a rate-limited API or a release whose manifest does not
+      // verify all mean the same thing to the person at the desk: nothing to
+      // install. The reason is written down for whoever reads the log.
+      console.warn("update check failed:", describeError(error));
+      return null;
+    }
+  });
+
+  // Split from the check so the interface can ask before spending 137 MB of
+  // somebody's connection, which is what the shared update dialog does.
+  ipcMain.handle("app:update-install", async () => {
+    const found = await updates.check(app.getVersion());
+    if (found === null) throw new Error("There is no update to install.");
+
+    const installer = await updates.download(found);
+
+    // The wizard is left visible rather than run silently. This edition is
+    // installed by hand today, so the window that appears is the one its owner
+    // already knows; a silent install that failed would leave a machine with a
+    // closed app and nothing said. `--force-run` is electron-builder's own
+    // argument for launching the app afterwards, and is ignored if unrecognised.
+    spawn(installer, ["--force-run"], { detached: true, stdio: "ignore" }).unref();
+
+    // Windows cannot replace the files of a running application, so this is the
+    // last thing the app does.
+    setTimeout(() => app.quit(), 1_000);
   });
 }
 

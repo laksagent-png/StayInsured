@@ -755,6 +755,17 @@ aliased onto shims over Electron IPC rather than copied — so a screen changed 
 changes there, and a screen that quietly hard-codes a claim about encryption breaks
 an edition its author was not thinking about.
 
+Updating is the third. Both editions now offer an update once per launch through the
+same shared `src/lib/updates.ts`, but that edition cannot use `electron-updater` to
+supply it: the provider resolves `releases/latest` or the newest entry in the
+repository's feed, both of which are *this* edition's release, whose installer refuses
+Windows 7 on purpose, while a `legacy-v*` tag is skipped as unreadable. So it picks
+its own release by tag prefix, and — since nothing signs those builds for Windows to
+check — verifies an ed25519 signature over the version and the installer's digest
+before it will run anything. This core's equivalent is the minisign key behind
+`plugins.updater.pubkey`; the reasoning is the same one, and neither edition installs
+a build the repository did not sign.
+
 The cost that decides that edition's future is drift: every rule here now exists
 twice. Its `src/tests/` ports the cases in `src-tauri/src/tests.rs` one for one and
 names each original, and its `parity.test.ts` reads the `generate_handler!` list out

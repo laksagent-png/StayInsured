@@ -357,6 +357,48 @@ The Windows 7 answer came from carrying that installer to a Windows 7 SP1 machin
 which is the only place it could come from, and where any further claim about
 Windows 7 has to be earned.
 
+### The Windows 7 edition's update channel
+
+It has one, and it is its own. The interface is shared, so `src/lib/updates.ts`
+makes the same offer on the same once-per-launch rule in both editions; underneath,
+`legacy-windows/src/core/updates.ts` does what Tauri's updater plugin does for the
+app, for two reasons it cannot use `electron-updater`.
+
+The first is release selection. `electron-updater`'s GitHub provider resolves
+`releases/latest`, which is the app's release, and its prerelease path takes the
+newest entry in the repository's whole feed — also the app's release — while a
+`legacy-v*` tag fails `semver.valid` and is skipped. Any of those paths offers a
+Windows 7 machine the installer that refuses Windows 7 on purpose. So the release is
+chosen here by tag prefix, and a test holds it to never choosing the app's.
+
+The second is authenticity. Nothing signs these builds for Windows to check, so a
+channel with no signature of its own would mean anything able to serve that release
+URL could hand an application to a machine whose operating system stopped receiving
+security fixes in 2020. Each release therefore carries a `latest.json` signed with
+an ed25519 key, whose public half is compiled into `core/updates.ts`:
+
+| Secret | Value |
+| --- | --- |
+| `LEGACY_UPDATE_SIGNING_KEY` | The whole contents of the private key file |
+
+`node scripts/update-keygen.js` makes the pair, writes the private half outside the
+repository and prints only the public half. The signature covers the version and the
+installer's digest together, so a manifest cannot be replayed from an old release to
+vouch for a new version number, and the app checks the downloaded installer against
+that digest before running it. Unlike the app's channel, a missing secret **fails the
+release** rather than publishing quietly: a build nobody can update to is worth
+stopping for.
+
+Losing the key has the same consequence it has for the app — every copy already
+installed trusts only the public key it shipped with, so replacing the key means
+updating those copies by hand once.
+
+Updates are offered on Windows only. The Mac disk images below are unsigned
+developer builds, and a copy replaced behind Gatekeeper's back would not open. What
+somebody sees also ends slightly differently from the app: Windows cannot replace the
+files of a running program, so the installer's own window opens and the app closes,
+rather than the app updating in place and offering to restart.
+
 The same release carries two Mac disk images, from `npm run package:mac`. They
 answer nothing about Windows 7; they exist so the *packaged* app can be run on a
 machine we already have. A packaged app reads the schema from its resources

@@ -5,6 +5,24 @@ settings survive every version below.
 
 ## Upcoming
 
+### Added
+
+- **The Windows 7 edition offers its own updates now.** It used to be the one
+  edition you had to keep up to date by hand: it would check for a new version on
+  launch, find nothing because it had nowhere to look, and say nothing. It now
+  looks in the right place and offers the new version the same way the main app
+  does, with the same wording and the same once-a-launch manners.
+
+  It will only install a release this project signed, and only after checking that
+  what it downloaded is the file that was signed — worth knowing because, unlike
+  the main app, nothing about these installers is vouched for by Windows itself.
+  Choosing to install opens the familiar installer window and closes the app, since
+  Windows cannot replace a program while it is running.
+
+  One machine at a time still needs a hand: a copy of 0.0.6 or older has no way to
+  check a signature, so it will find the new version and decline it. Update those
+  by hand once, and they keep themselves current afterwards.
+
 ## 0.4.0 — 22 August 2026
 
 ### Changed

@@ -39,13 +39,31 @@ export interface Update {
 }
 
 /**
- * No updater. The app's own edition ships signed release artifacts and a
- * `latest.json`; this one is installed by hand and has no update channel, so the
- * check reports nothing available and the interface shows no dialog — which is
- * exactly what it does on a machine that is already current.
+ * The same offer the app's own edition makes, over this edition's own channel.
+ *
+ * `src/lib/updates.ts` is shared, so the wording, the once-per-launch rule and the
+ * refusal to interrupt a hidden window are the app's and not a second version of
+ * them. What differs is underneath: `core/updates.ts` picks the release by tag
+ * prefix, because this edition publishes prereleases under `legacy-v*` that
+ * `electron-updater` would look straight past, and checks a signature because
+ * nothing signs these builds for Windows to check.
+ *
+ * Null still means what it meant when there was no channel at all: nothing to
+ * install, and no dialog. That is also the answer on a Mac, where these builds
+ * exist only to catch packaging mistakes.
  */
 export async function check(): Promise<Update | null> {
-  return null;
+  const found = await bridge().update.check();
+  if (found === null) return null;
+
+  return {
+    version: found.version,
+    // Ends with the installer's own window open and this app closing, because
+    // Windows will not replace the files of a running program. The shared flow's
+    // restart prompt is therefore never reached, which is the one place the two
+    // editions differ in what somebody sees.
+    downloadAndInstall: () => bridge().update.install(),
+  };
 }
 
 // ---------------------------------------------------- @tauri-apps/plugin-autostart
