@@ -404,9 +404,19 @@ answer nothing about Windows 7; they exist so the *packaged* app can be run on a
 machine we already have. A packaged app reads the schema from its resources
 directory and loads the native module from inside the bundle, and `npm start`
 exercises neither. Both are paths the Windows installer depends on, so a mistake
-in either shows up on a Mac in seconds rather than on a virtual machine. Nothing
-signs them, so macOS quarantines a downloaded copy; `legacy-windows/README.md`
-has the one command that clears it.
+in either shows up on a Mac in seconds rather than on a virtual machine. No
+certificate signs them, so macOS quarantines a downloaded copy;
+`legacy-windows/README.md` has the one command that clears it.
+
+They are ad-hoc signed at package time all the same, by `scripts/adhoc-sign.js`,
+and not for trust — an ad-hoc signature is something anyone can make. It is because
+electron-builder signs nothing when it finds no identity, and a bundle carrying only
+the linker's signature with unsealed resources is not read by macOS as unsigned. It
+is read as broken: *"is damaged and can't be opened. You should move it to the Bin"*,
+with neither Open Anyway nor right-click **Open** able to get past it. Sealing the
+bundle costs nothing and returns the failure to the ordinary unnotarised one, which
+has a way through it. `syspolicy_check distribution <app>` distinguishes them — a
+`Codesign Error` is the fault, a lone `Notary Ticket Missing` is the expected state.
 
 Nothing there ships with the app. `npm run check` at the root does not see it, and
 no behaviour of the app depends on it — with one exception, which is the

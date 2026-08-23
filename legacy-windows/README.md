@@ -113,7 +113,7 @@ the notice that this edition has fallen behind.
 ## Building the installer
 
 ```bash
-npm run package:win    # dist/StayInsured-Win7-Probe-0.0.7.exe
+npm run package:win    # dist/StayInsured-Win7-Probe-0.0.8.exe
 ```
 
 One installer covers every Windows 7 machine. It carries both 64-bit and 32-bit
@@ -164,7 +164,7 @@ a copy replaced behind Gatekeeper's back would not open.
 ## Building for a Mac
 
 ```bash
-npm run package:mac    # dist/StayInsured-Win7-Probe-0.0.7-arm64.dmg, and -x64
+npm run package:mac    # dist/StayInsured-Win7-Probe-0.0.8-arm64.dmg, and -x64
 ```
 
 A Mac build answers none of the Windows 7 questions. Chromium 108 on macOS says
@@ -181,15 +181,33 @@ Two builds rather than one universal binary, because a universal app means
 merging better-sqlite3's two native binaries and the only people opening these
 files already know which Mac they own.
 
-Nothing signs these, so a downloaded copy is quarantined and macOS refuses it on
-the grounds that the developer cannot be verified. Right-click the app and choose
-**Open**, or strip the flag:
+No certificate signs these, so a downloaded copy is quarantined and macOS refuses
+it on the grounds that it cannot be checked for malicious software. Approve it once
+in **System Settings → Privacy & Security**, where an **Open Anyway** button appears
+after the first refusal, or strip the flag and skip the conversation:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/StayInsured Windows 7 probe.app"
 ```
 
-A build made on your own machine is not quarantined and needs neither. To check
+A build made on your own machine is not quarantined and needs neither.
+
+Up to 0.0.7 the refusal was worse than that, and worth knowing about if you are
+holding one of those disk images. electron-builder signs nothing when it finds no
+identity, which left the bundle carrying only the linker's signature on the
+executable with its resources unsealed — and macOS reads *quarantined plus a bundle
+signature that does not validate* as a corrupted file: *"is damaged and can't be
+opened. You should move it to the Bin."* Nothing was damaged, and neither Open
+Anyway nor right-click **Open** would rescue it, so the only instruction on offer was
+the wrong one. `scripts/adhoc-sign.js` now ad-hoc signs the bundle at package time,
+which needs no certificate and no account, and turns that dead end back into the
+ordinary dialog described above. `syspolicy_check distribution <app>` is what tells
+the two apart: a `Codesign Error` is the old fault, a lone `Notary Ticket Missing`
+is the expected state of an unsigned build.
+
+That signature is not a claim about origin — anyone can make one, and it says only
+that the bundle has not been altered since. What vouches for a Windows build is the
+release key in `src/core/updates.ts`. To check
 it without a window:
 
 ```bash

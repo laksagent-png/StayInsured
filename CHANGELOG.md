@@ -23,6 +23,16 @@ settings survive every version below.
   check a signature, so it will find the new version and decline it. Update those
   by hand once, and they keep themselves current afterwards.
 
+### Fixed
+
+- **The Windows 7 edition's Mac disk images no longer look like broken
+  downloads.** These are the developer builds — they exist so the packaged app can
+  be opened on a Mac, and they are not how anyone runs StayInsured — but macOS was
+  calling a downloaded one *damaged* and offering to move it to the Bin, with no
+  way past it. The file was fine; it was missing part of its signature. Downloaded
+  copies now give the usual "cannot be checked for malicious software" message,
+  which has an **Open Anyway** button behind it in Privacy & Security.
+
 ## 0.4.0 — 22 August 2026
 
 ### Changed

@@ -64,7 +64,11 @@ mac:
       arch:
         - arm64
         - x64
-  # Nothing signs this. An unsigned probe needs one Gatekeeper argument on
-  # arrival, which the README spells out; a signing identity in CI for a
-  # throwaway build is the greater cost.
+  # No certificate signs this, and none is going to: a signing identity in CI for a
+  # build nobody installs is the greater cost. What it does get is an ad-hoc
+  # signature, from `afterPack` below — not for trust, which an ad-hoc signature
+  # cannot give, but so a quarantined copy produces a dialog with a way past it
+  # instead of being called damaged. The README still has the quicker argument.
   artifactName: StayInsured-Win7-Probe-${version}-${arch}.${ext}
+
+afterPack: scripts/adhoc-sign.js

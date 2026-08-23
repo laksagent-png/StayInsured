@@ -183,8 +183,9 @@ jobs:
 
             The `.dmg` files are not for using the app. They exist so the packaged
             build can be run on a Mac, which catches packaging mistakes without a
-            virtual machine. Nothing signs them, so macOS needs one argument
-            before it will open one:
+            virtual machine. No certificate signs them, so macOS refuses a
+            downloaded copy until you allow it in **Privacy & Security**, or clear
+            the quarantine flag yourself:
 
             ```
             xattr -dr com.apple.quarantine "/Applications/StayInsured Windows 7 probe.app"
