@@ -2,11 +2,13 @@ import { format, parseISO } from "date-fns";
 import type {
   Category,
   ClientKind,
+  CoverType,
   PlanType,
   PolicyStatus,
   PolicyType,
   Relationship,
   Rider,
+  VehicleType,
 } from "./types";
 
 const currency = new Intl.NumberFormat("en-IN", {
@@ -115,6 +117,23 @@ export const policyTypeLabels: Record<PolicyType, string> = {
   fresh: "Fresh",
   portability: "Portability",
   renewal: "Renewal",
+};
+
+/** What a motor policy is written on, in the words the agency's sheet uses. */
+export const vehicleTypeLabels: Record<VehicleType, string> = {
+  pvt_car: "Private car",
+  goods_carrying: "Goods carrying vehicle",
+  passenger: "Passenger vehicle",
+  two_wheeler: "Two wheeler",
+};
+
+/** The covers a motor policy was sold with, as the schedule names them. */
+export const coverTypeLabels: Record<CoverType, string> = {
+  bundle_1_3: "Bundle (1+3)",
+  bundle_3_3: "Bundle (3+3)",
+  standalone_od: "Standalone OD",
+  package: "Package",
+  liability: "Liability",
 };
 
 export const statusLabels: Record<PolicyStatus, string> = {

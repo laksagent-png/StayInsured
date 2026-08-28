@@ -111,7 +111,7 @@ export function RenewModal({
           vehicleNumber: expiring.vehicleNumber ?? "",
           // An update writes every column, so anything this object leaves out
           // is written NULL over what renewing had just carried forward. The
-          // proposal is named again to keep it.
+          // proposal and the vehicle are named again to keep them.
           variant: expiring.variant ?? "",
           riders: expiring.riders ?? [],
           planType: expiring.planType,
@@ -119,6 +119,29 @@ export function RenewModal({
           policyType: expiring.policyType,
           broker: expiring.broker ?? "",
           inbuiltRider: expiring.inbuiltRider ?? "",
+          vehicleType: expiring.vehicleType,
+          grossVehicleWeight: expiring.grossVehicleWeight,
+          passengerCapacity: expiring.passengerCapacity,
+          vehicleManufacturer: expiring.vehicleManufacturer ?? "",
+          vehicleModel: expiring.vehicleModel ?? "",
+          manufactureYear: expiring.manufactureYear,
+          engineNumber: expiring.engineNumber ?? "",
+          chassisNumber: expiring.chassisNumber ?? "",
+          coverType: expiring.coverType,
+          // The risk periods and the two split premiums are the one part of a
+          // motor policy renewing does not carry, because they describe the
+          // year being renewed rather than the vehicle. They are sent empty
+          // rather than copied, which is what renewing left them: the expiring
+          // year's cover would otherwise reappear on a year whose covers have
+          // not been bought yet, and a complete risk period is what the core
+          // reads a motor policy's start and expiry off, so copying one would
+          // move the dates the desk just agreed.
+          odStartDate: null,
+          odEndDate: null,
+          tpStartDate: null,
+          tpEndDate: null,
+          odPremium: null,
+          tpPremium: null,
           notes: payload.notes ?? "",
         };
         await api.updatePolicy(id, newYear);

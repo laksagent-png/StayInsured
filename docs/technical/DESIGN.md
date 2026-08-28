@@ -217,9 +217,26 @@ straight query instead of an audit-trail reconstruction, and gives the
 whose `previous_policy_id` points at it.
 
 `renew` carries forward everything the caller does not restate — frequency,
-payment mode, nominee, vehicle number, commission, the health details, and the
-lives covered — starts the new year the day after the old one expires, copies the
-`policy_members` rows, and marks the expiring year `renewed`.
+payment mode, nominee, vehicle number, commission, the health details, the
+vehicle a motor policy is written on, and the lives covered — starts the new year
+the day after the old one expires, copies the `policy_members` rows, and marks the
+expiring year `renewed`.
+
+The motor detail is the one thing carried in halves, and deliberately. The nine
+fields that describe the vehicle come forward, because it is the same lorry; the
+four risk dates and the two split premiums do not, because they say when last
+year's covers ran and what last year's covers cost. The renewal dialog does not
+ask for them either, so the new year starts with the vehicle and empty covers, and
+the agent restates the risk by editing it.
+
+**A figure taken off the new year costs a second write, and that write says
+everything.** `renew` reads an omitted amount as "carry last year's forward", so
+`RenewModal` follows the renewal with an `update_policy` when the agent has
+emptied a box. `update` writes every column, so the payload names the proposal
+detail and the vehicle again to keep what the renewal just carried across, and
+sends the motor risk dates and split premiums empty — copying them would put last
+year's cover on a year whose covers have not been bought, and the core reads a
+motor policy's dates off a complete risk period.
 
 The new year runs for `term` years less a day, falling back to one where no term
 was recorded, because a three-year policy renews for three years unless the agent
@@ -237,27 +254,52 @@ fresh one; leaving it unchanged returns a `conflict`.
 `policies` holds one set of columns for every category, but an agent does not
 fill in one form. A health proposal asks for the plan's variant, the riders
 bought on top, individual or floater, the term, and whether the year is a fresh
-sale, a port or a renewal; a motor policy asks for a registration number and none
-of that.
+sale, a port or a renewal; a motor proposal asks none of that and asks instead
+what the vehicle is, who built it and when, its registration, engine and chassis
+numbers, and which of the two covers were sold.
 
 So `PolicyForm.tsx` defines each control once and lets the chosen category
 sequence them. Health is taken in the order the insurer's own proposal form asks
 — category, client, policy number, insurer, plan, variant, riders, plan type,
 term, risk start, risk end, policy type, sum insured, premium, broker, inbuilt
 rider — with the book's own bookkeeping (GST, frequency, commission, nominee)
-below it. Every other category keeps the general layout.
+below it. Motor follows the agency's own sheet: vehicle type, then the weight or
+the seat count if the type is rated on one, manufacturer, make and model, year,
+registration, engine and chassis numbers, cover type, broker, then a row for each
+cover that was sold. Every other category keeps the general layout, which draws no
+vehicle number box: the registration number is a question the motor layout asks.
 
-Health is also the one category the screen will not take half-filled: all sixteen
-are required, because the insurer prices off the variant, the riders and the term,
-and a policy recorded without them cannot be quoted or renewed from the book.
-That rule lives in the screen and not in `repo/policies.rs` — see
-`docs/technical/DATA-MODEL.md`.
+Neither of those two will the screen take half-filled. All sixteen answers a
+health proposal asks are required, because the insurer prices off the variant, the
+riders and the term. A motor policy is required to describe its vehicle in full
+and to state the dates and the premium of every cover it sold, because a claim
+quoting a chassis number has to reach the policy it was written on and a bundle
+whose halves are not recorded looks like cover it is not. How many boxes that
+comes to depends on the answers: a goods carrying vehicle is asked its weight, a
+standalone own damage policy is not asked about third party. Both rules live in
+the screen and not in `repo/policies.rs` — see `docs/technical/DATA-MODEL.md`.
 
-Two consequences follow from the category owning the form. Choosing a term
-restates the risk end date, since a term is a statement of how long the cover
-runs; and a category that stops being health leaves the health answers behind in
-the payload rather than carrying them along unseen, exactly as a registration
-number is dropped when a policy stops being motor.
+Three consequences follow from the category owning the form.
+
+Choosing a term restates the risk end date, since a term is a statement of how
+long the cover runs. The motor layout goes further and shows no policy dates at
+all: the two risk periods decide them, so the form sends the earliest applicable
+start and the earliest applicable end and the payload says what the core will
+store. The same reasoning puts the two split premiums into the total, as a hint
+the way the commission amount already is.
+
+A question that only some answers raise is cleared rather than carried: the
+weight box appears for a goods carrying vehicle and the seats box for a passenger
+one, and choosing a different vehicle type drops the value that no longer applies
+from the form state. A cover row the cover type says was not sold is hidden and
+its values are left out of the payload — though with no cover type chosen yet both
+rows show, so the agent can see what the form is going to ask for.
+
+And a category that stops being health leaves the health answers behind in the
+payload rather than carrying them along unseen; leaving motor leaves the vehicle
+behind the same way. `broker` is the one question both proposals ask, so it
+survives the move between health and motor and is cleared by every other
+category.
 
 ### Status is derived from the calendar, not typed in
 
@@ -519,17 +561,20 @@ flowchart LR
   not fifty thousand lines. Every real run is recorded in `import_batches` with
   its mapping and its errors in `import_errors`.
 
-The health details are not read from a spreadsheet. An agency's own file predates
-the questions, so there is no column to map them from and no synonyms worth
-guessing at; an imported health policy carries them empty until somebody edits
-it. Nothing in the core requires them, which is what lets that import land at
-all.
+The health and motor details are not read from a spreadsheet. An agency's own file
+predates the questions, so there is no column to map them from and no synonyms
+worth guessing at; an imported policy carries them empty until somebody edits it.
+Nothing in the core requires them, which is what lets that import land at all. The
+registration number is the one exception: `vehicleNumber` is a mapped field,
+because the book has held a registration number since it began.
 
 Export mirrors it: one column table paired with value extractors drives both
 `.xlsx` and `.csv`, so the two formats cannot drift. Numbers are written as
 numbers so totals and sorting work in Excel, and an unsupported extension is
-refused with a clear message. The health columns are written for every category
-and filled in only by health, so the sheet stays one table.
+refused with a clear message. The health and motor columns are written for every
+category and filled in only by the one that asks them, so the sheet stays one
+table. The vehicle type and the cover type export the label the screen shows
+rather than the word the column stores.
 
 ## Reminders
 
@@ -757,6 +802,21 @@ database in a temporary directory, with no window:
   carries them, runs for the term that was bought, and becomes a renewal
 - the health details are held to the words the app knows, and a book that
   predates the questions is still allowed in without them
+- a motor policy keeps the vehicle its cover was written on, with the engine and
+  chassis numbers stored in capitals
+- the motor details are held to the words the app knows, and both left out is
+  still allowed
+- a standalone own damage policy holds no third party cover, and a liability
+  policy no own damage, whatever the caller sent for them
+- the weight and the seats belong to the vehicle that has them, and are dropped
+  by a vehicle that does not
+- half a risk period is not a risk period, and neither is one that ends before it
+  starts
+- a motor policy expires when its first cover does, and one with no risk dates
+  keeps the dates it was given
+- a policy can be found by its engine or its chassis number
+- a renewed motor policy keeps the vehicle and restates the risk: the covers come
+  back empty on the new year
 - statuses follow the calendar and the dashboard agrees with them
 - a duplicate policy number for one insurer is refused, while two insurers may
   each use the same number

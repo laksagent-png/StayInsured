@@ -19,11 +19,24 @@ Critical Illness · Other
 
 Every policy carries exactly one. Categories drive the dashboard's mix, the
 filters on the [clients](clients.md) and [policies](policies.md) screens, and
-which fields appear on the policy form — **Vehicle number** shows for motor, and
-[Health](policies.md#a-health-policy) rearranges the whole form into the order a
-health proposal is written and asks seven questions of its own. The list of lives
+which fields appear on the policy form. Two categories rearrange it altogether:
+[Health](policies.md#a-health-policy) follows the order a health proposal is
+written and asks seven questions the general form does not, and
+[Motor](policies.md#a-motor-policy) asks for the vehicle — its type, maker, model,
+year, registration, engine and chassis numbers — and for the dates and premium of
+each cover sold. Every other category uses the general form. The list of lives
 covered appears whenever the client has a [family](families.md) on file, whatever
 the category.
+
+A motor policy chooses from two lists of its own:
+
+**Vehicle type** — Private car · Goods carrying vehicle · Passenger vehicle ·
+Two wheeler. A goods carrying vehicle is also asked its gross weight in kilograms
+and a passenger vehicle how many it seats, because that is what each is rated on.
+
+**Policy type**, meaning the covers sold — Bundle (1+3) · Bundle (3+3) ·
+Standalone OD · Package · Liability. It decides which cover rows the form asks
+for: Liability sells no own damage and Standalone OD no third party.
 
 An [import](import-your-book.md) works the category out from your wording:
 "mediclaim" and "family floater" become Health, "term plan" Life, "two wheeler"

@@ -35,9 +35,16 @@ function expiringOn(iso: string, id = 900): Policy {
   };
 }
 
-/** The policy in the book, with the whole health proposal filled in. */
+/**
+ * The policy in the book, with the whole proposal filled in: the health block,
+ * the vehicle, and the risk periods and split premiums that belong to this year
+ * alone.
+ *
+ * Both blocks at once on purpose. A renewal carries whatever the expiring year
+ * held, whichever category it was written in, so one renewal can watch both.
+ */
 function fullyRecorded(): Policy {
-  const proposal: Partial<Policy> = {
+  const detail: Partial<Policy> = {
     variant: "Gold",
     riders: ["safeguard", "future_ready"],
     planType: "individual",
@@ -45,8 +52,25 @@ function fullyRecorded(): Policy {
     policyType: "renewal",
     broker: "Deshmukh Insurance Services",
     inbuiltRider: "Road ambulance cover",
+    vehicleType: "goods_carrying",
+    grossVehicleWeight: 7500,
+    // A lorry has no seats to record, so this is null on the row itself and
+    // has to stay null rather than becoming undefined.
+    passengerCapacity: null,
+    vehicleManufacturer: "Tata Motors",
+    vehicleModel: "Ace Gold",
+    manufactureYear: 2021,
+    engineNumber: "K12MN1234567",
+    chassisNumber: "MA3EJKD1S00123456",
+    coverType: "bundle_1_3",
+    odStartDate: "2025-09-01",
+    odEndDate: "2026-08-31",
+    tpStartDate: "2025-09-01",
+    tpEndDate: "2028-08-31",
+    odPremium: 8000,
+    tpPremium: 4800,
   };
-  return Object.assign(policyFrom(1), proposal);
+  return Object.assign(policyFrom(2), detail);
 }
 
 /** How the desk drives the dialog: one row at a time, out of one piece of state. */
@@ -255,7 +279,7 @@ describe("the renew dialog", () => {
     expect(backend().book.policies.at(-1)?.gstAmount).toBeNull();
   });
 
-  it("keeps the health detail when a figure is cleared on renewal", async () => {
+  it("keeps the vehicle and the health detail when a figure is cleared on renewal", async () => {
     const expiring = fullyRecorded();
     const { user } = renderWithProviders(<RenewModal policy={expiring} onClose={vi.fn()} />);
     await screen.findByRole("dialog");
@@ -277,13 +301,36 @@ describe("the renew dialog", () => {
       policyType: "renewal",
       broker: "Deshmukh Insurance Services",
       inbuiltRider: "Road ambulance cover",
+      vehicleType: "goods_carrying",
+      grossVehicleWeight: 7500,
+      passengerCapacity: null,
+      vehicleManufacturer: "Tata Motors",
+      vehicleModel: "Ace Gold",
+      manufactureYear: 2021,
+      engineNumber: "K12MN1234567",
+      chassisNumber: "MA3EJKD1S00123456",
+      coverType: "bundle_1_3",
+      // The risk the expiring year ran, and what it cost, are not the new
+      // year's: they are left empty for the agent to fill in.
+      odStartDate: null,
+      odEndDate: null,
+      tpStartDate: null,
+      tpEndDate: null,
+      odPremium: null,
+      tpPremium: null,
     });
 
     const newYear = backend().book.policies.at(-1)!;
     expect(newYear.policyYear).toBe(expiring.policyYear + 1);
+    expect(newYear.chassisNumber).toBe("MA3EJKD1S00123456");
     expect(newYear.broker).toBe("Deshmukh Insurance Services");
-    expect(newYear.variant).toBe("Gold");
     expect(newYear.gstAmount).toBeNull();
+    expect(newYear.odStartDate).toBeNull();
+    expect(newYear.tpEndDate).toBeNull();
+    // The dates the desk agreed stand: with no risk period on the new year
+    // there is nothing for the core to read them off.
+    expect(newYear.startDate).toBe("2026-09-01");
+    expect(newYear.expiryDate).toBe("2027-08-31");
   });
 
   it("records the renewal when Enter is pressed in a field", async () => {

@@ -285,6 +285,21 @@ export const PLAN_TYPES = ["individual", "family_floater"] as const;
 
 export const POLICY_TYPES = ["fresh", "portability", "renewal"] as const;
 
+/** What a motor policy is written on. `util::VEHICLE_TYPES`. */
+export const VEHICLE_TYPES = ["pvt_car", "goods_carrying", "passenger", "two_wheeler"] as const;
+
+/**
+ * Which covers a motor policy was sold with. Not `POLICY_TYPES`, which says how a
+ * year was written; a motor policy has both answers at once.
+ */
+export const COVER_TYPES = [
+  "bundle_1_3",
+  "bundle_3_3",
+  "standalone_od",
+  "package",
+  "liability",
+] as const;
+
 /** The most years of health cover sold in one go. */
 export const MAX_TERM = 5;
 
@@ -356,6 +371,55 @@ export function riderLabel(rider: string): string {
     default:
       return rider;
   }
+}
+
+/** `util::vehicle_type_label`. */
+export function vehicleTypeLabel(vehicleType: string): string {
+  switch (vehicleType) {
+    case "pvt_car":
+      return "Private car";
+    case "goods_carrying":
+      return "Goods carrying vehicle";
+    case "passenger":
+      return "Passenger vehicle";
+    case "two_wheeler":
+      return "Two wheeler";
+    default:
+      return vehicleType;
+  }
+}
+
+/** `util::cover_type_label`. */
+export function coverTypeLabel(coverType: string): string {
+  switch (coverType) {
+    case "bundle_1_3":
+      return "Bundle (1+3)";
+    case "bundle_3_3":
+      return "Bundle (3+3)";
+    case "standalone_od":
+      return "Standalone OD";
+    case "package":
+      return "Package";
+    case "liability":
+      return "Liability";
+    default:
+      return coverType;
+  }
+}
+
+/**
+ * Whether a cover type carries own damage, and whether it carries third party.
+ *
+ * The core clears what a cover type says is not there and the form hides it, so
+ * both sides ask the same question here rather than each spelling out the same
+ * list of words. A policy with no cover type chosen carries neither.
+ */
+export function coverHasOwnDamage(coverType: string | null | undefined): boolean {
+  return coverType != null && coverType !== "" && coverType !== "liability";
+}
+
+export function coverHasThirdParty(coverType: string | null | undefined): boolean {
+  return coverType != null && coverType !== "" && coverType !== "standalone_od";
 }
 
 export function categoryLabel(category: string): string {

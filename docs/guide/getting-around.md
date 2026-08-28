@@ -35,8 +35,9 @@ Your agency name sits at the top of the sidebar and **Lock app** at the foot.
 
 ## Search and the badges
 
-The search box at the top finds policies by **policy number**, **client name**
-or **vehicle number**. Press **⌘K** on a Mac or **Ctrl+K** on Windows to jump
+The search box at the top finds policies by **policy number**, **client name**,
+**client code**, **registration number**, **engine number** or **chassis
+number**. Press **⌘K** on a Mac or **Ctrl+K** on Windows to jump
 into it from anywhere. Press **Enter** and the policies list opens, filtered to
 what you typed — including when the policies list is already the screen you are
 on, so a second search from there narrows the list under you. **Escape** hands

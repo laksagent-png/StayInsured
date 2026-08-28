@@ -63,6 +63,48 @@ const POLICY_COLUMNS: &[PolicyColumn] = &[
     ("Inbuilt rider", |p| {
         p.inbuilt_rider.clone().unwrap_or_default()
     }),
+    // The motor detail, on the same terms as the health block above.
+    ("Vehicle type", |p| {
+        p.vehicle_type
+            .as_deref()
+            .map(util::vehicle_type_label)
+            .unwrap_or_default()
+            .to_string()
+    }),
+    ("GVW (kg)", |p| number(p.gross_vehicle_weight)),
+    ("Passengers", |p| {
+        p.passenger_capacity
+            .map(|seats| seats.to_string())
+            .unwrap_or_default()
+    }),
+    ("Manufacturer", |p| {
+        p.vehicle_manufacturer.clone().unwrap_or_default()
+    }),
+    ("Model", |p| p.vehicle_model.clone().unwrap_or_default()),
+    ("Year", |p| {
+        p.manufacture_year
+            .map(|year| year.to_string())
+            .unwrap_or_default()
+    }),
+    ("Engine number", |p| {
+        p.engine_number.clone().unwrap_or_default()
+    }),
+    ("Chassis number", |p| {
+        p.chassis_number.clone().unwrap_or_default()
+    }),
+    ("Cover type", |p| {
+        p.cover_type
+            .as_deref()
+            .map(util::cover_type_label)
+            .unwrap_or_default()
+            .to_string()
+    }),
+    ("OD start", |p| p.od_start_date.clone().unwrap_or_default()),
+    ("OD end", |p| p.od_end_date.clone().unwrap_or_default()),
+    ("TP start", |p| p.tp_start_date.clone().unwrap_or_default()),
+    ("TP end", |p| p.tp_end_date.clone().unwrap_or_default()),
+    ("OD premium", |p| number(p.od_premium)),
+    ("TP premium", |p| number(p.tp_premium)),
     ("Notes", |p| p.notes.clone().unwrap_or_default()),
 ];
 

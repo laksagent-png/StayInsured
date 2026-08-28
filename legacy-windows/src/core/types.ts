@@ -265,6 +265,15 @@ export interface ProductInput {
   isActive?: boolean | null;
 }
 
+/** What is insured on a motor policy. */
+export type VehicleType = "pvt_car" | "goods_carrying" | "passenger" | "two_wheeler";
+
+/**
+ * Which covers a motor policy was sold with. Not `PolicyType`, which says how a
+ * year was written; a motor policy has both answers at once.
+ */
+export type CoverType = "bundle_1_3" | "bundle_3_3" | "standalone_od" | "package" | "liability";
+
 export interface Policy {
   id: number;
   chainId: string;
@@ -306,6 +315,24 @@ export interface Policy {
   policyType: string | null;
   broker: string | null;
   inbuiltRider: string | null;
+  vehicleType: VehicleType | null;
+  /** Gross vehicle weight in kilograms. Goods carrying vehicles only. */
+  grossVehicleWeight: number | null;
+  /** Seats. Passenger vehicles only. */
+  passengerCapacity: number | null;
+  vehicleManufacturer: string | null;
+  /** Make and model as one, the way the registration certificate writes it. */
+  vehicleModel: string | null;
+  manufactureYear: number | null;
+  engineNumber: string | null;
+  chassisNumber: string | null;
+  coverType: CoverType | null;
+  odStartDate: string | null;
+  odEndDate: string | null;
+  tpStartDate: string | null;
+  tpEndDate: string | null;
+  odPremium: number | null;
+  tpPremium: number | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -340,6 +367,24 @@ export interface PolicyInput {
   policyType?: string | null;
   broker?: string | null;
   inbuiltRider?: string | null;
+  // The words rather than the unions, as `planType` and `policyType` already are:
+  // what arrives here is whatever a form or a spreadsheet sent, and holding it to
+  // the vocabulary is `validate`'s job rather than the compiler's.
+  vehicleType?: string | null;
+  grossVehicleWeight?: number | null;
+  passengerCapacity?: number | null;
+  vehicleManufacturer?: string | null;
+  vehicleModel?: string | null;
+  manufactureYear?: number | null;
+  engineNumber?: string | null;
+  chassisNumber?: string | null;
+  coverType?: string | null;
+  odStartDate?: string | null;
+  odEndDate?: string | null;
+  tpStartDate?: string | null;
+  tpEndDate?: string | null;
+  odPremium?: number | null;
+  tpPremium?: number | null;
   notes?: string | null;
   /** The clients this policy year covers, which may include the holder. */
   insuredClientIds?: number[] | null;

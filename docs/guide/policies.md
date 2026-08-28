@@ -9,6 +9,7 @@ recording, finding and correcting policies.
 - [Record a policy](#record-a-policy)
 - [Every field on the policy form](#every-field-on-the-policy-form)
 - [A health policy](#a-health-policy)
+- [A motor policy](#a-motor-policy)
 - [Find a policy](#find-a-policy)
 - [What the statuses mean](#what-the-statuses-mean)
 - [Edit a policy](#edit-a-policy)
@@ -23,10 +24,12 @@ client.
 ![New policy](screenshots/policy-new.png)
 
 The form opens on **Health**, and health asks the most: everything down to the
-inbuilt rider is required, as [that section](#a-health-policy) sets out. For
-every other category, client, policy number, insurer, category, start date and
-expiry date are required, and the rest earns its place — fill in premium and
-commission and the app can tell you what the book is worth.
+inbuilt rider is required, as [that section](#a-health-policy) sets out.
+**Motor** has a form of its own too, and asks for the vehicle and both covers —
+see [that section](#a-motor-policy). For every other category, client, policy
+number, insurer, category, start date and expiry date are required, and the rest
+earns its place — fill in premium and commission and the app can tell you what the
+book is worth.
 
 Press **Add policy** at the foot of the form, or press Enter from any box. The
 policy appears immediately in the list, on the client's page, and — once it
@@ -42,7 +45,8 @@ insurer, premium and expiry date, and each falls due in its own time.
 ## Every field on the policy form
 
 **Category** decides what the form asks and the order it asks in. Health follows
-the insurer's own proposal form and is covered [below](#a-health-policy); every
+the insurer's own proposal form and is covered [below](#a-health-policy), and
+motor follows the vehicle and its covers, [below that](#a-motor-policy). Every
 other category uses the fields here.
 
 ![The policy form for every other category](screenshots/policy-new-general.png)
@@ -65,7 +69,6 @@ other category uses the fields here.
 | **Payment mode** | | |
 | **Nominee** | | |
 | **Nominee relation** | | |
-| **Vehicle number** | | Appears for motor policies only |
 | **Members covered** | | The policyholder and their [family](families.md), as chips to tick. Nobody else can be named |
 | **Status** | | Only when editing an existing policy — see [statuses](#what-the-statuses-mean) |
 | **Notes** | | |
@@ -86,7 +89,9 @@ the dialog while keeping every box as you left it:
 ## A health policy
 
 Choose **Health** and the form rearranges itself into the order a health
-proposal is written in, with six questions the other categories never ask:
+proposal is written in, with seven questions the general form never asks. Six
+belong to health alone; the broker is asked of a
+[motor policy](#a-motor-policy) too:
 
 | Field | Notes |
 | --- | --- |
@@ -115,11 +120,65 @@ the new year for the same term.
 Below the inbuilt rider the form goes back to your own bookkeeping — GST,
 frequency, payment mode, commission, nominee — which works the same way whatever
 the category. Change the category away from health and the health answers are
-left behind rather than saved onto a motor policy.
+left behind rather than saved onto a motor policy. The broker is the one answer
+that survives the move to motor, since a motor policy is asked for it too.
 
 An empty money box and a nil one mean different things. Leave the premium blank
 and the policy is recorded as not knowing it; type `0` and it is recorded as
 costing nothing.
+
+## A motor policy
+
+Choose **Motor** and the form asks what the vehicle is and what was sold on it,
+in the order the proposal sheet reads.
+
+![A motor policy](screenshots/policy-new-motor.png)
+
+| Field | Notes |
+| --- | --- |
+| **Vehicle type** | Private car, goods carrying vehicle, passenger vehicle or two wheeler |
+| **Gross vehicle weight (kg)** | Goods carrying vehicles only, which are rated on it |
+| **Passengers** | Passenger vehicles only: the seats |
+| **Manufacturer** | Maruti Suzuki, Tata, whoever built it |
+| **Make / model** | As one, the way the registration certificate writes it |
+| **Year of manufacture** | |
+| **Registration number** | The number plate. Recorded in capitals |
+| **Engine number** | Also in capitals |
+| **Chassis number** | Also in capitals |
+| **Policy type** | Which covers the schedule sold: Bundle (1+3), Bundle (3+3), Standalone OD, Package or Liability |
+| **Broker** | Who the business was placed through |
+| **Own damage start**, **end** and **premium** | The dates own damage cover runs between, and what it cost |
+| **Third party start**, **end** and **premium** | The same for third party cover |
+
+Every question the form puts to you is required, and it asks for each missing
+answer in turn. A vehicle is only asked what applies to it: the weight box belongs
+to a goods carrying vehicle and the seats box to a passenger one, and changing the
+type forgets the answer that no longer applies rather than recording it.
+
+**The cover type decides which cover rows you are asked for.** A liability policy
+sells no own damage, so that row disappears; a standalone own damage policy sells
+no third party. Until you have chosen, both rows show, so you can see what the
+form is going to want.
+
+**There are no start and expiry dates to fill in.** A motor year runs for as long
+as its first cover does, so the policy's dates are the earliest cover to start and
+the earliest to end. A 1+3 bundle whose own damage has to be bought again after a
+year therefore reaches the [renewals desk](renewals.md) next year rather than in
+three, which is when the client actually needs to hear from you.
+
+**Premium** fills itself in from the two cover premiums added together, and a
+figure you type yourself stands. GST, frequency, commission and nominee sit below
+and work as they do everywhere.
+
+**Renewing carries the vehicle and not the risk.** Next year's record keeps the
+type, the make, the year, the three numbers and the cover type — it is the same
+vehicle — and comes back with the cover dates and the split premiums empty,
+because those described last year. Open the new year and restate them once the
+insurer has issued the schedule.
+
+Change the category away from motor and the vehicle is left behind rather than
+saved onto a health policy. The broker survives the move, as it does the other
+way round.
 
 ## Find a policy
 
@@ -127,7 +186,7 @@ costing nothing.
 
 | Control | What it does |
 | --- | --- |
-| Search box | Matches policy number, client name or vehicle number |
+| Search box | Matches policy number, client name, client code, registration number, engine number or chassis number |
 | **All categories** | One kind of cover |
 | **Any status** | Active, expired, lapsed, renewed or cancelled |
 | **All insurers** | One company |
@@ -140,8 +199,10 @@ The two switches answer the questions you ask most. **Latest year only** is how
 you count the book without counting the same cover four times. **Expired and
 never renewed** is who to call.
 
-The search box at the top of the app searches the same three things from
-wherever you are — press **⌘K** or **Ctrl+K**.
+The search box at the top of the app searches the same things from wherever you
+are — press **⌘K** or **Ctrl+K**. A claim that arrives quoting an engine or
+chassis number and no policy number is a search away from the policy it belongs
+to.
 
 Filters that exclude everything say **No policies match**; a book with nothing
 in it yet says **No policies yet**. A list the book could not read says so and
@@ -209,10 +270,12 @@ intact.
 **Export** saves whatever the filters currently show as Excel or CSV — the
 motor book, this quarter's expiries, everything with one insurer.
 
-The sheet carries every field on the policy, health answers included: variant,
-riders, plan type, term, policy type, broker and inbuilt rider each get a column.
-The columns are there whatever you filtered to, and sit empty on the policies
-that never had them.
+The sheet carries every field on the policy, the health and motor answers
+included: variant, riders, plan type, term, policy type, broker and inbuilt rider
+each get a column, and so do the vehicle type, gross weight, passengers,
+manufacturer, model, year, engine number, chassis number, cover type, the four
+cover dates and the two cover premiums. The columns are there whatever you
+filtered to, and sit empty on the policies that never had them.
 
 ---
 

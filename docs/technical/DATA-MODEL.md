@@ -4,14 +4,15 @@ The schema lives in `src-tauri/src/db/schema/`, applied by
 `src-tauri/src/db/migrations.rs`. Everything below is one encrypted SQLite
 database, `stayinsured.db`, opened through SQLCipher.
 
-Current schema version: **8** — `001_init.sql` (structure), `002_seed.sql`
+Current schema version: **9** — `001_init.sql` (structure), `002_seed.sql`
 (defaults), `003_documents.sql` (stored files), `004_search_index.sql` (the
 client search triggers, and a rebuild of the index behind them),
 `005_client_relations.sql` (family members as clients),
 `006_health_details.sql` (what a health proposal asks for),
 `007_client_groups.sql` (corporate clients, and the groups they sit in) and
-`008_group_head_details.sql` (a group's head as contact details on the group).
-`session_state.schemaVersion` reports it at runtime.
+`008_group_head_details.sql` (a group's head as contact details on the group) and
+`009_motor_details.sql` (the vehicle a motor policy is written on, and the two
+covers sold with it). `session_state.schemaVersion` reports it at runtime.
 
 ## Migration policy
 
@@ -162,23 +163,45 @@ One row per **policy year**, not per policy.
 | Money | `sum_insured`, `premium_amount`, `gst_amount`, `premium_frequency`, `payment_mode`, `next_due_date`, `commission_rate`, `commission_expected` |
 | Detail | `nominee_name`, `nominee_relation`, `vehicle_number`, `notes` |
 | Health | `variant`, `riders`, `plan_type`, `term`, `policy_type`, `broker`, `inbuilt_rider` |
+| Motor — vehicle | `vehicle_type`, `gross_vehicle_weight`, `passenger_capacity`, `vehicle_manufacturer`, `vehicle_model`, `manufacture_year`, `engine_number`, `chassis_number` |
+| Motor — covers | `cover_type`, `od_start_date`, `od_end_date`, `tp_start_date`, `tp_end_date`, `od_premium`, `tp_premium` |
 
 Constraints: `UNIQUE (insurer_id, policy_number)`; `client_id` cascades on
 delete; `insurer_id` is restricted; `product_id` and `previous_policy_id` are set
 to `NULL` when their target goes. Indexed on client, expiry, status, chain,
-category, insurer and previous policy.
+category, insurer, previous policy, engine number and chassis number.
 
-The health columns describe one policy year the way the insurer's proposal form
-asks for it, and they sit here rather than in a table beside `policies` for the
-reason `vehicle_number` does: a side table would be a second row under the same
-key, joined on every read, holding one row per health policy and none for
-anything else.
+The engine and chassis indexes are there because a motor claim arrives quoting
+one of those numbers and nothing else, so the search that finds the policy has to
+be as cheap as the one that finds it by policy number.
+
+The health and motor columns describe one policy year the way the insurer's
+proposal form asks for it, and they sit here rather than in a table beside
+`policies` for the reason `vehicle_number` does: a side table would be a second
+row under the same key, joined on every read, holding one row per health or motor
+policy and none for anything else. `vehicle_number` is the precedent as well as
+the argument — it has held a registration number on this table since the book
+began, and the rest of the vehicle joins it rather than moving away from it.
 
 Every one of them is nullable and stays nullable. An imported book knows none of
 them, and every other category leaves them empty. The add-policy screen requires
-them of a health policy; the core only checks that what it is given is a word it
-knows. `policies.rs` refusing a blank health field would lose the policy rather
-than the detail, and an import reaches that code without passing a screen.
+them of a health or a motor policy; the core only checks that what it is given is
+a word it knows. `policies.rs` refusing a blank health or motor field would lose
+the policy rather than the detail, and an import reaches that code without
+passing a screen.
+
+Two motor columns are held by the repository rather than by a `CHECK`:
+`gross_vehicle_weight` belongs to a `goods_carrying` vehicle and
+`passenger_capacity` to a `passenger` one, and a row-level `CHECK` cannot see the
+sibling column being written in the same statement in every SQLite the two
+editions ship. `repo/policies.rs` writes `NULL` for whichever the vehicle type
+does not ask for.
+
+The numbers carry bounds a `CHECK` can state on its own: a weight above zero, a
+seat count of at least one, and `manufacture_year` between 1900 and 2100. The year
+bound is a typo guard rather than a claim about vehicles — it catches a year typed
+with an extra digit, which would otherwise sort the policy to the far end of every
+list that shows it.
 
 `riders` is the one list: a comma-separated string in `util::RIDERS` order,
 written by `util::canonical_riders` and split again by `Policy::from_row`, so
@@ -191,6 +214,21 @@ life of their own.
 `portability` for as long as it exists; `renewed` is a status and means a later
 year of the chain is in the book. Renewing writes `renewal` onto the new year
 whenever the year behind it had a `policy_type` at all.
+
+`cover_type` is not `policy_type` either. `policy_type` says how a year was
+written — fresh, ported or renewed — and `cover_type` says which of the two motor
+covers were sold, which a motor policy answers at the same time as the other. It
+is what decides whether the four risk dates and the two split premiums apply:
+anything but `liability` carries own damage, anything but `standalone_od` carries
+third party, and a policy with no `cover_type` carries neither.
+
+`start_date` and `expiry_date` still say when the policy runs, and for a motor
+policy with a complete applicable risk period they are worked out rather than
+typed: the earliest cover to start and the earliest to end. A 1+3 bundle whose own
+damage has to be bought again after a year therefore reaches the renewals desk
+next spring rather than in three years' time. `od_premium` and `tp_premium` are
+what each half cost; `premium_amount` stays the figure the agency accounts on, and
+the screen adds the two into it.
 
 ### `policy_members`
 
@@ -227,6 +265,8 @@ megabytes of scan to read a column of titles.
 | Rider | `safeguard`, `safeguard_plus`, `pa_main_member`, `future_ready`, `fast_forwarded` | `util::RIDERS`, checked in `repo/policies.rs` |
 | Plan type | `individual`, `family_floater` | `CHECK` on `policies`, and `util::PLAN_TYPES` |
 | Policy type | `fresh`, `portability`, `renewal` | `CHECK` on `policies`, and `util::POLICY_TYPES` |
+| Vehicle type | `pvt_car`, `goods_carrying`, `passenger`, `two_wheeler` | `CHECK` on `policies`, and `util::VEHICLE_TYPES` |
+| Cover type | `bundle_1_3`, `bundle_3_3`, `standalone_od`, `package`, `liability` | `CHECK` on `policies`, and `util::COVER_TYPES` |
 | Term | 1 to 5 years | `CHECK` on `policies`, and `util::MAX_TERM` |
 | Relationship | `spouse`, `son`, `daughter`, `father`, `mother`, `brother`, `sister`, `other` | `CHECK` on `client_relations` |
 | Client kind | `individual`, `company` | `CHECK` on `clients` |
@@ -262,34 +302,52 @@ These hold across the whole database and the code depends on them.
    insert query, not just by the UI. The relationship is what makes a person
    attachable, so putting an unrelated client on a floater means recording how
    they are related first.
-6. **Deleting a client leaves their family in the book.** `client_relations`
+6. **A motor policy holds only the cover it sold and only the question its
+   vehicle answers.** `cover_type` decides applicability — own damage unless the
+   cover is `liability`, third party unless it is `standalone_od`, neither
+   without a cover type — and `repo/policies.rs` writes `NULL` for the dates and
+   the premium of a cover the policy does not carry, whatever the caller sent.
+   The same is true of the vehicle: `gross_vehicle_weight` survives only on a
+   `goods_carrying` vehicle and `passenger_capacity` only on a `passenger` one.
+   So a bundle edited down to a liability policy loses its own damage dates and
+   premium on that write, and no row can claim cover it does not have.
+7. **A motor policy runs for as long as its first cover does.** Where at least
+   one applicable risk period is complete, `start_date` is the earliest
+   applicable start and `expiry_date` the earliest applicable end, overwriting
+   whatever the caller supplied; with no complete applicable period the supplied
+   pair stands, and a non-motor policy is never rewritten this way. An
+   applicable period is complete or absent — half a pair is a `validation` error
+   — and ends after it starts, which is what keeps the derived pair valid: the
+   earliest end belongs to some period whose own start is at or after the
+   earliest start.
+8. **Deleting a client leaves their family in the book.** `client_relations`
    cascades, so the edges go and the people stay — they are clients in their own
    right, and one of them holding a policy is the ordinary case. Removing a
    family outright is a separate and explicitly chosen operation, and archiving
    is the reversible alternative the interface offers first.
-7. **Deleting a group releases its clients rather than removing them.**
+9. **Deleting a group releases its clients rather than removing them.**
    `clients.group_id` is `ON DELETE SET NULL`, so emptying the filing cabinet of
    one folder does not empty it of the papers. `groups::delete` answers with how
    many it let go so the interface can say so. Deleting a client is the same
    shape from the other side, and reaches no group at all: the head is text on
    `client_groups` rather than a link into the book.
-8. **A group archive moves its members and stops.** It needs no depth limit the
-   way the family archive does, because the group row says exactly who is in it —
-   which is the whole reason for keeping one. The head has nothing to move:
-   naming an introducer records a contact, not a client to be put away.
-9. **Group membership is not a relationship.** A group is a column on `clients`
-   and never an edge in `client_relations`, so it reaches none of the family
-   behaviour. A subsidiary holding no cover of its own is not a dependent and
-   stays in the browse list; a company is not an insurable life on the policy of
-   another company that merely shares its folder.
-10. **An insurer carrying policies cannot be deleted.** Deactivation is the way to
+10. **A group archive moves its members and stops.** It needs no depth limit the
+    way the family archive does, because the group row says exactly who is in it —
+    which is the whole reason for keeping one. The head has nothing to move:
+    naming an introducer records a contact, not a client to be put away.
+11. **Group membership is not a relationship.** A group is a column on `clients`
+    and never an edge in `client_relations`, so it reaches none of the family
+    behaviour. A subsidiary holding no cover of its own is not a dependent and
+    stays in the browse list; a company is not an insurable life on the policy of
+    another company that merely shares its folder.
+12. **An insurer carrying policies cannot be deleted.** Deactivation is the way to
     retire one.
-11. **Blank means `NULL`.** Optional text is trimmed and empty values stored as
+13. **Blank means `NULL`.** Optional text is trimmed and empty values stored as
     `NULL`, so unique indexes and the "missing email" filter behave predictably.
-12. **One rule sends to one policy year once.** `UNIQUE (rule_id, policy_id,
+14. **One rule sends to one policy year once.** `UNIQUE (rule_id, policy_id,
     policy_period)` on `notification_log`, written before the send is attempted,
     is what makes that true across restarts and repeated sweeps.
-13. **Everything the agent stores lives in this one file.** A backup is a single
+15. **Everything the agent stores lives in this one file.** A backup is a single
     `VACUUM INTO` of the database, so a scan kept beside it would be both the one
     unencrypted part of a client's record and the one part a backup leaves
     behind. This is why document bytes are a blob and not a path.
@@ -309,6 +367,12 @@ Reading everything through one view is what stops the dashboard and the renewals
 list from disagreeing about "expiring in 30 days". `POLICY_COLUMNS` in
 `models.rs` pins the column order `Policy::from_row` expects, so the two must be
 edited together.
+
+**The view names its columns one by one, so a column added to `policies` is
+invisible to it until it is rebuilt.** SQLite has no `ALTER VIEW`, so a migration
+that widens `policies` drops the view and creates it again — `009_motor_details.sql`
+is the current shape of it. A migration that adds a column and forgets the view
+leaves the new field reading as absent everywhere in the app.
 
 ### `clients_fts`
 

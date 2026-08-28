@@ -150,8 +150,8 @@ fn a_book_edited_before_the_fix_has_its_search_index_put_right() {
             // disagreeing with the client list the way an edit under that trigger
             // could leave it, the member tables 005 has since replaced —
             // including a daughter, so that re-applying has a family to move —
-            // the health questions 006 has since added, and the groups 007 and
-            // 008 have.
+            // the health questions 006 has since added, the groups 007 and 008
+            // have, and the motor detail of 009.
             //
             // Every step after 3 has to replay, so the fixture has to be a book
             // that has genuinely had none of them. A migration left in place
@@ -185,6 +185,23 @@ fn a_book_edited_before_the_fix_has_its_search_index_put_right() {
                  ALTER TABLE policies DROP COLUMN policy_type; \
                  ALTER TABLE policies DROP COLUMN broker; \
                  ALTER TABLE policies DROP COLUMN inbuilt_rider; \
+                 DROP INDEX idx_policies_engine; \
+                 DROP INDEX idx_policies_chassis; \
+                 ALTER TABLE policies DROP COLUMN vehicle_type; \
+                 ALTER TABLE policies DROP COLUMN gross_vehicle_weight; \
+                 ALTER TABLE policies DROP COLUMN passenger_capacity; \
+                 ALTER TABLE policies DROP COLUMN vehicle_manufacturer; \
+                 ALTER TABLE policies DROP COLUMN vehicle_model; \
+                 ALTER TABLE policies DROP COLUMN manufacture_year; \
+                 ALTER TABLE policies DROP COLUMN engine_number; \
+                 ALTER TABLE policies DROP COLUMN chassis_number; \
+                 ALTER TABLE policies DROP COLUMN cover_type; \
+                 ALTER TABLE policies DROP COLUMN od_start_date; \
+                 ALTER TABLE policies DROP COLUMN od_end_date; \
+                 ALTER TABLE policies DROP COLUMN tp_start_date; \
+                 ALTER TABLE policies DROP COLUMN tp_end_date; \
+                 ALTER TABLE policies DROP COLUMN od_premium; \
+                 ALTER TABLE policies DROP COLUMN tp_premium; \
                  {OLD_POLICY_OVERVIEW} \
                  DROP TABLE policy_members; \
                  DROP TABLE client_relations; \
@@ -1992,6 +2009,699 @@ fn the_health_details_are_held_to_the_words_the_app_knows() {
             let bare = policies::get(conn, plain)?;
             assert!(bare.riders.is_empty());
             assert_eq!(bare.plan_type, None);
+
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// A motor policy with the vehicle filled in and no covers chosen yet, so each
+/// test below can change the one answer it is about.
+fn sample_motor(client_id: i64, insurer_id: i64, number: &str) -> PolicyInput {
+    PolicyInput {
+        category: "motor".into(),
+        vehicle_type: Some("pvt_car".into()),
+        vehicle_manufacturer: Some("Maruti Suzuki".into()),
+        vehicle_model: Some("Swift VXi".into()),
+        manufacture_year: Some(2021),
+        vehicle_number: Some("MH 12 AB 3456".into()),
+        engine_number: Some("k12mn1234567".into()),
+        chassis_number: Some("  ma3ejkd1s00123456  ".into()),
+        ..sample_policy(client_id, insurer_id, number, "2027-03-31")
+    }
+}
+
+/// The words a refusal came back with, so a test can say which rule refused it
+/// rather than only that something did.
+fn refusal(result: crate::error::AppResult<impl std::fmt::Debug>) -> String {
+    match result {
+        Err(crate::error::AppError::Validation(message)) => message,
+        other => panic!("expected a validation error, got {other:?}"),
+    }
+}
+
+/// Which halves each cover type carries, which is the one definition the
+/// repository clears by and the form hides by.
+///
+/// The unanswered case is here rather than assumed. Both repositories happen to
+/// run `blank_to_none` over the cover type before asking, so an empty string
+/// never reaches these today — but the answer they give for one has to be the
+/// answer the Electron core gives, and nothing else in the suite would notice
+/// if it stopped being.
+#[test]
+fn no_cover_type_means_neither_half_however_it_is_written() {
+    for unanswered in [None, Some("")] {
+        assert!(
+            !util::cover_has_own_damage(unanswered),
+            "{unanswered:?} is not a cover type, so no own damage was sold"
+        );
+        assert!(
+            !util::cover_has_third_party(unanswered),
+            "{unanswered:?} is not a cover type, so no third party was sold"
+        );
+    }
+
+    // Every word the app knows, and what each of them carries.
+    let carried: [(&str, bool, bool); 5] = [
+        ("bundle_1_3", true, true),
+        ("bundle_3_3", true, true),
+        ("standalone_od", true, false),
+        ("package", true, true),
+        ("liability", false, true),
+    ];
+    assert_eq!(
+        carried.len(),
+        util::COVER_TYPES.len(),
+        "a new cover type needs its two answers written down here"
+    );
+    for (word, own_damage, third_party) in carried {
+        assert!(util::COVER_TYPES.contains(&word));
+        assert_eq!(
+            util::cover_has_own_damage(Some(word)),
+            own_damage,
+            "own damage on a {word} policy"
+        );
+        assert_eq!(
+            util::cover_has_third_party(Some(word)),
+            third_party,
+            "third party on a {word} policy"
+        );
+    }
+}
+
+/// What a motor proposal is written on, stored as the agent answered it and
+/// handed back the same way. The registration numbers are upper-cased, because
+/// a claim quotes them in whatever case the file was typed in.
+#[test]
+fn a_motor_policy_keeps_the_vehicle_its_cover_was_written_on() {
+    let temp = TempDb::new("motor-details");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Nikhil Joshi"))?;
+            let insurer = insurers::find_or_create(conn, "Bajaj Allianz")?;
+
+            let id = policies::create(
+                conn,
+                &PolicyInput {
+                    vehicle_type: Some("goods_carrying".into()),
+                    gross_vehicle_weight: Some(7_490.0),
+                    cover_type: Some("package".into()),
+                    od_start_date: Some("2026-04-01".into()),
+                    od_end_date: Some("2027-03-31".into()),
+                    tp_start_date: Some("2026-04-01".into()),
+                    tp_end_date: Some("2027-03-31".into()),
+                    od_premium: Some(18_400.0),
+                    tp_premium: Some(9_600.0),
+                    ..sample_motor(client, insurer, "MT/2026/001")
+                },
+            )?;
+
+            let policy = policies::get(conn, id)?;
+            assert_eq!(policy.vehicle_type.as_deref(), Some("goods_carrying"));
+            assert_eq!(policy.gross_vehicle_weight, Some(7_490.0));
+            assert_eq!(
+                policy.vehicle_manufacturer.as_deref(),
+                Some("Maruti Suzuki")
+            );
+            assert_eq!(policy.vehicle_model.as_deref(), Some("Swift VXi"));
+            assert_eq!(policy.manufacture_year, Some(2021));
+            assert_eq!(
+                policy.engine_number.as_deref(),
+                Some("K12MN1234567"),
+                "an engine number is stored the way the registration writes it"
+            );
+            assert_eq!(
+                policy.chassis_number.as_deref(),
+                Some("MA3EJKD1S00123456"),
+                "and trimmed before it is upper-cased"
+            );
+            assert_eq!(policy.cover_type.as_deref(), Some("package"));
+            assert_eq!(policy.od_start_date.as_deref(), Some("2026-04-01"));
+            assert_eq!(policy.od_end_date.as_deref(), Some("2027-03-31"));
+            assert_eq!(policy.tp_start_date.as_deref(), Some("2026-04-01"));
+            assert_eq!(policy.tp_end_date.as_deref(), Some("2027-03-31"));
+            assert_eq!(policy.od_premium, Some(18_400.0));
+            assert_eq!(policy.tp_premium, Some(9_600.0));
+            assert_eq!(
+                policy.passenger_capacity, None,
+                "a goods carrying vehicle is rated on its weight and not on its seats"
+            );
+
+            // A number typed as a space and left is nothing at all. Storing ""
+            // would make the box look answered and put an empty string in front
+            // of every search for a chassis number.
+            let spaces = policies::create(
+                conn,
+                &PolicyInput {
+                    engine_number: Some("   ".into()),
+                    chassis_number: Some(" \t ".into()),
+                    ..sample_motor(client, insurer, "MT/2026/002")
+                },
+            )?;
+            let blank = policies::get(conn, spaces)?;
+            assert_eq!(blank.engine_number, None);
+            assert_eq!(blank.chassis_number, None);
+
+            // A policy that names none of them is unchanged in every other way.
+            let bare = policies::create(
+                conn,
+                &sample_policy(client, insurer, "HS/2026/002", "2027-03-31"),
+            )?;
+            let plain = policies::get(conn, bare)?;
+            assert_eq!(plain.vehicle_type, None);
+            assert_eq!(plain.cover_type, None);
+            assert_eq!(plain.od_premium, None);
+            assert_eq!(plain.premium_amount, Some(24_500.0));
+
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// The vehicle type and the cover type are held to the app's vocabulary the
+/// same way the health words are: an unknown word is refused, and nothing at
+/// all is fine.
+#[test]
+fn the_motor_details_are_held_to_the_words_the_app_knows() {
+    let temp = TempDb::new("motor-words");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Nikhil Joshi"))?;
+            let insurer = insurers::find_or_create(conn, "Bajaj Allianz")?;
+
+            let mut vehicle = sample_motor(client, insurer, "MT/2026/010");
+            vehicle.vehicle_type = Some("tractor".into());
+            assert_eq!(
+                refusal(policies::create(conn, &vehicle)),
+                "\"tractor\" is not a known vehicle type"
+            );
+
+            let mut cover = sample_motor(client, insurer, "MT/2026/011");
+            cover.cover_type = Some("comprehensive".into());
+            assert_eq!(
+                refusal(policies::create(conn, &cover)),
+                "\"comprehensive\" is not a known cover type"
+            );
+
+            // Case is not normalised, so the stored word is the only word.
+            let mut shouted = sample_motor(client, insurer, "MT/2026/012");
+            shouted.vehicle_type = Some("PVT_CAR".into());
+            assert_eq!(
+                refusal(policies::create(conn, &shouted)),
+                "\"PVT_CAR\" is not a known vehicle type"
+            );
+
+            // Absent is allowed, and an empty box is absent rather than unknown.
+            let id = policies::create(
+                conn,
+                &PolicyInput {
+                    vehicle_type: Some("".into()),
+                    cover_type: None,
+                    ..sample_motor(client, insurer, "MT/2026/013")
+                },
+            )?;
+            let policy = policies::get(conn, id)?;
+            assert_eq!(policy.vehicle_type, None);
+            assert_eq!(policy.cover_type, None);
+
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// A standalone own damage policy carries no third party cover, so the third
+/// party answers are dropped however insistently they were sent.
+#[test]
+fn a_standalone_own_damage_policy_holds_no_third_party_cover() {
+    let temp = TempDb::new("motor-standalone-od");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Nikhil Joshi"))?;
+            let insurer = insurers::find_or_create(conn, "Bajaj Allianz")?;
+
+            let id = policies::create(
+                conn,
+                &PolicyInput {
+                    cover_type: Some("standalone_od".into()),
+                    od_start_date: Some("2026-04-01".into()),
+                    od_end_date: Some("2027-03-31".into()),
+                    od_premium: Some(12_000.0),
+                    tp_start_date: Some("2026-04-01".into()),
+                    tp_end_date: Some("2029-03-31".into()),
+                    tp_premium: Some(7_500.0),
+                    ..sample_motor(client, insurer, "MT/2026/020")
+                },
+            )?;
+
+            let policy = policies::get(conn, id)?;
+            assert_eq!(policy.tp_start_date, None);
+            assert_eq!(policy.tp_end_date, None);
+            assert_eq!(policy.tp_premium, None);
+            assert_eq!(policy.od_start_date.as_deref(), Some("2026-04-01"));
+            assert_eq!(policy.od_end_date.as_deref(), Some("2027-03-31"));
+            assert_eq!(policy.od_premium, Some(12_000.0));
+
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// The mirror case: a liability policy is third party cover and nothing else,
+/// and an edit down to one from a policy that had both loses the other half.
+#[test]
+fn a_liability_policy_holds_no_own_damage_cover() {
+    let temp = TempDb::new("motor-liability");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Nikhil Joshi"))?;
+            let insurer = insurers::find_or_create(conn, "Bajaj Allianz")?;
+
+            let both = PolicyInput {
+                cover_type: Some("package".into()),
+                od_start_date: Some("2026-04-01".into()),
+                od_end_date: Some("2027-03-31".into()),
+                od_premium: Some(12_000.0),
+                tp_start_date: Some("2026-04-01".into()),
+                tp_end_date: Some("2027-03-31".into()),
+                tp_premium: Some(7_500.0),
+                ..sample_motor(client, insurer, "MT/2026/030")
+            };
+            let id = policies::create(conn, &both)?;
+            assert_eq!(
+                policies::get(conn, id)?.od_premium,
+                Some(12_000.0),
+                "a package policy has both halves to begin with"
+            );
+
+            policies::update(
+                conn,
+                id,
+                &PolicyInput {
+                    cover_type: Some("liability".into()),
+                    ..both
+                },
+            )?;
+
+            let policy = policies::get(conn, id)?;
+            assert_eq!(policy.od_start_date, None);
+            assert_eq!(policy.od_end_date, None);
+            assert_eq!(policy.od_premium, None);
+            assert_eq!(policy.tp_start_date.as_deref(), Some("2026-04-01"));
+            assert_eq!(policy.tp_end_date.as_deref(), Some("2027-03-31"));
+            assert_eq!(policy.tp_premium, Some(7_500.0));
+
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// A gross weight belongs to a goods carrying vehicle and a seat count to a
+/// passenger one. Neither survives on a vehicle that is not rated on it.
+#[test]
+fn the_weight_and_the_seats_belong_to_the_vehicle_that_has_them() {
+    let temp = TempDb::new("motor-weight-seats");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Nikhil Joshi"))?;
+            let insurer = insurers::find_or_create(conn, "Bajaj Allianz")?;
+
+            let stored = |conn: &rusqlite::Connection,
+                          number: &str,
+                          vehicle_type: &str|
+             -> crate::error::AppResult<(Option<f64>, Option<i64>)> {
+                let id = policies::create(
+                    conn,
+                    &PolicyInput {
+                        vehicle_type: Some(vehicle_type.into()),
+                        gross_vehicle_weight: Some(7_490.0),
+                        passenger_capacity: Some(14),
+                        ..sample_motor(client, insurer, number)
+                    },
+                )?;
+                let policy = policies::get(conn, id)?;
+                Ok((policy.gross_vehicle_weight, policy.passenger_capacity))
+            };
+
+            assert_eq!(
+                stored(conn, "MT/2026/040", "goods_carrying")?,
+                (Some(7_490.0), None),
+                "a lorry is rated on its weight"
+            );
+            assert_eq!(
+                stored(conn, "MT/2026/041", "pvt_car")?,
+                (None, None),
+                "and a private car on neither"
+            );
+            assert_eq!(
+                stored(conn, "MT/2026/042", "passenger")?,
+                (None, Some(14)),
+                "a bus is rated on its seats"
+            );
+            assert_eq!(
+                stored(conn, "MT/2026/043", "two_wheeler")?,
+                (None, None),
+                "and a scooter on neither"
+            );
+
+            // Changing the vehicle drops the answer that no longer applies.
+            let id = policies::create(
+                conn,
+                &PolicyInput {
+                    vehicle_type: Some("goods_carrying".into()),
+                    gross_vehicle_weight: Some(7_490.0),
+                    ..sample_motor(client, insurer, "MT/2026/044")
+                },
+            )?;
+            policies::update(
+                conn,
+                id,
+                &PolicyInput {
+                    vehicle_type: Some("pvt_car".into()),
+                    gross_vehicle_weight: Some(7_490.0),
+                    ..sample_motor(client, insurer, "MT/2026/044")
+                },
+            )?;
+            assert_eq!(policies::get(conn, id)?.gross_vehicle_weight, None);
+
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// A risk period is complete or it is not there, and it runs forwards.
+#[test]
+fn half_a_risk_period_is_not_a_risk_period() {
+    let temp = TempDb::new("motor-half-period");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Nikhil Joshi"))?;
+            let insurer = insurers::find_or_create(conn, "Bajaj Allianz")?;
+
+            let mut half = sample_motor(client, insurer, "MT/2026/050");
+            half.cover_type = Some("package".into());
+            half.od_start_date = Some("2026-04-01".into());
+            assert_eq!(
+                refusal(policies::create(conn, &half)),
+                "Both risk dates are needed for own damage cover"
+            );
+
+            let mut backwards = sample_motor(client, insurer, "MT/2026/051");
+            backwards.cover_type = Some("package".into());
+            backwards.od_start_date = Some("2027-03-31".into());
+            backwards.od_end_date = Some("2026-04-01".into());
+            assert_eq!(
+                refusal(policies::create(conn, &backwards)),
+                "The own damage cover must end after it starts"
+            );
+
+            // The same half period on a cover the policy does not carry is
+            // nothing at all: it is cleared before it can be complained about.
+            let id = policies::create(
+                conn,
+                &PolicyInput {
+                    cover_type: Some("standalone_od".into()),
+                    od_start_date: Some("2026-04-01".into()),
+                    od_end_date: Some("2027-03-31".into()),
+                    tp_start_date: Some("2026-04-01".into()),
+                    ..sample_motor(client, insurer, "MT/2026/052")
+                },
+            )?;
+            assert_eq!(policies::get(conn, id)?.tp_start_date, None);
+
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// A 1+3 bundle is not a three-year policy. Its own damage cover has to be
+/// bought again after a year, so that is when the renewals desk should see it.
+#[test]
+fn a_motor_policy_expires_when_its_first_cover_does() {
+    let temp = TempDb::new("motor-first-expiry");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Nikhil Joshi"))?;
+            let insurer = insurers::find_or_create(conn, "Bajaj Allianz")?;
+
+            let id = policies::create(
+                conn,
+                &PolicyInput {
+                    cover_type: Some("bundle_1_3".into()),
+                    od_start_date: Some("2026-04-10".into()),
+                    od_end_date: Some("2027-04-09".into()),
+                    tp_start_date: Some("2026-04-01".into()),
+                    tp_end_date: Some("2029-03-31".into()),
+                    start_date: "2026-06-01".into(),
+                    expiry_date: "2029-03-31".into(),
+                    ..sample_motor(client, insurer, "MT/2026/060")
+                },
+            )?;
+
+            let policy = policies::get(conn, id)?;
+            assert_eq!(
+                policy.expiry_date, "2027-04-09",
+                "the year runs out when its own damage cover does"
+            );
+            assert_eq!(
+                policy.start_date, "2026-04-01",
+                "and starts when its first cover starts, whatever the input said"
+            );
+
+            // A policy of another category is never rewritten this way.
+            let health = policies::create(
+                conn,
+                &PolicyInput {
+                    cover_type: Some("bundle_1_3".into()),
+                    od_start_date: Some("2026-04-10".into()),
+                    od_end_date: Some("2027-04-09".into()),
+                    ..sample_policy(client, insurer, "HS/2026/060", "2029-03-31")
+                },
+            )?;
+            assert_eq!(policies::get(conn, health)?.expiry_date, "2029-03-31");
+
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// With nothing to derive the period from, the dates the caller gave stand.
+#[test]
+fn a_motor_policy_with_no_risk_dates_keeps_the_dates_it_was_given() {
+    let temp = TempDb::new("motor-no-risk-dates");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Nikhil Joshi"))?;
+            let insurer = insurers::find_or_create(conn, "Bajaj Allianz")?;
+
+            let id = policies::create(
+                conn,
+                &PolicyInput {
+                    cover_type: Some("bundle_1_3".into()),
+                    start_date: "2026-06-01".into(),
+                    expiry_date: "2027-05-31".into(),
+                    ..sample_motor(client, insurer, "MT/2026/070")
+                },
+            )?;
+
+            let policy = policies::get(conn, id)?;
+            assert_eq!(policy.start_date, "2026-06-01");
+            assert_eq!(policy.expiry_date, "2027-05-31");
+
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// The numbers a claim arrives quoting when it has no policy number attached.
+#[test]
+fn a_policy_can_be_found_by_its_engine_or_chassis_number() {
+    let temp = TempDb::new("motor-search");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Nikhil Joshi"))?;
+            let insurer = insurers::find_or_create(conn, "Bajaj Allianz")?;
+            let id = policies::create(conn, &sample_motor(client, insurer, "MT/2026/080"))?;
+
+            let found = |term: &str| -> crate::error::AppResult<Vec<i64>> {
+                Ok(policies::list(
+                    conn,
+                    &PolicyFilter {
+                        search: Some(term.into()),
+                        ..Default::default()
+                    },
+                )?
+                .rows
+                .into_iter()
+                .map(|row| row.id)
+                .collect())
+            };
+
+            assert_eq!(
+                found("k12mn1234567")?,
+                vec![id],
+                "the engine number, typed the way the claim wrote it"
+            );
+            assert_eq!(found("ma3ejkd1s00123456")?, vec![id], "and the chassis");
+            assert_eq!(found("MA3EJKD1S001")?, vec![id], "a part of one is enough");
+            assert!(found("nothing like it")?.is_empty());
+
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// The vehicle is the same vehicle next year; the risk it ran is not the risk
+/// it will run.
+#[test]
+fn a_renewed_motor_policy_keeps_the_vehicle_and_restates_the_risk() {
+    let temp = TempDb::new("motor-renew");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Nikhil Joshi"))?;
+            let insurer = insurers::find_or_create(conn, "Bajaj Allianz")?;
+
+            let id = policies::create(
+                conn,
+                &PolicyInput {
+                    vehicle_type: Some("passenger".into()),
+                    passenger_capacity: Some(14),
+                    cover_type: Some("package".into()),
+                    od_start_date: Some("2026-04-01".into()),
+                    od_end_date: Some("2027-03-31".into()),
+                    tp_start_date: Some("2026-04-01".into()),
+                    tp_end_date: Some("2027-03-31".into()),
+                    od_premium: Some(18_400.0),
+                    tp_premium: Some(9_600.0),
+                    ..sample_motor(client, insurer, "MT/2026/090")
+                },
+            )?;
+
+            let next = policies::renew(
+                conn,
+                &RenewalInput {
+                    policy_id: id,
+                    policy_number: Some("MT/2027/091".into()),
+                    ..Default::default()
+                },
+            )?;
+            let renewed = policies::get(conn, next)?;
+
+            assert_eq!(renewed.vehicle_type.as_deref(), Some("passenger"));
+            assert_eq!(renewed.passenger_capacity, Some(14));
+            assert_eq!(renewed.gross_vehicle_weight, None);
+            assert_eq!(
+                renewed.vehicle_manufacturer.as_deref(),
+                Some("Maruti Suzuki")
+            );
+            assert_eq!(renewed.vehicle_model.as_deref(), Some("Swift VXi"));
+            assert_eq!(renewed.manufacture_year, Some(2021));
+            assert_eq!(renewed.engine_number.as_deref(), Some("K12MN1234567"));
+            assert_eq!(renewed.chassis_number.as_deref(), Some("MA3EJKD1S00123456"));
+            assert_eq!(renewed.cover_type.as_deref(), Some("package"));
+
+            assert_eq!(renewed.od_start_date, None, "last year's risk period");
+            assert_eq!(renewed.od_end_date, None);
+            assert_eq!(renewed.tp_start_date, None);
+            assert_eq!(renewed.tp_end_date, None);
+            assert_eq!(renewed.od_premium, None, "and last year's split premiums");
+            assert_eq!(renewed.tp_premium, None);
+
+            assert_eq!(renewed.start_date, "2027-04-01", "the day after expiry");
+            assert_eq!(renewed.expiry_date, "2028-03-31", "for another year");
+
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// The three numbers a motor policy carries are held to their bounds by the
+/// core. The schema holds the same bounds, but a `CHECK` firing would reach the
+/// operator as a conflict quoting SQL at them, which is not an answer anybody
+/// can act on.
+#[test]
+fn a_vehicle_older_than_the_motor_car_is_a_typo() {
+    let temp = TempDb::new("motor-ranges");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Nikhil Joshi"))?;
+            let insurer = insurers::find_or_create(conn, "Bajaj Allianz")?;
+
+            let mut ancient = sample_motor(client, insurer, "MT/2026/100");
+            ancient.manufacture_year = Some(1886);
+            assert_eq!(
+                refusal(policies::create(conn, &ancient)),
+                "A manufacture year is between 1900 and 2100"
+            );
+
+            // The bound that catches the real mistake: a digit too many.
+            let mut mistyped = sample_motor(client, insurer, "MT/2026/101");
+            mistyped.manufacture_year = Some(20_210);
+            assert_eq!(
+                refusal(policies::create(conn, &mistyped)),
+                "A manufacture year is between 1900 and 2100"
+            );
+
+            let mut weightless = sample_motor(client, insurer, "MT/2026/102");
+            weightless.vehicle_type = Some("goods_carrying".into());
+            weightless.gross_vehicle_weight = Some(0.0);
+            assert_eq!(
+                refusal(policies::create(conn, &weightless)),
+                "A gross vehicle weight is more than nothing"
+            );
+
+            let mut empty_bus = sample_motor(client, insurer, "MT/2026/103");
+            empty_bus.vehicle_type = Some("passenger".into());
+            empty_bus.passenger_capacity = Some(0);
+            assert_eq!(
+                refusal(policies::create(conn, &empty_bus)),
+                "A vehicle carries at least one passenger"
+            );
+
+            // The point of the case: the operator is told what is wrong with
+            // what they typed, rather than handed the constraint that caught it.
+            let refused = policies::create(conn, &ancient).unwrap_err();
+            assert_eq!(
+                refused.kind(),
+                "validation",
+                "the schema is the backstop, not the thing the caller meets"
+            );
+
+            // A figure on a vehicle that is not rated on it is dropped before it
+            // is ever range-checked, so correcting a lorry to a car is not
+            // blocked by the weight the correction discards.
+            let corrected = policies::create(
+                conn,
+                &PolicyInput {
+                    vehicle_type: Some("pvt_car".into()),
+                    gross_vehicle_weight: Some(0.0),
+                    passenger_capacity: Some(0),
+                    ..sample_motor(client, insurer, "MT/2026/104")
+                },
+            )?;
+            let car = policies::get(conn, corrected)?;
+            assert_eq!(car.gross_vehicle_weight, None);
+            assert_eq!(car.passenger_capacity, None);
+
+            // Absent is allowed, and the bounds themselves are inside them.
+            let edges = policies::create(
+                conn,
+                &PolicyInput {
+                    manufacture_year: Some(1900),
+                    vehicle_type: Some("passenger".into()),
+                    passenger_capacity: Some(1),
+                    ..sample_motor(client, insurer, "MT/2026/105")
+                },
+            )?;
+            assert_eq!(policies::get(conn, edges)?.manufacture_year, Some(1900));
+
+            let bare = policies::create(
+                conn,
+                &PolicyInput {
+                    manufacture_year: None,
+                    ..sample_motor(client, insurer, "MT/2026/106")
+                },
+            )?;
+            assert_eq!(policies::get(conn, bare)?.manufacture_year, None);
 
             Ok(())
         })

@@ -24,6 +24,12 @@ const SORTABLE: &[(&str, &str)] = &[
 /// Days after expiry with no renewal before a policy is treated as lapsed.
 const LAPSE_GRACE_DAYS: i64 = 30;
 
+/// The years a vehicle can have been built in. The upper bound is a typo guard
+/// rather than a fact about vehicles: a year typed with an extra digit would
+/// otherwise sort the policy to the far end of every list that shows it. Matches
+/// the `CHECK` the motor migration puts on `manufacture_year`.
+const MANUFACTURE_YEARS: std::ops::RangeInclusive<i64> = 1900..=2100;
+
 fn build_conditions(filter: &PolicyFilter) -> Conditions {
     let mut c = Conditions::new();
 
@@ -34,11 +40,14 @@ fn build_conditions(filter: &PolicyFilter) -> Conditions {
         .filter(|s| !s.is_empty())
     {
         let pattern = query::like_pattern(search);
+        // The engine and chassis numbers are here because a motor claim arrives
+        // quoting one of them and nothing else.
         c.add_many(
             "(policy_number LIKE ? ESCAPE '\\' OR client_name LIKE ? ESCAPE '\\' \
-              OR client_code LIKE ? ESCAPE '\\' OR vehicle_number LIKE ? ESCAPE '\\')"
+              OR client_code LIKE ? ESCAPE '\\' OR vehicle_number LIKE ? ESCAPE '\\' \
+              OR engine_number LIKE ? ESCAPE '\\' OR chassis_number LIKE ? ESCAPE '\\')"
                 .into(),
-            std::iter::repeat_n(Value::Text(pattern), 4),
+            std::iter::repeat_n(Value::Text(pattern), 6),
         );
     }
 
@@ -175,7 +184,138 @@ pub fn chain(conn: &Connection, policy_id: i64) -> AppResult<Vec<Policy>> {
     Ok(rows)
 }
 
-fn validate(input: &PolicyInput) -> AppResult<(String, String)> {
+/// The motor columns as they will be written, once the vehicle type and the
+/// cover type have decided which of them apply.
+///
+/// The clearing lives here rather than at the call sites so that a field the
+/// answer says is not there is NULL however the policy was reached — the form,
+/// an edit that changed the cover type, or an import.
+#[derive(Debug, Default)]
+struct Motor {
+    vehicle_type: Option<String>,
+    gross_vehicle_weight: Option<f64>,
+    passenger_capacity: Option<i64>,
+    vehicle_manufacturer: Option<String>,
+    vehicle_model: Option<String>,
+    manufacture_year: Option<i64>,
+    engine_number: Option<String>,
+    chassis_number: Option<String>,
+    cover_type: Option<String>,
+    od_start_date: Option<String>,
+    od_end_date: Option<String>,
+    tp_start_date: Option<String>,
+    tp_end_date: Option<String>,
+    od_premium: Option<f64>,
+    tp_premium: Option<f64>,
+}
+
+impl Motor {
+    /// The period the policy actually runs for: the earliest cover to start and
+    /// the earliest to end, so the renewals desk chases whichever half lapses
+    /// first. `None` when neither applicable cover has a complete period, which
+    /// leaves the dates the caller supplied standing.
+    ///
+    /// The pair cannot come out backwards: the earliest end belongs to some
+    /// period whose own start is at or after the earliest start, and every
+    /// period here has already been checked for ending after it starts.
+    fn risk_period(&self) -> Option<(String, String)> {
+        let start = [&self.od_start_date, &self.tp_start_date]
+            .into_iter()
+            .flatten()
+            .min()?;
+        let end = [&self.od_end_date, &self.tp_end_date]
+            .into_iter()
+            .flatten()
+            .min()?;
+        Some((start.clone(), end.clone()))
+    }
+}
+
+/// Reads one of the four risk dates. A cover the policy does not carry has no
+/// dates at all, so what was sent for it is dropped rather than read: an edit
+/// from a bundle to a liability policy is not refused for the own damage dates
+/// it is on its way to losing.
+fn risk_date(raw: &Option<String>, applies: bool, what: &str) -> AppResult<Option<String>> {
+    if !applies {
+        return Ok(None);
+    }
+    match blank_to_none(raw.clone()) {
+        None => Ok(None),
+        Some(text) => util::parse_date(&text)
+            .map(Some)
+            .ok_or_else(|| AppError::validation(format!("{what} is not a valid date"))),
+    }
+}
+
+/// A risk period is complete or absent, and runs forwards. Equal dates are an
+/// error for the same reason `start_date` and `expiry_date` refuse them: a
+/// cover that ends the day it starts covered nothing.
+fn check_risk_period(
+    start: &Option<String>,
+    end: &Option<String>,
+    both: &str,
+    order: &str,
+) -> AppResult<()> {
+    match (start, end) {
+        (Some(from), Some(to)) if to <= from => Err(AppError::validation(order)),
+        (Some(_), None) | (None, Some(_)) => Err(AppError::validation(both)),
+        _ => Ok(()),
+    }
+}
+
+fn motor_detail(input: &PolicyInput) -> AppResult<Motor> {
+    let vehicle_type = blank_to_none(input.vehicle_type.clone());
+    check_word("vehicle type", vehicle_type.as_deref(), util::VEHICLE_TYPES)?;
+    let cover_type = blank_to_none(input.cover_type.clone());
+    check_word("cover type", cover_type.as_deref(), util::COVER_TYPES)?;
+
+    let own_damage = util::cover_has_own_damage(cover_type.as_deref());
+    let third_party = util::cover_has_third_party(cover_type.as_deref());
+
+    let od_start_date = risk_date(&input.od_start_date, own_damage, "Own damage start date")?;
+    let od_end_date = risk_date(&input.od_end_date, own_damage, "Own damage end date")?;
+    let tp_start_date = risk_date(&input.tp_start_date, third_party, "Third party start date")?;
+    let tp_end_date = risk_date(&input.tp_end_date, third_party, "Third party end date")?;
+
+    check_risk_period(
+        &od_start_date,
+        &od_end_date,
+        "Both risk dates are needed for own damage cover",
+        "The own damage cover must end after it starts",
+    )?;
+    check_risk_period(
+        &tp_start_date,
+        &tp_end_date,
+        "Both risk dates are needed for third party cover",
+        "The third party cover must end after it starts",
+    )?;
+
+    Ok(Motor {
+        gross_vehicle_weight: match vehicle_type.as_deref() {
+            Some("goods_carrying") => input.gross_vehicle_weight,
+            _ => None,
+        },
+        passenger_capacity: match vehicle_type.as_deref() {
+            Some("passenger") => input.passenger_capacity,
+            _ => None,
+        },
+        vehicle_type,
+        vehicle_manufacturer: blank_to_none(input.vehicle_manufacturer.clone()),
+        vehicle_model: blank_to_none(input.vehicle_model.clone()),
+        manufacture_year: input.manufacture_year,
+        engine_number: blank_to_none(input.engine_number.clone()).map(|v| v.to_uppercase()),
+        chassis_number: blank_to_none(input.chassis_number.clone()).map(|v| v.to_uppercase()),
+        cover_type,
+        od_start_date,
+        od_end_date,
+        tp_start_date,
+        tp_end_date,
+        od_premium: own_damage.then_some(input.od_premium).flatten(),
+        tp_premium: third_party.then_some(input.tp_premium).flatten(),
+    })
+}
+
+fn validate(input: &PolicyInput) -> AppResult<(String, String, Motor)> {
     if input.policy_number.trim().is_empty() {
         return Err(AppError::validation("Policy number is required"));
     }
@@ -217,7 +357,43 @@ fn validate(input: &PolicyInput) -> AppResult<(String, String)> {
         }
     }
 
-    Ok((start, expiry))
+    let motor = motor_detail(input)?;
+
+    // The schema holds these same three bounds, but a CHECK firing reaches the
+    // caller as a constraint message naming a column, which is not something to
+    // put in front of an operator. Saying the limits here in words leaves the
+    // schema as the backstop rather than the thing anybody meets.
+    //
+    // They are read off the detail rather than off the input, so that they are
+    // asked only of the answers that survived: a lorry corrected to a private
+    // car has already had its weight dropped, and should not be refused for a
+    // figure it is on its way to discarding.
+    if motor
+        .manufacture_year
+        .is_some_and(|year| !MANUFACTURE_YEARS.contains(&year))
+    {
+        return Err(AppError::validation(
+            "A manufacture year is between 1900 and 2100",
+        ));
+    }
+    if motor.gross_vehicle_weight.is_some_and(|kg| kg <= 0.0) {
+        return Err(AppError::validation(
+            "A gross vehicle weight is more than nothing",
+        ));
+    }
+    if motor.passenger_capacity.is_some_and(|seats| seats < 1) {
+        return Err(AppError::validation(
+            "A vehicle carries at least one passenger",
+        ));
+    }
+
+    // A motor year runs for as long as its first cover does. A 1+3 bundle whose
+    // own damage has to be bought again after a year is a policy the desk needs
+    // to see next spring, not in three years' time.
+    match motor.risk_period() {
+        Some((from, to)) if input.category == "motor" => Ok((from, to, motor)),
+        _ => Ok((start, expiry, motor)),
+    }
 }
 
 /// Holds a value to a fixed vocabulary. Nothing at all is allowed: these fields
@@ -232,7 +408,7 @@ fn check_word(what: &str, value: Option<&str>, allowed: &[&str]) -> AppResult<()
 }
 
 pub fn create(conn: &Connection, input: &PolicyInput) -> AppResult<i64> {
-    let (start, expiry) = validate(input)?;
+    let (start, expiry, motor) = validate(input)?;
     let chain_id = uuid::Uuid::new_v4().to_string();
 
     conn.execute(
@@ -240,9 +416,13 @@ pub fn create(conn: &Connection, input: &PolicyInput) -> AppResult<i64> {
              product_id, category, status, start_date, expiry_date, sum_insured, premium_amount, \
              gst_amount, premium_frequency, payment_mode, next_due_date, commission_rate, \
              commission_expected, nominee_name, nominee_relation, vehicle_number, variant, \
-             riders, plan_type, term, policy_type, broker, inbuilt_rider, notes) \
+             riders, plan_type, term, policy_type, broker, inbuilt_rider, vehicle_type, \
+             gross_vehicle_weight, passenger_capacity, vehicle_manufacturer, vehicle_model, \
+             manufacture_year, engine_number, chassis_number, cover_type, od_start_date, \
+             od_end_date, tp_start_date, tp_end_date, od_premium, tp_premium, notes) \
          VALUES (?1, 1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-             ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
+             ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, \
+             ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43)",
         params![
             chain_id,
             input.policy_number.trim(),
@@ -274,6 +454,21 @@ pub fn create(conn: &Connection, input: &PolicyInput) -> AppResult<i64> {
             blank_to_none(input.policy_type.clone()),
             blank_to_none(input.broker.clone()),
             blank_to_none(input.inbuilt_rider.clone()),
+            motor.vehicle_type,
+            motor.gross_vehicle_weight,
+            motor.passenger_capacity,
+            motor.vehicle_manufacturer,
+            motor.vehicle_model,
+            motor.manufacture_year,
+            motor.engine_number,
+            motor.chassis_number,
+            motor.cover_type,
+            motor.od_start_date,
+            motor.od_end_date,
+            motor.tp_start_date,
+            motor.tp_end_date,
+            motor.od_premium,
+            motor.tp_premium,
             blank_to_none(input.notes.clone()),
         ],
     )
@@ -285,7 +480,7 @@ pub fn create(conn: &Connection, input: &PolicyInput) -> AppResult<i64> {
 }
 
 pub fn update(conn: &Connection, id: i64, input: &PolicyInput) -> AppResult<()> {
-    let (start, expiry) = validate(input)?;
+    let (start, expiry, motor) = validate(input)?;
 
     let changed = conn
         .execute(
@@ -296,7 +491,11 @@ pub fn update(conn: &Connection, id: i64, input: &PolicyInput) -> AppResult<()> 
                  commission_rate = ?16, commission_expected = ?17, nominee_name = ?18, \
                  nominee_relation = ?19, vehicle_number = ?20, variant = ?21, riders = ?22, \
                  plan_type = ?23, term = ?24, policy_type = ?25, broker = ?26, \
-                 inbuilt_rider = ?27, notes = ?28 \
+                 inbuilt_rider = ?27, vehicle_type = ?28, gross_vehicle_weight = ?29, \
+                 passenger_capacity = ?30, vehicle_manufacturer = ?31, vehicle_model = ?32, \
+                 manufacture_year = ?33, engine_number = ?34, chassis_number = ?35, \
+                 cover_type = ?36, od_start_date = ?37, od_end_date = ?38, tp_start_date = ?39, \
+                 tp_end_date = ?40, od_premium = ?41, tp_premium = ?42, notes = ?43 \
              WHERE id = ?1",
             params![
                 id,
@@ -329,6 +528,21 @@ pub fn update(conn: &Connection, id: i64, input: &PolicyInput) -> AppResult<()> 
                 blank_to_none(input.policy_type.clone()),
                 blank_to_none(input.broker.clone()),
                 blank_to_none(input.inbuilt_rider.clone()),
+                motor.vehicle_type,
+                motor.gross_vehicle_weight,
+                motor.passenger_capacity,
+                motor.vehicle_manufacturer,
+                motor.vehicle_model,
+                motor.manufacture_year,
+                motor.engine_number,
+                motor.chassis_number,
+                motor.cover_type,
+                motor.od_start_date,
+                motor.od_end_date,
+                motor.tp_start_date,
+                motor.tp_end_date,
+                motor.od_premium,
+                motor.tp_premium,
                 blank_to_none(input.notes.clone()),
             ],
         )
@@ -389,9 +603,12 @@ pub fn renew(conn: &Connection, input: &RenewalInput) -> AppResult<i64> {
              insurer_id, product_id, category, status, start_date, expiry_date, sum_insured, \
              premium_amount, gst_amount, premium_frequency, payment_mode, commission_rate, \
              commission_expected, nominee_name, nominee_relation, vehicle_number, variant, \
-             riders, plan_type, term, policy_type, broker, inbuilt_rider, notes) \
+             riders, plan_type, term, policy_type, broker, inbuilt_rider, notes, vehicle_type, \
+             gross_vehicle_weight, passenger_capacity, vehicle_manufacturer, vehicle_model, \
+             manufacture_year, engine_number, chassis_number, cover_type) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'active', ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
-             ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
+             ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, \
+             ?34, ?35, ?36, ?37)",
         params![
             previous.chain_id,
             previous.policy_year + 1,
@@ -424,6 +641,18 @@ pub fn renew(conn: &Connection, input: &RenewalInput) -> AppResult<i64> {
             previous.broker,
             previous.inbuilt_rider,
             blank_to_none(input.notes.clone()),
+            // The vehicle comes along; the risk periods and the split premiums
+            // do not, because they describe the year being renewed. The new
+            // year's own dates and premiums are filled in by editing it.
+            previous.vehicle_type,
+            previous.gross_vehicle_weight,
+            previous.passenger_capacity,
+            previous.vehicle_manufacturer,
+            previous.vehicle_model,
+            previous.manufacture_year,
+            previous.engine_number,
+            previous.chassis_number,
+            previous.cover_type,
         ],
     )
     .map_err(map_constraint_error)?;

@@ -4,9 +4,19 @@ import { Search } from "lucide-react";
 
 import { api, ApiError } from "../lib/api";
 import { MAX_TERM } from "../lib/types";
-import type { PlanType, Policy, PolicyInput, PolicyStatus, PolicyType, Rider } from "../lib/types";
+import type {
+  CoverType,
+  PlanType,
+  Policy,
+  PolicyInput,
+  PolicyStatus,
+  PolicyType,
+  Rider,
+  VehicleType,
+} from "../lib/types";
 import {
   categoryLabels,
+  coverTypeLabels,
   date,
   money,
   planTypeLabels,
@@ -14,6 +24,7 @@ import {
   relationshipLabel,
   riderLabels,
   statusLabels,
+  vehicleTypeLabels,
 } from "../lib/format";
 import { Badge, Button, Field, Input, Modal, Select, Textarea, useToast } from "./ui";
 
@@ -61,6 +72,24 @@ function unanswered(value: unknown): boolean {
   return false;
 }
 
+/**
+ * Which of the two motor covers were sold. A policy with no cover type yet
+ * carries neither, so nothing that turns on applicability is sent until the
+ * agent has said which covers the schedule names.
+ */
+function coversOwnDamage(cover: CoverType | null | undefined): boolean {
+  return cover != null && cover !== "liability";
+}
+
+function coversThirdParty(cover: CoverType | null | undefined): boolean {
+  return cover != null && cover !== "standalone_od";
+}
+
+/** The earliest of a set of ISO dates, which sort as they read. */
+function earliest(dates: string[]): string {
+  return [...dates].sort()[0];
+}
+
 const EMPTY: PolicyInput = {
   policyNumber: "",
   clientId: 0,
@@ -86,9 +115,46 @@ const EMPTY: PolicyInput = {
   policyType: null,
   broker: "",
   inbuiltRider: "",
+  vehicleType: null,
+  grossVehicleWeight: null,
+  passengerCapacity: null,
+  vehicleManufacturer: "",
+  vehicleModel: "",
+  manufactureYear: null,
+  engineNumber: "",
+  chassisNumber: "",
+  coverType: null,
+  odStartDate: "",
+  odEndDate: "",
+  tpStartDate: "",
+  tpEndDate: "",
+  odPremium: null,
+  tpPremium: null,
   notes: "",
   insuredClientIds: [],
 };
+
+/**
+ * The motor answers, emptied. A policy that stops being motor leaves the
+ * vehicle behind the way one that stops being health leaves its riders.
+ */
+const MOTOR_CLEARED = {
+  vehicleType: null,
+  grossVehicleWeight: null,
+  passengerCapacity: null,
+  vehicleManufacturer: "",
+  vehicleModel: "",
+  manufactureYear: null,
+  engineNumber: "",
+  chassisNumber: "",
+  coverType: null,
+  odStartDate: "",
+  odEndDate: "",
+  tpStartDate: "",
+  tpEndDate: "",
+  odPremium: null,
+  tpPremium: null,
+} satisfies Partial<PolicyInput>;
 
 /**
  * What a health proposal asks for, on top of what every policy asks for. The
@@ -106,6 +172,60 @@ const HEALTH_REQUIRED: { key: keyof PolicyInput; complaint: string }[] = [
   { key: "premiumAmount", complaint: "A health policy needs its premium" },
   { key: "broker", complaint: "Name the broker this was placed through" },
   { key: "inbuiltRider", complaint: "Name the rider the plan comes with" },
+];
+
+/**
+ * What a motor proposal asks for, in the order the agency's own sheet asks it.
+ *
+ * A risk period is one question with two boxes, so a row can name both dates
+ * and complain once. `when` marks the questions only some vehicles and some
+ * covers are asked: a weight belongs to a lorry, a third party premium to a
+ * policy that sold third party cover.
+ */
+const MOTOR_REQUIRED: {
+  keys: (keyof PolicyInput)[];
+  complaint: string;
+  when?: (form: PolicyInput) => boolean;
+}[] = [
+  { keys: ["vehicleType"], complaint: "Say what kind of vehicle this is" },
+  {
+    keys: ["grossVehicleWeight"],
+    complaint: "A goods carrying vehicle is rated on its gross weight",
+    when: (form) => form.vehicleType === "goods_carrying",
+  },
+  {
+    keys: ["passengerCapacity"],
+    complaint: "Say how many passengers the vehicle carries",
+    when: (form) => form.vehicleType === "passenger",
+  },
+  { keys: ["vehicleManufacturer"], complaint: "Name the manufacturer" },
+  { keys: ["vehicleModel"], complaint: "Name the make and model" },
+  { keys: ["manufactureYear"], complaint: "Give the year the vehicle was made" },
+  { keys: ["vehicleNumber"], complaint: "A motor policy needs its registration number" },
+  { keys: ["engineNumber"], complaint: "Give the engine number" },
+  { keys: ["chassisNumber"], complaint: "Give the chassis number" },
+  { keys: ["coverType"], complaint: "Say which covers were sold" },
+  {
+    keys: ["odStartDate", "odEndDate"],
+    complaint: "A motor policy needs the dates its own damage cover runs between",
+    when: (form) => coversOwnDamage(form.coverType),
+  },
+  {
+    keys: ["odPremium"],
+    complaint: "Give the own damage premium",
+    when: (form) => coversOwnDamage(form.coverType),
+  },
+  {
+    keys: ["tpStartDate", "tpEndDate"],
+    complaint: "A motor policy needs the dates its third party cover runs between",
+    when: (form) => coversThirdParty(form.coverType),
+  },
+  {
+    keys: ["tpPremium"],
+    complaint: "Give the third party premium",
+    when: (form) => coversThirdParty(form.coverType),
+  },
+  { keys: ["broker"], complaint: "Name the broker this was placed through" },
 ];
 
 export function PolicyForm({
@@ -186,6 +306,21 @@ export function PolicyForm({
         policyType: policy.policyType,
         broker: policy.broker ?? "",
         inbuiltRider: policy.inbuiltRider ?? "",
+        vehicleType: policy.vehicleType,
+        grossVehicleWeight: policy.grossVehicleWeight,
+        passengerCapacity: policy.passengerCapacity,
+        vehicleManufacturer: policy.vehicleManufacturer ?? "",
+        vehicleModel: policy.vehicleModel ?? "",
+        manufactureYear: policy.manufactureYear,
+        engineNumber: policy.engineNumber ?? "",
+        chassisNumber: policy.chassisNumber ?? "",
+        coverType: policy.coverType,
+        odStartDate: policy.odStartDate ?? "",
+        odEndDate: policy.odEndDate ?? "",
+        tpStartDate: policy.tpStartDate ?? "",
+        tpEndDate: policy.tpEndDate ?? "",
+        odPremium: policy.odPremium,
+        tpPremium: policy.tpPremium,
         notes: policy.notes ?? "",
         insuredClientIds: [],
       });
@@ -207,6 +342,15 @@ export function PolicyForm({
     setForm((current) => ({ ...current, [key]: value }));
 
   const isHealth = form.category === "health";
+  const isMotor = form.category === "motor";
+
+  // What the schedule sold, and so what the core will keep. Until a cover type
+  // is chosen neither applies, but both rows stay on show so the agent can see
+  // what the form is going to ask for.
+  const hasOwnDamage = coversOwnDamage(form.coverType);
+  const hasThirdParty = coversThirdParty(form.coverType);
+  const showOwnDamage = isMotor && (!form.coverType || hasOwnDamage);
+  const showThirdParty = isMotor && (!form.coverType || hasThirdParty);
 
   /**
    * Moves the expiry with whatever the cover now runs from and for. A date the
@@ -236,20 +380,83 @@ export function PolicyForm({
         : [...(form.riders ?? []), rider],
     );
 
+  /**
+   * The weight belongs to a goods carrying vehicle and the seats to a passenger
+   * one, so the question the new vehicle is not asked is forgotten rather than
+   * sent on its behalf.
+   */
+  const setVehicleType = (vehicleType: VehicleType | null) =>
+    setForm((current) => ({
+      ...current,
+      vehicleType,
+      grossVehicleWeight: vehicleType === "goods_carrying" ? current.grossVehicleWeight : null,
+      passengerCapacity: vehicleType === "passenger" ? current.passengerCapacity : null,
+    }));
+
+  /**
+   * What the two covers came to between them, which is what the policy was
+   * sold for. Neither typed leaves the total alone.
+   *
+   * This counts the covers that were sold rather than the rows on show: both
+   * rows show before a cover type is chosen, but neither premium is sent then,
+   * so a total drawn from them would say the opposite of what will be stored.
+   */
+  const suggestedPremium = useMemo(() => {
+    const parts = [
+      isMotor && hasOwnDamage ? form.odPremium : null,
+      isMotor && hasThirdParty ? form.tpPremium : null,
+    ].filter((amount): amount is number => amount != null);
+    return parts.length ? parts.reduce((total, amount) => total + amount, 0) : null;
+  }, [isMotor, hasOwnDamage, hasThirdParty, form.odPremium, form.tpPremium]);
+
+  const premiumTotal = form.premiumAmount ?? suggestedPremium;
+
+  /**
+   * The dates a motor policy runs between, which the covers decide rather than
+   * the agent: the renewals desk chases whichever half lapses first. With no
+   * complete applicable period the form sends the dates it already holds, so an
+   * existing policy being edited does not lose them.
+   */
+  const motorDates = useMemo(() => {
+    const periods = [
+      hasOwnDamage && form.odStartDate && form.odEndDate
+        ? { start: form.odStartDate, end: form.odEndDate }
+        : null,
+      hasThirdParty && form.tpStartDate && form.tpEndDate
+        ? { start: form.tpStartDate, end: form.tpEndDate }
+        : null,
+    ].filter((period): period is { start: string; end: string } => period !== null);
+    if (!periods.length) return { startDate: form.startDate, expiryDate: form.expiryDate };
+    return {
+      startDate: earliest(periods.map((period) => period.start)),
+      expiryDate: earliest(periods.map((period) => period.end)),
+    };
+  }, [
+    hasOwnDamage,
+    hasThirdParty,
+    form.odStartDate,
+    form.odEndDate,
+    form.tpStartDate,
+    form.tpEndDate,
+    form.startDate,
+    form.expiryDate,
+  ]);
+
   // Commission amount follows the rate unless it has been typed in directly.
   const suggestedCommission = useMemo(
-    () => commissionFrom(form.premiumAmount, form.commissionRate),
-    [form.premiumAmount, form.commissionRate],
+    () => commissionFrom(premiumTotal, form.commissionRate),
+    [premiumTotal, form.commissionRate],
   );
 
   const save = useMutation({
     mutationFn: async () => {
       const payload: PolicyInput = {
         ...form,
+        premiumAmount: premiumTotal,
         commissionExpected: form.commissionExpected ?? suggestedCommission,
         // A registration number belongs to motor cover; any other category
         // leaves it behind rather than carrying it along unseen.
-        vehicleNumber: form.category === "motor" ? form.vehicleNumber : "",
+        vehicleNumber: isMotor ? form.vehicleNumber : "",
         // And the health details belong to health, for the same reason: a
         // policy changed from health to motor should not keep a rider.
         ...(isHealth
@@ -260,9 +467,26 @@ export function PolicyForm({
               planType: null,
               term: null,
               policyType: null,
-              broker: "",
               inbuiltRider: "",
             }),
+        // The broker is the one question both proposals ask, so it survives the
+        // move between them and is left behind by everything else.
+        ...(isHealth || isMotor ? null : { broker: "" }),
+        ...(isMotor
+          ? {
+              // Only the covers that were sold are sent, because only those are
+              // the ones the core will keep.
+              odStartDate: hasOwnDamage ? form.odStartDate : "",
+              odEndDate: hasOwnDamage ? form.odEndDate : "",
+              odPremium: hasOwnDamage ? form.odPremium : null,
+              tpStartDate: hasThirdParty ? form.tpStartDate : "",
+              tpEndDate: hasThirdParty ? form.tpEndDate : "",
+              tpPremium: hasThirdParty ? form.tpPremium : null,
+              // The motor layout asks for no policy dates: the covers decide
+              // them, so the payload says what the core is going to store.
+              ...motorDates,
+            }
+          : MOTOR_CLEARED),
       };
       if (policy) {
         await api.updatePolicy(policy.id, payload);
@@ -304,6 +528,15 @@ export function PolicyForm({
     // policy recorded without them cannot be quoted or renewed from the book.
     if (isHealth) {
       const gap = HEALTH_REQUIRED.find(({ key }) => unanswered(form[key]));
+      if (gap) return gap.complaint;
+    }
+    // Motor is filled in completely for the same reason: a claim quoting a
+    // chassis number has to reach the policy it was written on, and a bundle
+    // whose halves are not recorded looks like cover it is not.
+    if (isMotor) {
+      const gap = MOTOR_REQUIRED.find(
+        ({ keys, when }) => (when ? when(form) : true) && keys.some((key) => unanswered(form[key])),
+      );
       if (gap) return gap.complaint;
     }
     return null;
@@ -483,14 +716,22 @@ export function PolicyForm({
   );
 
   const premiumField = (
-    <Field label="Premium" required={isHealth}>
+    <Field
+      label="Premium"
+      required={isHealth}
+      hint={
+        suggestedPremium && form.premiumAmount === null
+          ? `${money(suggestedPremium)} from the covers`
+          : undefined
+      }
+    >
       <Input
         type="number"
         value={form.premiumAmount ?? ""}
         onChange={(event) =>
           set("premiumAmount", event.target.value ? Number(event.target.value) : null)
         }
-        placeholder="24500"
+        placeholder={suggestedPremium ? String(suggestedPremium) : "24500"}
       />
     </Field>
   );
@@ -582,11 +823,188 @@ export function PolicyForm({
   );
 
   const vehicleField = (
-    <Field label="Vehicle number">
+    <Field label="Registration number" required>
       <Input
         value={form.vehicleNumber ?? ""}
         onChange={(event) => set("vehicleNumber", event.target.value.toUpperCase())}
         placeholder="MH12AB1234"
+      />
+    </Field>
+  );
+
+  const vehicleTypeField = (
+    <Field label="Vehicle type" required>
+      <Select
+        value={form.vehicleType ?? ""}
+        onChange={(event) =>
+          setVehicleType(event.target.value ? (event.target.value as VehicleType) : null)
+        }
+      >
+        <option value="">Not chosen</option>
+        {Object.entries(vehicleTypeLabels).map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+
+  const grossVehicleWeightField = (
+    <Field label="Gross vehicle weight (kg)" required>
+      <Input
+        type="number"
+        value={form.grossVehicleWeight ?? ""}
+        onChange={(event) =>
+          set("grossVehicleWeight", event.target.value ? Number(event.target.value) : null)
+        }
+        placeholder="7500"
+      />
+    </Field>
+  );
+
+  const passengerCapacityField = (
+    <Field label="Passengers" required>
+      <Input
+        type="number"
+        value={form.passengerCapacity ?? ""}
+        onChange={(event) =>
+          set("passengerCapacity", event.target.value ? Number(event.target.value) : null)
+        }
+        placeholder="42"
+      />
+    </Field>
+  );
+
+  const vehicleManufacturerField = (
+    <Field label="Manufacturer" required>
+      <Input
+        value={form.vehicleManufacturer ?? ""}
+        onChange={(event) => set("vehicleManufacturer", event.target.value)}
+        placeholder="Maruti Suzuki"
+      />
+    </Field>
+  );
+
+  const vehicleModelField = (
+    <Field label="Make / model" required>
+      <Input
+        value={form.vehicleModel ?? ""}
+        onChange={(event) => set("vehicleModel", event.target.value)}
+        placeholder="Swift VXi"
+      />
+    </Field>
+  );
+
+  const manufactureYearField = (
+    <Field label="Year of manufacture" required>
+      <Input
+        type="number"
+        value={form.manufactureYear ?? ""}
+        onChange={(event) =>
+          set("manufactureYear", event.target.value ? Number(event.target.value) : null)
+        }
+        placeholder="2021"
+      />
+    </Field>
+  );
+
+  // Engine and chassis numbers are quoted back by claims in capitals, and the
+  // core stores them that way, so the box shows what will be kept.
+  const engineNumberField = (
+    <Field label="Engine number" required>
+      <Input
+        value={form.engineNumber ?? ""}
+        onChange={(event) => set("engineNumber", event.target.value.toUpperCase())}
+        placeholder="K12MN1234567"
+      />
+    </Field>
+  );
+
+  const chassisNumberField = (
+    <Field label="Chassis number" required>
+      <Input
+        value={form.chassisNumber ?? ""}
+        onChange={(event) => set("chassisNumber", event.target.value.toUpperCase())}
+        placeholder="MA3EJKD1S00123456"
+      />
+    </Field>
+  );
+
+  const coverTypeField = (
+    <Field label="Policy type" required hint="Which covers the schedule sold">
+      <Select
+        value={form.coverType ?? ""}
+        onChange={(event) =>
+          set("coverType", event.target.value ? (event.target.value as CoverType) : null)
+        }
+      >
+        <option value="">Not chosen</option>
+        {Object.entries(coverTypeLabels).map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+
+  const odStartField = (
+    <Field label="Own damage start" required>
+      <Input
+        type="date"
+        value={form.odStartDate ?? ""}
+        onChange={(event) => set("odStartDate", event.target.value)}
+      />
+    </Field>
+  );
+
+  const odEndField = (
+    <Field label="Own damage end" required>
+      <Input
+        type="date"
+        value={form.odEndDate ?? ""}
+        onChange={(event) => set("odEndDate", event.target.value)}
+      />
+    </Field>
+  );
+
+  const odPremiumField = (
+    <Field label="Own damage premium" required>
+      <Input
+        type="number"
+        value={form.odPremium ?? ""}
+        onChange={(event) => set("odPremium", event.target.value ? Number(event.target.value) : null)}
+      />
+    </Field>
+  );
+
+  const tpStartField = (
+    <Field label="Third party start" required>
+      <Input
+        type="date"
+        value={form.tpStartDate ?? ""}
+        onChange={(event) => set("tpStartDate", event.target.value)}
+      />
+    </Field>
+  );
+
+  const tpEndField = (
+    <Field label="Third party end" required>
+      <Input
+        type="date"
+        value={form.tpEndDate ?? ""}
+        onChange={(event) => set("tpEndDate", event.target.value)}
+      />
+    </Field>
+  );
+
+  const tpPremiumField = (
+    <Field label="Third party premium" required>
+      <Input
+        type="number"
+        value={form.tpPremium ?? ""}
+        onChange={(event) => set("tpPremium", event.target.value ? Number(event.target.value) : null)}
       />
     </Field>
   );
@@ -776,6 +1194,80 @@ export function PolicyForm({
               {nomineeRelationField}
             </div>
           </>
+        ) : isMotor ? (
+          /* A motor policy, in the order the agency's own sheet asks for it.
+             There are no policy dates to fill in: the covers decide them. */
+          <>
+            <div className="grid gap-4 sm:grid-cols-3">{categoryField}</div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="sm:col-span-2">{clientField}</div>
+              {policyNumberField}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              {insurerField}
+              {planField}
+              {vehicleTypeField}
+            </div>
+
+            {/* A lorry is rated on what it can carry and a bus on how many it
+                seats; no other vehicle is asked either question. */}
+            {form.vehicleType === "goods_carrying" && (
+              <div className="grid gap-4 sm:grid-cols-4">{grossVehicleWeightField}</div>
+            )}
+            {form.vehicleType === "passenger" && (
+              <div className="grid gap-4 sm:grid-cols-4">{passengerCapacityField}</div>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-4">
+              {vehicleManufacturerField}
+              {vehicleModelField}
+              {manufactureYearField}
+              {vehicleField}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-4">
+              {engineNumberField}
+              {chassisNumberField}
+              {coverTypeField}
+              {brokerField}
+            </div>
+
+            {showOwnDamage && (
+              <div className="grid gap-4 sm:grid-cols-3">
+                {odStartField}
+                {odEndField}
+                {odPremiumField}
+              </div>
+            )}
+
+            {showThirdParty && (
+              <div className="grid gap-4 sm:grid-cols-3">
+                {tpStartField}
+                {tpEndField}
+                {tpPremiumField}
+              </div>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-4">
+              {premiumField}
+              {sumInsuredField}
+              {gstField}
+              {frequencyField}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-4">
+              {commissionRateField}
+              {commissionAmountField}
+              {paymentModeField}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-4">
+              {nomineeField}
+              {nomineeRelationField}
+            </div>
+          </>
         ) : (
           <>
             <div className="grid gap-4 sm:grid-cols-3">
@@ -807,7 +1299,6 @@ export function PolicyForm({
               {paymentModeField}
               {nomineeField}
               {nomineeRelationField}
-              {form.category === "motor" && vehicleField}
             </div>
           </>
         )}

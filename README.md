@@ -111,7 +111,10 @@ introduced them recorded as its head, so you can see one employer's whole book o
 a page and know who to thank for it.
 
 **Policies** — every policy you have placed, searchable by policy number, client
-name or vehicle number, filterable by category, status and expiry window.
+name, or a vehicle's registration, engine or chassis number, filterable by
+category, status and expiry window. A health policy is recorded the way a health
+proposal is written, and a motor policy records the vehicle and the two covers
+sold on it.
 
 **Import** — bring an existing spreadsheet in. See below.
 

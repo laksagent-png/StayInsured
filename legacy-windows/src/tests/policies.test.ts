@@ -12,6 +12,21 @@
  * `only_the_statuses_the_app_knows_are_accepted` and
  * `members_attach_only_to_their_own_client`.
  *
+ * The motor cases keep the Rust names verbatim rather than reading as prose,
+ * because a vehicle recorded differently in the two editions is the drift nothing
+ * else can see: `a_motor_policy_keeps_the_vehicle_its_cover_was_written_on`,
+ * `the_motor_details_are_held_to_the_words_the_app_knows`,
+ * `a_standalone_own_damage_policy_holds_no_third_party_cover`,
+ * `a_liability_policy_holds_no_own_damage_cover`,
+ * `the_weight_and_the_seats_belong_to_the_vehicle_that_has_them`,
+ * `half_a_risk_period_is_not_a_risk_period`,
+ * `a_motor_policy_expires_when_its_first_cover_does`,
+ * `a_motor_policy_with_no_risk_dates_keeps_the_dates_it_was_given`,
+ * `a_policy_can_be_found_by_its_engine_or_chassis_number`,
+ * `a_renewed_motor_policy_keeps_the_vehicle_and_restates_the_risk`,
+ * `a_vehicle_older_than_the_motor_car_is_a_typo` and
+ * `no_cover_type_means_neither_half_however_it_is_written`.
+ *
  * This is the file worth having. Everything else in the port either works or
  * throws; these rules can be subtly wrong and stay quiet for a year, until a
  * renewal that should have been on the desk was not, and the client's cover
@@ -23,6 +38,8 @@ import * as dashboard from "../core/repo/dashboard";
 import * as insurers from "../core/repo/insurers";
 import * as relations from "../core/repo/relations";
 import * as policies from "../core/repo/policies";
+import type { Policy, PolicyInput } from "../core/types";
+import { COVER_TYPES, coverHasOwnDamage, coverHasThirdParty } from "../core/util";
 import { expect, suite, test, throwsKind } from "./harness";
 import { daysFromToday, sampleClient, samplePolicy, tempDb } from "./support";
 
@@ -128,6 +145,556 @@ suite("the health details a proposal is written on", () => {
       expect.equal(policies.get(conn, plain).planType, null);
     });
     db.close();
+  });
+});
+
+/** A motor proposal, before any of the vehicle is filled in. */
+function motorPolicy(
+  clientId: number,
+  insurerId: number,
+  number: string,
+  expiry: string,
+): PolicyInput {
+  return { ...samplePolicy(clientId, insurerId, number, expiry), category: "motor" };
+}
+
+/** The fifteen the migration added, named so a policy can be read for all of them. */
+const MOTOR_FIELDS = [
+  "vehicleType",
+  "grossVehicleWeight",
+  "passengerCapacity",
+  "vehicleManufacturer",
+  "vehicleModel",
+  "manufactureYear",
+  "engineNumber",
+  "chassisNumber",
+  "coverType",
+  "odStartDate",
+  "odEndDate",
+  "tpStartDate",
+  "tpEndDate",
+  "odPremium",
+  "tpPremium",
+] as const satisfies readonly (keyof Policy)[];
+
+suite("the vehicle a motor policy is written on", () => {
+  test("a_motor_policy_keeps_the_vehicle_its_cover_was_written_on", () => {
+    const db = tempDb("motor-vehicle");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Rakesh Pawar"));
+      const insurer = insurers.findOrCreate(conn, "ICICI Lombard");
+
+      const id = policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/001", "2027-03-31"),
+        vehicleType: "goods_carrying",
+        grossVehicleWeight: 7_500,
+        // Answered on the form of a vehicle that has no seats to sell, so R4
+        // drops it: the fifteen are all sent and fourteen are what a goods
+        // carrying vehicle has.
+        passengerCapacity: 42,
+        vehicleManufacturer: "Tata Motors",
+        vehicleModel: "Tata Ace Gold",
+        manufactureYear: 2024,
+        engineNumber: " 275ide2b7112345 ",
+        chassisNumber: "mat445123pk56789",
+        coverType: "package",
+        odStartDate: "2026-04-01",
+        odEndDate: "2027-03-31",
+        tpStartDate: "2026-04-01",
+        tpEndDate: "2027-03-31",
+        odPremium: 18_400,
+        tpPremium: 6_100,
+      });
+
+      const policy = policies.get(conn, id);
+      expect.equal(policy.vehicleType, "goods_carrying");
+      expect.equal(policy.grossVehicleWeight, 7_500);
+      expect.equal(policy.passengerCapacity, null, "seats belong to a passenger vehicle");
+      expect.equal(policy.vehicleManufacturer, "Tata Motors");
+      expect.equal(policy.vehicleModel, "Tata Ace Gold");
+      expect.equal(policy.manufactureYear, 2024);
+      expect.equal(
+        policy.engineNumber,
+        "275IDE2B7112345",
+        "the number stamped on the engine is stamped in capitals",
+      );
+      expect.equal(policy.chassisNumber, "MAT445123PK56789");
+      expect.equal(policy.coverType, "package");
+      expect.equal(policy.odStartDate, "2026-04-01");
+      expect.equal(policy.odEndDate, "2027-03-31");
+      expect.equal(policy.tpStartDate, "2026-04-01");
+      expect.equal(policy.tpEndDate, "2027-03-31");
+      expect.equal(policy.odPremium, 18_400);
+      expect.equal(policy.tpPremium, 6_100);
+
+      // A proposal that names none of the fifteen leaves all fifteen empty, and
+      // is in every other way the policy it would have been before the questions
+      // existed — which is the state every imported row is in.
+      const bare = policies.get(
+        conn,
+        policies.create(conn, motorPolicy(client, insurer, "MT/2026/002", "2027-03-31")),
+      );
+      for (const field of MOTOR_FIELDS) {
+        expect.equal(bare[field], null, `${field} was never answered, so it holds nothing`);
+      }
+      expect.equal(bare.policyNumber, "MT/2026/002");
+      expect.equal(bare.category, "motor");
+      expect.equal(bare.startDate, "2026-04-01", "the dates it was given stand");
+      expect.equal(bare.expiryDate, "2027-03-31");
+      expect.equal(bare.sumInsured, 1_000_000);
+      expect.equal(bare.premiumAmount, 24_500);
+      expect.equal(bare.commissionRate, 15);
+      expect.equal(bare.status, "active");
+    });
+    db.close();
+  });
+
+  test("the_motor_details_are_held_to_the_words_the_app_knows", async () => {
+    const db = tempDb("motor-words");
+    await db.with(async (conn) => {
+      const client = clients.create(conn, sampleClient("Sunil Deshpande"));
+      const insurer = insurers.findOrCreate(conn, "Bajaj Allianz");
+
+      // The wording is asserted, not just the kind. A refusal an operator reads
+      // is the part of a port that can drift without anything failing, and the
+      // Rust case pins the same strings.
+      const vehicle = await throwsKind(
+        "validation",
+        () =>
+          policies.create(conn, {
+            ...motorPolicy(client, insurer, "MT/2026/010", "2027-03-31"),
+            vehicleType: "tractor",
+          }),
+        "a vehicle the app has no rating for is not a vehicle type",
+      );
+      expect.equal(vehicle.message, '"tractor" is not a known vehicle type');
+
+      const cover = await throwsKind("validation", () =>
+        policies.create(conn, {
+          ...motorPolicy(client, insurer, "MT/2026/011", "2027-03-31"),
+          coverType: "comprehensive",
+        }),
+      );
+      expect.equal(cover.message, '"comprehensive" is not a known cover type');
+
+      const shouted = await throwsKind(
+        "validation",
+        () =>
+          policies.create(conn, {
+            ...motorPolicy(client, insurer, "MT/2026/012", "2027-03-31"),
+            vehicleType: "PVT_CAR",
+          }),
+        "the stored word is the stored word, not a word shouted",
+      );
+      expect.equal(shouted.message, '"PVT_CAR" is not a known vehicle type');
+
+      // A book that predates the questions still goes in, and a blank is nothing
+      // said rather than a word nobody knows.
+      const plain = policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/013", "2027-03-31"),
+        vehicleType: "",
+        coverType: "",
+      });
+      expect.equal(policies.get(conn, plain).vehicleType, null);
+      expect.equal(policies.get(conn, plain).coverType, null);
+    });
+    db.close();
+  });
+
+  test("a_standalone_own_damage_policy_holds_no_third_party_cover", () => {
+    const db = tempDb("motor-standalone-od");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Anita Kulkarni"));
+      const insurer = insurers.findOrCreate(conn, "HDFC ERGO");
+
+      const id = policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/020", "2027-03-31"),
+        vehicleType: "pvt_car",
+        coverType: "standalone_od",
+        odStartDate: "2026-04-01",
+        odEndDate: "2027-03-31",
+        odPremium: 9_800,
+        // Sent by an agent who filled the whole sheet in; the policy carries no
+        // third party cover, so the book must not say it does.
+        tpStartDate: "2026-04-01",
+        tpEndDate: "2029-03-31",
+        tpPremium: 5_400,
+      });
+
+      const policy = policies.get(conn, id);
+      expect.equal(policy.tpStartDate, null);
+      expect.equal(policy.tpEndDate, null);
+      expect.equal(policy.tpPremium, null);
+      expect.equal(policy.odStartDate, "2026-04-01");
+      expect.equal(policy.odEndDate, "2027-03-31");
+      expect.equal(policy.odPremium, 9_800);
+    });
+    db.close();
+  });
+
+  test("a_liability_policy_holds_no_own_damage_cover", () => {
+    const db = tempDb("motor-liability");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Faisal Merchant"));
+      const insurer = insurers.findOrCreate(conn, "United India");
+
+      const id = policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/021", "2027-03-31"),
+        vehicleType: "two_wheeler",
+        coverType: "liability",
+        odStartDate: "2026-04-01",
+        odEndDate: "2027-03-31",
+        odPremium: 9_800,
+        tpStartDate: "2026-04-01",
+        tpEndDate: "2027-03-31",
+        tpPremium: 1_450,
+      });
+
+      const policy = policies.get(conn, id);
+      expect.equal(policy.odStartDate, null);
+      expect.equal(policy.odEndDate, null);
+      expect.equal(policy.odPremium, null);
+      expect.equal(policy.tpStartDate, "2026-04-01");
+      expect.equal(policy.tpEndDate, "2027-03-31");
+      expect.equal(policy.tpPremium, 1_450);
+    });
+    db.close();
+  });
+
+  test("the_weight_and_the_seats_belong_to_the_vehicle_that_has_them", () => {
+    const db = tempDb("motor-weight-seats");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Harpreet Singh"));
+      const insurer = insurers.findOrCreate(conn, "New India Assurance");
+
+      const goods = policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/030", "2027-03-31"),
+        vehicleType: "goods_carrying",
+        grossVehicleWeight: 12_000,
+      });
+      expect.equal(policies.get(conn, goods).grossVehicleWeight, 12_000);
+
+      // The same lorry, rewritten as a car by an edit: the weight goes with the
+      // vehicle it described.
+      policies.update(conn, goods, {
+        ...motorPolicy(client, insurer, "MT/2026/030", "2027-03-31"),
+        vehicleType: "pvt_car",
+        grossVehicleWeight: 12_000,
+      });
+      expect.equal(policies.get(conn, goods).grossVehicleWeight, null);
+
+      const bus = policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/031", "2027-03-31"),
+        vehicleType: "passenger",
+        passengerCapacity: 45,
+      });
+      expect.equal(policies.get(conn, bus).passengerCapacity, 45);
+
+      const scooter = policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/032", "2027-03-31"),
+        vehicleType: "two_wheeler",
+        passengerCapacity: 45,
+      });
+      expect.equal(policies.get(conn, scooter).passengerCapacity, null);
+    });
+    db.close();
+  });
+
+  test("half_a_risk_period_is_not_a_risk_period", async () => {
+    const db = tempDb("motor-half-period");
+    await db.with(async (conn) => {
+      const client = clients.create(conn, sampleClient("Jaya Menon"));
+      const insurer = insurers.findOrCreate(conn, "Tata AIG");
+
+      // Both refusals are quoted back to the agent by the form, so both are held
+      // to their wording here and in the Rust case.
+      const half = await throwsKind(
+        "validation",
+        () =>
+          policies.create(conn, {
+            ...motorPolicy(client, insurer, "MT/2026/040", "2027-03-31"),
+            coverType: "package",
+            odStartDate: "2026-04-01",
+          }),
+        "a cover that starts and never ends is a date typed into the wrong box",
+      );
+      expect.equal(half.message, "Both risk dates are needed for own damage cover");
+
+      const backwards = await throwsKind("validation", () =>
+        policies.create(conn, {
+          ...motorPolicy(client, insurer, "MT/2026/041", "2027-03-31"),
+          coverType: "package",
+          odStartDate: "2027-03-31",
+          odEndDate: "2026-04-01",
+        }),
+      );
+      expect.equal(backwards.message, "The own damage cover must end after it starts");
+
+      // The same half pair on a cover the policy does not carry is cleared before
+      // anything is asked of it.
+      const liability = policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/042", "2027-03-31"),
+        coverType: "liability",
+        odStartDate: "2026-04-01",
+        tpStartDate: "2026-04-01",
+        tpEndDate: "2027-03-31",
+      });
+      expect.equal(policies.get(conn, liability).odStartDate, null);
+    });
+    db.close();
+  });
+
+  test("a_motor_policy_expires_when_its_first_cover_does", () => {
+    const db = tempDb("motor-first-expiry");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Dinesh Bhat"));
+      const insurer = insurers.findOrCreate(conn, "Reliance General");
+
+      const id = policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/050", "2029-03-31"),
+        // Neither of the dates the caller sent survives: a 1+3 bundle is on the
+        // renewals desk after one year, not after three.
+        startDate: "2026-06-01",
+        vehicleType: "pvt_car",
+        coverType: "bundle_1_3",
+        odStartDate: "2026-04-02",
+        odEndDate: "2027-04-01",
+        tpStartDate: "2026-04-01",
+        tpEndDate: "2029-03-31",
+      });
+
+      const policy = policies.get(conn, id);
+      expect.equal(policy.expiryDate, "2027-04-01", "the own damage cover lapses first");
+      expect.equal(policy.startDate, "2026-04-01", "and the risk began when the earlier cover did");
+
+      // Only a motor policy is rewritten this way. A health policy that arrived
+      // carrying risk dates — an import that filled the wrong columns, or a
+      // category corrected after the fact — keeps the year it was sold for.
+      const health = policies.get(
+        conn,
+        policies.create(conn, {
+          ...samplePolicy(client, insurer, "HS/2026/050", "2029-03-31"),
+          startDate: "2026-06-01",
+          coverType: "bundle_1_3",
+          odStartDate: "2026-04-02",
+          odEndDate: "2027-04-01",
+          tpStartDate: "2026-04-01",
+          tpEndDate: "2029-03-31",
+        }),
+      );
+      expect.equal(health.category, "health");
+      expect.equal(health.startDate, "2026-06-01", "the dates the caller sent stand");
+      expect.equal(health.expiryDate, "2029-03-31");
+      expect.equal(health.odEndDate, "2027-04-01", "though the dates themselves are stored");
+    });
+    db.close();
+  });
+
+  test("a_motor_policy_with_no_risk_dates_keeps_the_dates_it_was_given", () => {
+    const db = tempDb("motor-no-risk-dates");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Pooja Rane"));
+      const insurer = insurers.findOrCreate(conn, "SBI General");
+
+      const id = policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/051", "2029-03-31"),
+        startDate: "2026-06-01",
+        vehicleType: "pvt_car",
+        coverType: "bundle_1_3",
+      });
+
+      const policy = policies.get(conn, id);
+      expect.equal(policy.startDate, "2026-06-01");
+      expect.equal(policy.expiryDate, "2029-03-31");
+    });
+    db.close();
+  });
+
+  test("a_policy_can_be_found_by_its_engine_or_chassis_number", () => {
+    const db = tempDb("motor-search");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Manoj Tiwari"));
+      const insurer = insurers.findOrCreate(conn, "Kotak General");
+      policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/060", "2027-03-31"),
+        engineNumber: "K9BN12345678",
+        chassisNumber: "MA3ERLF1S00123456",
+      });
+
+      // A claim arrives quoting one number and nothing else, typed as it was read.
+      const found = (search: string) => policies.list(conn, { search }).total;
+      expect.equal(found("k9bn12345678"), 1, "the engine number, in the case it was typed");
+      expect.equal(found("ma3erlf1s00123456"), 1, "and the chassis number");
+      expect.equal(found("ERLF1S001"), 1, "part of one is enough, as it is for a policy number");
+      expect.equal(found("K9BN99999999"), 0);
+    });
+    db.close();
+  });
+
+  test("a_renewed_motor_policy_keeps_the_vehicle_and_restates_the_risk", () => {
+    const db = tempDb("motor-renew");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Shalini Rao"));
+      const insurer = insurers.findOrCreate(conn, "Cholamandalam MS");
+
+      const first = policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/070", "2029-03-31"),
+        vehicleType: "passenger",
+        passengerCapacity: 45,
+        vehicleManufacturer: "Ashok Leyland",
+        vehicleModel: "Ashok Leyland Viking",
+        manufactureYear: 2021,
+        engineNumber: "ALV4567890",
+        chassisNumber: "MB1PBAKC7MRJK1234",
+        coverType: "bundle_1_3",
+        odStartDate: "2026-04-01",
+        odEndDate: "2027-03-31",
+        odPremium: 41_000,
+        tpStartDate: "2026-04-01",
+        tpEndDate: "2029-03-31",
+        tpPremium: 22_500,
+      });
+      expect.equal(policies.get(conn, first).expiryDate, "2027-03-31");
+
+      const second = policies.renew(conn, { policyId: first, policyNumber: "MT/2027/071" });
+      const renewed = policies.get(conn, second);
+
+      expect.equal(renewed.vehicleType, "passenger", "the same bus is insured next year");
+      expect.equal(renewed.passengerCapacity, 45);
+      expect.equal(
+        renewed.grossVehicleWeight,
+        null,
+        "and it is still a bus, so it still has no gross weight",
+      );
+      expect.equal(renewed.vehicleManufacturer, "Ashok Leyland");
+      expect.equal(renewed.vehicleModel, "Ashok Leyland Viking");
+      expect.equal(renewed.manufactureYear, 2021);
+      expect.equal(renewed.engineNumber, "ALV4567890");
+      expect.equal(renewed.chassisNumber, "MB1PBAKC7MRJK1234");
+      expect.equal(renewed.coverType, "bundle_1_3");
+
+      // The risk is restated rather than carried: last year's dates and split
+      // premiums describe last year.
+      expect.equal(renewed.odStartDate, null);
+      expect.equal(renewed.odEndDate, null);
+      expect.equal(renewed.tpStartDate, null);
+      expect.equal(renewed.tpEndDate, null);
+      expect.equal(renewed.odPremium, null);
+      expect.equal(renewed.tpPremium, null);
+
+      expect.equal(renewed.startDate, "2027-04-01", "the day after the year that lapsed first");
+      expect.equal(renewed.expiryDate, "2028-03-31", "and a year of it, as any renewal gets");
+    });
+    db.close();
+  });
+
+  test("a_vehicle_older_than_the_motor_car_is_a_typo", async () => {
+    const db = tempDb("motor-ranges");
+    await db.with(async (conn) => {
+      const client = clients.create(conn, sampleClient("Girish Kamat"));
+      const insurer = insurers.findOrCreate(conn, "Future Generali");
+
+      // Each of these would otherwise reach the schema's CHECK and come back as a
+      // conflict quoting SQLite at an agent who mistyped a number. `throwsKind`
+      // holds the kind and the wording holds what they are shown: neither says
+      // anything about a constraint.
+      const year = await throwsKind(
+        "validation",
+        () =>
+          policies.create(conn, {
+            ...motorPolicy(client, insurer, "MT/2026/080", "2027-03-31"),
+            manufactureYear: 1899,
+          }),
+        "the motor car is younger than that, so the year is a typo",
+      );
+      expect.equal(year.message, "A manufacture year is between 1900 and 2100");
+
+      const digit = await throwsKind("validation", () =>
+        policies.create(conn, {
+          ...motorPolicy(client, insurer, "MT/2026/081", "2027-03-31"),
+          manufactureYear: 20_240,
+        }),
+      );
+      expect.equal(digit.message, "A manufacture year is between 1900 and 2100");
+
+      const weight = await throwsKind("validation", () =>
+        policies.create(conn, {
+          ...motorPolicy(client, insurer, "MT/2026/082", "2027-03-31"),
+          vehicleType: "goods_carrying",
+          grossVehicleWeight: 0,
+        }),
+      );
+      expect.equal(weight.message, "A gross vehicle weight is more than nothing");
+
+      const seats = await throwsKind("validation", () =>
+        policies.create(conn, {
+          ...motorPolicy(client, insurer, "MT/2026/083", "2027-03-31"),
+          vehicleType: "passenger",
+          passengerCapacity: 0,
+        }),
+      );
+      expect.equal(seats.message, "A vehicle carries at least one passenger");
+
+      // The bounds are inclusive, and nothing said is still allowed.
+      const oldest = policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/084", "2027-03-31"),
+        vehicleType: "passenger",
+        passengerCapacity: 1,
+        manufactureYear: 1900,
+      });
+      expect.equal(policies.get(conn, oldest).manufactureYear, 1900);
+      expect.equal(policies.get(conn, oldest).passengerCapacity, 1);
+
+      // And the range is asked of the detail as it will be stored: a weight
+      // sitting on a vehicle that has none is dropped by R4 before this looks,
+      // because it is a stale answer on the form rather than a bad number.
+      const car = policies.create(conn, {
+        ...motorPolicy(client, insurer, "MT/2026/085", "2027-03-31"),
+        vehicleType: "pvt_car",
+        grossVehicleWeight: 0,
+        passengerCapacity: 0,
+      });
+      expect.equal(policies.get(conn, car).grossVehicleWeight, null);
+      expect.equal(policies.get(conn, car).passengerCapacity, null);
+    });
+    db.close();
+  });
+
+  test("no_cover_type_means_neither_half_however_it_is_written", () => {
+    // The two helpers R3 and the form's R16 are both written in terms of, so the
+    // core and the screen cannot disagree about which half a policy carries.
+    expect.equal(coverHasOwnDamage(null), false, "nothing chosen carries neither half");
+    expect.equal(coverHasThirdParty(null), false);
+    expect.equal(coverHasOwnDamage(undefined), false);
+    expect.equal(coverHasThirdParty(undefined), false);
+    expect.equal(coverHasOwnDamage(""), false, "and a form that sent an empty box has not chosen");
+    expect.equal(coverHasThirdParty(""), false);
+
+    const carries: [cover: string, ownDamage: boolean, thirdParty: boolean][] = [
+      ["bundle_1_3", true, true],
+      ["bundle_3_3", true, true],
+      ["standalone_od", true, false],
+      ["package", true, true],
+      ["liability", false, true],
+    ];
+    // So a sixth cover type cannot be added to the vocabulary without a line here
+    // saying what it carries.
+    expect.equal(carries.length, COVER_TYPES.length, "every cover type the app knows is answered");
+
+    for (const [cover, ownDamage, thirdParty] of carries) {
+      expect.ok(
+        (COVER_TYPES as readonly string[]).includes(cover),
+        `${cover} should be one of the words the app stores`,
+      );
+      expect.equal(coverHasOwnDamage(cover), ownDamage, `${cover} and own damage`);
+      expect.equal(coverHasThirdParty(cover), thirdParty, `${cover} and third party`);
+    }
+
+    // Neither helper trims, on either side of the port, and the repositories
+    // blank-to-null before asking. A string of spaces is a word nobody stores, so
+    // what it answers is only recorded here rather than relied on.
+    expect.equal(coverHasOwnDamage("   "), true);
+    expect.equal(coverHasThirdParty("   "), true);
   });
 });
 

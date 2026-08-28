@@ -102,6 +102,38 @@ async function fillMinimum(user: User, policyNumber = "SH/2026/0001") {
   await user.type(screen.getByLabelText(/Policy number/), policyNumber);
 }
 
+/**
+ * The vehicle and the two covers, on a private car with a package policy. The
+ * broker is left out: it is the one answer a policy keeps on its way between
+ * health and motor, so the tests that care fill it in themselves.
+ */
+async function fillVehicle(user: User) {
+  await user.selectOptions(screen.getByLabelText(/Vehicle type/), "pvt_car");
+  await user.type(screen.getByLabelText(/Manufacturer/), "Maruti Suzuki");
+  await user.type(screen.getByLabelText(/Make \/ model/), "Swift VXi");
+  await user.type(screen.getByLabelText(/Year of manufacture/), "2021");
+  await user.type(screen.getByLabelText(/Registration number/), "mh12ab1234");
+  await user.type(screen.getByLabelText(/Engine number/), "k12mn1234567");
+  await user.type(screen.getByLabelText(/Chassis number/), "ma3ejkd1s00123456");
+  await user.selectOptions(screen.getByLabelText(/Policy type/), "package");
+  await user.type(screen.getByLabelText(/Own damage start/), "2026-09-01");
+  await user.type(screen.getByLabelText(/Own damage end/), "2027-08-31");
+  await user.type(screen.getByLabelText(/Own damage premium/), "8000");
+  await user.type(screen.getByLabelText(/Third party start/), "2026-09-01");
+  await user.type(screen.getByLabelText(/Third party end/), "2027-08-31");
+  await user.type(screen.getByLabelText(/Third party premium/), "4000");
+}
+
+/** Everything a motor proposal is required to answer, from an empty form. */
+async function fillMotor(user: User, policyNumber = "IL/2026/0001") {
+  await chooseCategory(user, "motor");
+  await chooseClient(user, /Anita Desai/);
+  await chooseInsurer(user, 3, "ICICI Lombard");
+  await user.type(screen.getByLabelText(/Policy number/), policyNumber);
+  await fillVehicle(user);
+  await user.type(screen.getByLabelText(/Broker/), "Deshmukh Insurance Services");
+}
+
 /** Everything a health proposal is required to answer. */
 async function fillHealth(user: User, policyNumber = "HE/2026/0001") {
   await chooseClient(user, /Anita Desai/);
@@ -226,7 +258,7 @@ describe("the order the policy form asks in", () => {
   it("leaves every other category on the general layout", async () => {
     const { user } = openForm();
 
-    await chooseCategory(user, "motor");
+    await chooseCategory(user, "travel");
 
     expect(fieldLabels()).toEqual([
       "Client",
@@ -245,7 +277,6 @@ describe("the order the policy form asks in", () => {
       "Payment mode",
       "Nominee",
       "Nominee relation",
-      "Vehicle number",
       "Notes",
     ]);
   });
@@ -374,6 +405,201 @@ describe("what a health policy asks for", () => {
       "aria-pressed",
       "false",
     );
+  });
+});
+
+describe("what a motor policy asks for", () => {
+  it("asks a motor policy for the vehicle and the covers", async () => {
+    const { user } = openForm();
+
+    await chooseCategory(user, "motor");
+
+    expect(fieldLabels()).toEqual([
+      "Category",
+      "Client",
+      "Policy number",
+      "Insurer",
+      "Plan",
+      "Vehicle type",
+      "Manufacturer",
+      "Make / model",
+      "Year of manufacture",
+      "Registration number",
+      "Engine number",
+      "Chassis number",
+      "Policy type",
+      "Broker",
+      "Own damage start",
+      "Own damage end",
+      "Own damage premium",
+      "Third party start",
+      "Third party end",
+      "Third party premium",
+      "Premium",
+      "Sum insured",
+      "GST",
+      "Frequency",
+      "Commission %",
+      "Commission amount",
+      "Payment mode",
+      "Nominee",
+      "Nominee relation",
+      "Notes",
+    ]);
+
+    await chooseClient(user, /Anita Desai/);
+    await chooseInsurer(user, 3, "ICICI Lombard");
+    await user.type(screen.getByLabelText(/Policy number/), "IL/2026/0001");
+    await user.click(addPolicy());
+
+    expect(await screen.findByText("Say what kind of vehicle this is")).toBeInTheDocument();
+    expect(backend().countOf("create_policy")).toBe(0);
+  });
+
+  it("asks a goods carrying vehicle for its weight and a passenger vehicle for its seats", async () => {
+    const { user } = openForm();
+    await chooseCategory(user, "motor");
+    const vehicleType = screen.getByLabelText(/Vehicle type/);
+
+    expect(screen.queryByLabelText(/Gross vehicle weight/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Passengers/)).not.toBeInTheDocument();
+
+    await user.selectOptions(vehicleType, "goods_carrying");
+    await user.type(screen.getByLabelText(/Gross vehicle weight/), "7500");
+    expect(screen.queryByLabelText(/Passengers/)).not.toBeInTheDocument();
+
+    await user.selectOptions(vehicleType, "passenger");
+    expect(screen.queryByLabelText(/Gross vehicle weight/)).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/Passengers/), "42");
+
+    // The weight went with the lorry, so the lorry is asked for it again.
+    await user.selectOptions(vehicleType, "goods_carrying");
+    expect(screen.getByLabelText(/Gross vehicle weight/)).toHaveValue(null);
+    expect(screen.queryByLabelText(/Passengers/)).not.toBeInTheDocument();
+  });
+
+  it("hides third party cover on a standalone own damage policy", async () => {
+    const { user } = openForm();
+    await fillMotor(user);
+
+    // Both covers were filled in before the schedule narrowed them to one.
+    await user.selectOptions(screen.getByLabelText(/Policy type/), "standalone_od");
+
+    expect(screen.getByLabelText(/Own damage start/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Third party start/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Third party premium/)).not.toBeInTheDocument();
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(backend().countOf("create_policy")).toBe(1));
+    expect(savedInput("create_policy")).toMatchObject({
+      coverType: "standalone_od",
+      odStartDate: "2026-09-01",
+      odEndDate: "2027-08-31",
+      odPremium: 8000,
+      tpStartDate: "",
+      tpEndDate: "",
+      tpPremium: null,
+    });
+  });
+
+  it("adds the own damage and third party premiums into the total", async () => {
+    const { user } = openForm();
+    await fillMotor(user);
+    const coverType = screen.getByLabelText(/Policy type/);
+
+    expect(screen.getByText("₹12,000 from the covers")).toBeInTheDocument();
+    expect(premiumBox()).toHaveValue(null);
+
+    // Both rows stay on show until a cover type is chosen, but neither premium
+    // would be stored yet, so there is no total to state either.
+    await user.selectOptions(coverType, "");
+    expect(screen.getByLabelText(/Own damage premium/)).toHaveValue(8000);
+    expect(screen.getByLabelText(/Third party premium/)).toHaveValue(4000);
+    expect(screen.queryByText(/from the covers/)).not.toBeInTheDocument();
+
+    // A liability policy sold no own damage, so only the half that applies is
+    // counted, whatever the other box is holding.
+    await user.selectOptions(coverType, "liability");
+    expect(screen.getByText("₹4,000 from the covers")).toBeInTheDocument();
+
+    await user.selectOptions(coverType, "package");
+    expect(screen.getByText("₹12,000 from the covers")).toBeInTheDocument();
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(backend().countOf("create_policy")).toBe(1));
+    expect(savedInput("create_policy").premiumAmount).toBe(12000);
+
+    // A total typed by hand stands, whatever the two halves come to.
+    await user.clear(screen.getByLabelText(/Policy number/));
+    await user.type(screen.getByLabelText(/Policy number/), "IL/2026/0002");
+    await user.type(premiumBox(), "11500");
+    expect(screen.queryByText("₹12,000 from the covers")).not.toBeInTheDocument();
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(backend().countOf("create_policy")).toBe(2));
+    expect(savedInput("create_policy").premiumAmount).toBe(11500);
+  });
+
+  it("sends the earliest cover dates as the policy dates", async () => {
+    const { user } = openForm();
+    await fillMotor(user);
+
+    // A 1+3 bundle: the own damage cover is bought again after a year, while
+    // the third party cover runs three.
+    await user.selectOptions(screen.getByLabelText(/Policy type/), "bundle_1_3");
+    await user.clear(screen.getByLabelText(/Third party end/));
+    await user.type(screen.getByLabelText(/Third party end/), "2029-08-31");
+
+    expect(screen.queryByLabelText(/^Start date/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Expiry date/)).not.toBeInTheDocument();
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(backend().countOf("create_policy")).toBe(1));
+    expect(savedInput("create_policy")).toMatchObject({
+      startDate: "2026-09-01",
+      expiryDate: "2027-08-31",
+      odEndDate: "2027-08-31",
+      tpEndDate: "2029-08-31",
+    });
+  });
+
+  it("keeps the broker when a policy moves between health and motor", async () => {
+    const { user } = openForm();
+    await fillHealth(user);
+
+    await chooseCategory(user, "motor");
+    await fillVehicle(user);
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(backend().countOf("create_policy")).toBe(1));
+    expect(savedInput("create_policy")).toMatchObject({
+      category: "motor",
+      broker: "Deshmukh Insurance Services",
+      chassisNumber: "MA3EJKD1S00123456",
+      riders: [],
+      variant: "",
+      inbuiltRider: "",
+    });
+
+    // And back the other way, where the vehicle is what is left behind.
+    await user.clear(screen.getByLabelText(/Policy number/));
+    await user.type(screen.getByLabelText(/Policy number/), "HE/2026/0002");
+    await chooseCategory(user, "health");
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(backend().countOf("create_policy")).toBe(2));
+    expect(savedInput("create_policy")).toMatchObject({
+      category: "health",
+      broker: "Deshmukh Insurance Services",
+      chassisNumber: "",
+      vehicleType: null,
+      vehicleNumber: "",
+      riders: ["safeguard_plus"],
+    });
   });
 });
 
@@ -785,15 +1011,12 @@ describe("the policy form's covered members", () => {
   });
 });
 
-describe("the policy form's vehicle number", () => {
+describe("the policy form's registration number", () => {
   it("appears for a motor policy, in capitals", async () => {
     const { user } = openForm();
-    await fillMinimum(user);
+    await fillMotor(user);
 
-    await user.selectOptions(screen.getByLabelText(/Category/), "motor");
-    await user.type(screen.getByLabelText("Vehicle number"), "mh12ab1234");
-
-    expect(screen.getByLabelText("Vehicle number")).toHaveValue("MH12AB1234");
+    expect(screen.getByLabelText(/Registration number/)).toHaveValue("MH12AB1234");
 
     await user.click(addPolicy());
 
@@ -808,7 +1031,7 @@ describe("the policy form's vehicle number", () => {
   it("shows the vehicle an existing motor policy carries", async () => {
     openForm({ policy: fromBook(2) });
 
-    expect(await screen.findByLabelText("Vehicle number")).toHaveValue("MH12AB1234");
+    expect(await screen.findByLabelText(/Registration number/)).toHaveValue("MH12AB1234");
   });
 
   it("drops the vehicle number when the policy stops being motor", async () => {
@@ -816,9 +1039,9 @@ describe("the policy form's vehicle number", () => {
     await fillMinimum(user);
 
     await user.selectOptions(screen.getByLabelText(/Category/), "motor");
-    await user.type(screen.getByLabelText("Vehicle number"), "mh12ab1234");
+    await user.type(screen.getByLabelText(/Registration number/), "mh12ab1234");
     await user.selectOptions(screen.getByLabelText(/Category/), "travel");
-    expect(screen.queryByLabelText("Vehicle number")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Registration number/)).not.toBeInTheDocument();
 
     await user.click(addPolicy());
 
@@ -874,6 +1097,23 @@ describe("saving from the policy form", () => {
       // A new policy takes its status from the calendar, so none is sent. Text
       // fields that were never touched go as empty strings.
       vehicleNumber: "",
+      // The vehicle belongs to motor cover, so a health policy carries none of
+      // it.
+      vehicleType: null,
+      grossVehicleWeight: null,
+      passengerCapacity: null,
+      vehicleManufacturer: "",
+      vehicleModel: "",
+      manufactureYear: null,
+      engineNumber: "",
+      chassisNumber: "",
+      coverType: null,
+      odStartDate: "",
+      odEndDate: "",
+      tpStartDate: "",
+      tpEndDate: "",
+      odPremium: null,
+      tpPremium: null,
       notes: "Ported from last year",
       // Anita has nobody linked to her, so the policy names no other life.
       insuredClientIds: [],

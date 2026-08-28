@@ -413,9 +413,10 @@ retire one.
 | `refresh_statuses` | — | `number` |
 
 `PolicyFilter`: `search` (policy number, client name, client code, vehicle
-number), `clientId`, `insurerId`, `productId`, `categories[]`, `statuses[]`,
-`expiryFrom`, `expiryTo`, `expiringWithinDays`, `minPremium`, `maxPremium`,
-`city`, `latestOnly`, `unrenewedOnly`, `sort`, `descending`, `page`, `pageSize`.
+number, engine number, chassis number), `clientId`, `insurerId`, `productId`,
+`categories[]`, `statuses[]`, `expiryFrom`, `expiryTo`, `expiringWithinDays`,
+`minPremium`, `maxPremium`, `city`, `latestOnly`, `unrenewedOnly`, `sort`,
+`descending`, `page`, `pageSize`.
 
 - `latestOnly` keeps only the most recent year in each renewal chain.
 - `unrenewedOnly` keeps expired or lapsed policies with no successor — the
@@ -428,8 +429,10 @@ number), `clientId`, `insurerId`, `productId`, `categories[]`, `statuses[]`,
 `PolicyInput` requires `policyNumber`, `clientId`, `insurerId`, `category`,
 `startDate` and `expiryDate`; expiry must be after start. `status` defaults to
 `active` on create and is left unchanged on update when omitted.
-`premiumFrequency` defaults to `annual`. Vehicle numbers are upper-cased. The
-health fields below are optional whatever the category.
+`premiumFrequency` defaults to `annual`. Vehicle, engine and chassis numbers are
+upper-cased. The health and motor fields below are optional whatever the
+category, and a motor policy's `startDate` and `expiryDate` are overwritten from
+its risk periods — see [the motor fields](#the-motor-fields).
 `insuredClientIds` replaces the set of lives covered; omitting it on update leaves
 the set alone. Only the policyholder and the clients related to them can be named
 — any other id is dropped by the `INSERT ... WHERE` that writes the set, so a
@@ -467,6 +470,75 @@ had one at all, so a policy ported in last year is a renewal this year. And a
 renewal that does not name its own dates runs for `term` years rather than one,
 because that is the cover that was bought.
 
+`broker` is the one of the seven a motor policy is also asked for; the screen
+keeps it when a policy moves between health and motor and clears it for every
+other category.
+
+### The motor fields
+
+Fifteen fields say what a motor policy was written on and what it sold. All are
+optional on `PolicyInput` and nullable on `Policy`, in this order between
+`inbuiltRider` and `notes`.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `vehicleType` | `VehicleType` | `pvt_car`, `goods_carrying`, `passenger`, `two_wheeler` |
+| `grossVehicleWeight` | `number` | Kilograms. Kept only on a `goods_carrying` vehicle |
+| `passengerCapacity` | `number` | Seats. Kept only on a `passenger` vehicle |
+| `vehicleManufacturer` | `string` | |
+| `vehicleModel` | `string` | Make and model as one, the way the registration certificate writes it |
+| `manufactureYear` | `number` | 1900 to 2100 |
+| `engineNumber` | `string` | Upper-cased |
+| `chassisNumber` | `string` | Upper-cased |
+| `coverType` | `CoverType` | `bundle_1_3`, `bundle_3_3`, `standalone_od`, `package`, `liability` |
+| `odStartDate` / `odEndDate` | `string` | The own damage risk period, ISO on the way out |
+| `tpStartDate` / `tpEndDate` | `string` | The third party risk period |
+| `odPremium` | `number` | What own damage cover cost |
+| `tpPremium` | `number` | What third party cover cost |
+
+The registration number is `vehicleNumber`, which every category may carry and
+only motor is asked for — an imported row categorised `other` can hold one, so
+the core never drops it.
+
+**`coverType` decides which of the last six apply.** Anything but `liability`
+carries own damage; anything but `standalone_od` carries third party; no
+`coverType` carries neither. The core writes `NULL` for the dates and the premium
+of a cover the policy does not have, whatever the caller sent, so a `package`
+policy edited to `liability` loses its own damage detail on that write. The
+vehicle question works the same way: the weight and the seat count are cleared
+unless the `vehicleType` is the one that is rated on them.
+
+**An applicable risk period is complete or absent, and runs forwards.** Half a
+pair is `validation` — `Both risk dates are needed for own damage cover`, and the
+third party equivalent — and a period that does not end after it starts is
+`The own damage cover must end after it starts`, likewise. Equal dates are
+refused, as `startDate` and `expiryDate` already are. Half a pair on a cover the
+policy does not carry is not an error: it is cleared before it is checked. The
+four dates go through the same reader as every other date, so an Excel serial or
+`31/12/2026` is read and stored ISO; one that cannot be read is `validation`
+naming the field, as in `Own damage start date is not a valid date`.
+
+**A motor policy's dates come from its covers.** Where at least one applicable
+period is complete, `create` and `update` overwrite `startDate` with the earliest
+applicable start and `expiryDate` with the earliest applicable end, so the
+renewals desk chases whichever half lapses first — a 1+3 bundle turns up after its
+first year. With no complete applicable period the supplied pair stands, and a
+policy in any other category is never rewritten this way.
+
+**`renew_policy` carries the vehicle and not the risk.** The nine descriptive
+fields — everything through `coverType` — come forward; the four dates and the two
+split premiums do not, because they describe the year being renewed. The new
+year's `startDate` and `expiryDate` are the day after the previous expiry for the
+previous `term` or one year, and the agent restates the risk periods and the split
+premiums by editing it.
+
+The importer maps none of the fifteen, as it maps none of the health detail;
+`vehicleNumber` is the one field of a motor policy a spreadsheet can carry. The
+policy export writes a column per field after the health block: `Vehicle type`,
+`GVW (kg)`, `Passengers`, `Manufacturer`, `Model`, `Year`, `Engine number`,
+`Chassis number`, `Cover type`, `OD start`, `OD end`, `TP start`, `TP end`,
+`OD premium`, `TP premium`, with the two vocabularies written as their labels.
+
 **`policy_chain`** returns every year of the chain the policy belongs to, oldest
 first.
 
@@ -491,8 +563,9 @@ unlock, import or `refresh_statuses`.
 **`refresh_statuses`** returns the number of rows touched.
 
 Errors: `validation` (missing number, unknown category or status, expiry not
-after start, non-existent client or insurer), `conflict` (duplicate policy
-number for the insurer), `not_found`.
+after start, unknown vehicle or cover type, an incomplete or backwards risk
+period, an unreadable risk date, non-existent client or insurer), `conflict`
+(duplicate policy number for the insurer), `not_found`.
 
 ## Import and export
 
@@ -754,6 +827,8 @@ through `set_smtp_password`.
 | Delete scope | `linksOnly`, `immediateFamily` |
 | Client kind | `individual`, `company` |
 | Premium frequency | `annual`, `half_yearly`, `quarterly`, `monthly`, `single` |
+| Vehicle type | `pvt_car`, `goods_carrying`, `passenger`, `two_wheeler` |
+| Cover type | `bundle_1_3`, `bundle_3_3`, `standalone_od`, `package`, `liability` |
 | Gender | `male`, `female`, `other` |
 | Template trigger | `expiry_reminder`, `post_expiry`, `welcome`, `renewal_confirmation`, `annual_summary`, `provider_digest`, `custom` |
 | Reminder audience | `client`, `provider` |

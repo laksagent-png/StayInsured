@@ -17,12 +17,16 @@ import { blankToNull, numberOrNull, toModel } from "../rows";
 import type { Page, Policy, PolicyFilter, PolicyInput, RenewalInput } from "../types";
 import {
   CATEGORIES,
+  COVER_TYPES,
   MAX_TERM,
   PLAN_TYPES,
   POLICY_TYPES,
   RIDERS,
+  VEHICLE_TYPES,
   addDays,
   canonicalRiders,
+  coverHasOwnDamage,
+  coverHasThirdParty,
   expiryAfter,
   parseDate,
   splitRiders,
@@ -60,7 +64,10 @@ export const COLUMNS =
   "start_date, expiry_date, sum_insured, premium_amount, gst_amount, premium_frequency, " +
   "payment_mode, next_due_date, commission_rate, commission_expected, nominee_name, " +
   "nominee_relation, vehicle_number, variant, riders, plan_type, term, policy_type, broker, " +
-  "inbuilt_rider, notes, created_at, updated_at, days_to_expiry, is_renewed";
+  "inbuilt_rider, vehicle_type, gross_vehicle_weight, passenger_capacity, vehicle_manufacturer, " +
+  "vehicle_model, manufacture_year, engine_number, chassis_number, cover_type, od_start_date, " +
+  "od_end_date, tp_start_date, tp_end_date, od_premium, tp_premium, " +
+  "notes, created_at, updated_at, days_to_expiry, is_renewed";
 
 /**
  * `toModel` copies each column across as it stands, and `riders` is stored as
@@ -84,8 +91,11 @@ function buildConditions(filter: PolicyFilter): Conditions {
     const pattern = likePattern(search);
     c.addMany(
       "(policy_number LIKE ? ESCAPE '\\' OR client_name LIKE ? ESCAPE '\\'" +
-        " OR client_code LIKE ? ESCAPE '\\' OR vehicle_number LIKE ? ESCAPE '\\')",
-      [pattern, pattern, pattern, pattern],
+        " OR client_code LIKE ? ESCAPE '\\' OR vehicle_number LIKE ? ESCAPE '\\'" +
+        // A claim arrives quoting the engine or the chassis and nothing else, so
+        // the numbers stamped on the vehicle are searched beside the one on it.
+        " OR engine_number LIKE ? ESCAPE '\\' OR chassis_number LIKE ? ESCAPE '\\')",
+      [pattern, pattern, pattern, pattern, pattern, pattern],
     );
   }
 
@@ -173,7 +183,7 @@ export function chain(conn: Conn, policyId: number): Policy[] {
   return toPolicies(rows);
 }
 
-function validate(input: PolicyInput): { start: string; expiry: string } {
+function validate(input: PolicyInput): { start: string; expiry: string; motor: MotorDetail } {
   if (input.policyNumber.trim() === "") throw AppError.validation("Policy number is required");
   if (!(CATEGORIES as readonly string[]).includes(input.category)) {
     throw AppError.validation(`"${input.category}" is not a known policy category`);
@@ -194,7 +204,147 @@ function validate(input: PolicyInput): { start: string; expiry: string } {
     throw AppError.validation(`A term is between 1 and ${MAX_TERM} years`);
   }
 
-  return { start, expiry };
+  const motor = motorDetail(input);
+  checkMotorRanges(motor);
+  const risk = input.category === "motor" ? riskPeriod(motor) : null;
+  return { start: risk?.start ?? start, expiry: risk?.expiry ?? expiry, motor };
+}
+
+/**
+ * The motor detail as it will be stored: the covers the policy does not carry
+ * cleared out, the four risk dates read, the two stamped numbers upper-cased.
+ */
+interface MotorDetail {
+  vehicleType: string | null;
+  grossVehicleWeight: number | null;
+  passengerCapacity: number | null;
+  vehicleManufacturer: string | null;
+  vehicleModel: string | null;
+  manufactureYear: number | null;
+  engineNumber: string | null;
+  chassisNumber: string | null;
+  coverType: string | null;
+  odStartDate: string | null;
+  odEndDate: string | null;
+  tpStartDate: string | null;
+  tpEndDate: string | null;
+  odPremium: number | null;
+  tpPremium: number | null;
+}
+
+function motorDetail(input: PolicyInput): MotorDetail {
+  // A blank is nothing said rather than a word the app does not know, so it is
+  // resolved before the vocabulary is applied.
+  const vehicleType = blankToNull(input.vehicleType);
+  checkWord("vehicle type", vehicleType, VEHICLE_TYPES);
+  const coverType = blankToNull(input.coverType);
+  checkWord("cover type", coverType, COVER_TYPES);
+
+  const ownDamage = coverHasOwnDamage(coverType);
+  const thirdParty = coverHasThirdParty(coverType);
+
+  // Whatever the caller sent, a cover the policy does not carry is stored empty:
+  // a package edited down to liability has to lose its own damage year, not keep
+  // it where the renewals desk can still read it.
+  const odStartDate = ownDamage ? riskDate("Own damage start date", input.odStartDate) : null;
+  const odEndDate = ownDamage ? riskDate("Own damage end date", input.odEndDate) : null;
+  const tpStartDate = thirdParty ? riskDate("Third party start date", input.tpStartDate) : null;
+  const tpEndDate = thirdParty ? riskDate("Third party end date", input.tpEndDate) : null;
+
+  if (ownDamage) checkRiskPeriod("own damage", odStartDate, odEndDate);
+  if (thirdParty) checkRiskPeriod("third party", tpStartDate, tpEndDate);
+
+  const engine = blankToNull(input.engineNumber);
+  const chassis = blankToNull(input.chassisNumber);
+
+  return {
+    vehicleType,
+    // The two questions that belong to one kind of vehicle each, so a goods
+    // carrying vehicle rewritten as a private car does not keep its weight.
+    grossVehicleWeight:
+      vehicleType === "goods_carrying" ? numberOrNull(input.grossVehicleWeight) : null,
+    passengerCapacity: vehicleType === "passenger" ? numberOrNull(input.passengerCapacity) : null,
+    vehicleManufacturer: blankToNull(input.vehicleManufacturer),
+    vehicleModel: blankToNull(input.vehicleModel),
+    manufactureYear: numberOrNull(input.manufactureYear),
+    engineNumber: engine === null ? null : engine.toUpperCase(),
+    chassisNumber: chassis === null ? null : chassis.toUpperCase(),
+    coverType,
+    odStartDate,
+    odEndDate,
+    tpStartDate,
+    tpEndDate,
+    odPremium: ownDamage ? numberOrNull(input.odPremium) : null,
+    tpPremium: thirdParty ? numberOrNull(input.tpPremium) : null,
+  };
+}
+
+/**
+ * The three numbers the vehicle is described by, held to the range the schema
+ * holds them to.
+ *
+ * The motor migration carries the same bounds as a `CHECK` and stays the
+ * backstop, but a `CHECK` firing reaches the caller as a conflict quoting SQLite
+ * at an operator who typed a year wrong. This runs on the detail as it will be
+ * stored, after the cover and the vehicle have decided what applies, so a weight
+ * left on a private car is dropped rather than refused.
+ */
+function checkMotorRanges(motor: MotorDetail): void {
+  const year = motor.manufactureYear;
+  if (year != null && (year < 1900 || year > 2100)) {
+    throw AppError.validation("A manufacture year is between 1900 and 2100");
+  }
+  if (motor.grossVehicleWeight != null && motor.grossVehicleWeight <= 0) {
+    throw AppError.validation("A gross vehicle weight is more than nothing");
+  }
+  if (motor.passengerCapacity != null && motor.passengerCapacity < 1) {
+    throw AppError.validation("A vehicle carries at least one passenger");
+  }
+}
+
+/** A risk date read the way every other date is, and named when it cannot be. */
+function riskDate(what: string, raw: string | null | undefined): string | null {
+  const value = blankToNull(raw);
+  if (value === null) return null;
+  const parsed = parseDate(value);
+  if (parsed === null) throw AppError.validation(`${what} is not a valid date`);
+  return parsed;
+}
+
+/** A cover the policy carries runs between two dates or between none. */
+function checkRiskPeriod(cover: string, start: string | null, end: string | null): void {
+  if ((start === null) !== (end === null)) {
+    throw AppError.validation(`Both risk dates are needed for ${cover} cover`);
+  }
+  if (start !== null && end !== null && end <= start) {
+    throw AppError.validation(`The ${cover} cover must end after it starts`);
+  }
+}
+
+/**
+ * What a motor policy's `start_date` and `expiry_date` become: the earliest cover
+ * to start and the earliest to end, so the renewals desk chases whichever half
+ * lapses first. A 1+3 bundle is on the desk after its first year, which is when
+ * its own damage cover has to be bought again.
+ *
+ * `null` when no applicable cover has a complete period, and then the dates the
+ * caller supplied stand.
+ */
+function riskPeriod(motor: MotorDetail): { start: string; expiry: string } | null {
+  const periods: [string, string][] = [];
+  if (motor.odStartDate !== null && motor.odEndDate !== null) {
+    periods.push([motor.odStartDate, motor.odEndDate]);
+  }
+  if (motor.tpStartDate !== null && motor.tpEndDate !== null) {
+    periods.push([motor.tpStartDate, motor.tpEndDate]);
+  }
+  if (periods.length === 0) return null;
+
+  const earliest = (values: string[]) => values.reduce((a, b) => (b < a ? b : a));
+  return {
+    start: earliest(periods.map(([start]) => start)),
+    expiry: earliest(periods.map(([, end]) => end)),
+  };
 }
 
 /** Holds a value to a fixed vocabulary. Nothing at all is allowed. */
@@ -205,7 +355,7 @@ function checkWord(what: string, value: string | null | undefined, allowed: read
 }
 
 /** The values create and update share, in the order both statements bind them. */
-function fields(input: PolicyInput, start: string, expiry: string): Bind[] {
+function fields(input: PolicyInput, start: string, expiry: string, motor: MotorDetail): Bind[] {
   const nextDue = blankToNull(input.nextDueDate);
   const vehicle = blankToNull(input.vehicleNumber);
   return [
@@ -234,12 +384,27 @@ function fields(input: PolicyInput, start: string, expiry: string): Bind[] {
     blankToNull(input.policyType),
     blankToNull(input.broker),
     blankToNull(input.inbuiltRider),
+    motor.vehicleType,
+    motor.grossVehicleWeight,
+    motor.passengerCapacity,
+    motor.vehicleManufacturer,
+    motor.vehicleModel,
+    motor.manufactureYear,
+    motor.engineNumber,
+    motor.chassisNumber,
+    motor.coverType,
+    motor.odStartDate,
+    motor.odEndDate,
+    motor.tpStartDate,
+    motor.tpEndDate,
+    motor.odPremium,
+    motor.tpPremium,
     blankToNull(input.notes),
   ];
 }
 
 export function create(conn: Conn, input: PolicyInput): number {
-  const { start, expiry } = validate(input);
+  const { start, expiry, motor } = validate(input);
   const chainId = crypto.randomUUID();
 
   let id: number;
@@ -253,11 +418,14 @@ export function create(conn: Conn, input: PolicyInput): number {
           "product_id, category, start_date, expiry_date, sum_insured, premium_amount, " +
           "gst_amount, premium_frequency, payment_mode, next_due_date, commission_rate, " +
           "commission_expected, nominee_name, nominee_relation, vehicle_number, variant, " +
-          "riders, plan_type, term, policy_type, broker, inbuilt_rider, notes, status) " +
+          "riders, plan_type, term, policy_type, broker, inbuilt_rider, vehicle_type, " +
+          "gross_vehicle_weight, passenger_capacity, vehicle_manufacturer, vehicle_model, " +
+          "manufacture_year, engine_number, chassis_number, cover_type, od_start_date, " +
+          "od_end_date, tp_start_date, tp_end_date, od_premium, tp_premium, notes, status) " +
           "VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " +
-          "?, ?, ?)",
+          "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(chainId, ...fields(input, start, expiry), input.status ?? "active");
+      .run(chainId, ...fields(input, start, expiry, motor), input.status ?? "active");
     id = Number(result.lastInsertRowid);
   } catch (error) {
     throw mapConstraintError(error);
@@ -268,11 +436,11 @@ export function create(conn: Conn, input: PolicyInput): number {
 }
 
 export function update(conn: Conn, id: number, input: PolicyInput): void {
-  const { start, expiry } = validate(input);
+  const { start, expiry, motor } = validate(input);
 
   let changes: number;
   try {
-    const values = fields(input, start, expiry);
+    const values = fields(input, start, expiry, motor);
     const result = conn
       .prepare(
         "UPDATE policies SET policy_number = ?, client_id = ?, insurer_id = ?, " +
@@ -280,7 +448,11 @@ export function update(conn: Conn, id: number, input: PolicyInput): void {
           "premium_amount = ?, gst_amount = ?, premium_frequency = ?, payment_mode = ?, " +
           "next_due_date = ?, commission_rate = ?, commission_expected = ?, nominee_name = ?, " +
           "nominee_relation = ?, vehicle_number = ?, variant = ?, riders = ?, plan_type = ?, " +
-          "term = ?, policy_type = ?, broker = ?, inbuilt_rider = ?, notes = ?, " +
+          "term = ?, policy_type = ?, broker = ?, inbuilt_rider = ?, vehicle_type = ?, " +
+          "gross_vehicle_weight = ?, passenger_capacity = ?, vehicle_manufacturer = ?, " +
+          "vehicle_model = ?, manufacture_year = ?, engine_number = ?, chassis_number = ?, " +
+          "cover_type = ?, od_start_date = ?, od_end_date = ?, tp_start_date = ?, " +
+          "tp_end_date = ?, od_premium = ?, tp_premium = ?, notes = ?, " +
           // Omitting the status leaves the stored one alone, which is what keeps an
           // edit to a lapsed policy from quietly reviving it.
           "status = COALESCE(?, status) WHERE id = ?",
@@ -335,9 +507,11 @@ export function renew(conn: Conn, input: RenewalInput): number {
           "insurer_id, product_id, category, status, start_date, expiry_date, sum_insured, " +
           "premium_amount, gst_amount, premium_frequency, payment_mode, commission_rate, " +
           "commission_expected, nominee_name, nominee_relation, vehicle_number, variant, " +
-          "riders, plan_type, term, policy_type, broker, inbuilt_rider, notes) " +
+          "riders, plan_type, term, policy_type, broker, inbuilt_rider, vehicle_type, " +
+          "gross_vehicle_weight, passenger_capacity, vehicle_manufacturer, vehicle_model, " +
+          "manufacture_year, engine_number, chassis_number, cover_type, notes) " +
           "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " +
-          "?, ?, ?, ?, ?, ?)",
+          "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         previous.chainId,
@@ -369,6 +543,18 @@ export function renew(conn: Conn, input: RenewalInput): number {
         previous.policyType === null ? null : "renewal",
         previous.broker,
         previous.inbuiltRider,
+        // The vehicle is the same vehicle next year. The four risk dates and the
+        // two split premiums are not carried: they describe the year being
+        // renewed, and the new year's are filled in when the agent edits it.
+        previous.vehicleType,
+        previous.grossVehicleWeight,
+        previous.passengerCapacity,
+        previous.vehicleManufacturer,
+        previous.vehicleModel,
+        previous.manufactureYear,
+        previous.engineNumber,
+        previous.chassisNumber,
+        previous.coverType,
         blankToNull(input.notes),
       );
     newId = Number(result.lastInsertRowid);

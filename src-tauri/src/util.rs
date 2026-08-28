@@ -198,6 +198,22 @@ pub const RIDERS: &[&str] = &[
     "fast_forwarded",
 ];
 
+/// What a motor policy is written on, matching the `CHECK` on
+/// `policies.vehicle_type`. Two of them bring a further question with them:
+/// a goods carrying vehicle is rated on its gross weight and a passenger
+/// vehicle on its seats.
+pub const VEHICLE_TYPES: &[&str] = &["pvt_car", "goods_carrying", "passenger", "two_wheeler"];
+
+/// Which covers a motor policy was sold with. Not `POLICY_TYPES`, which says
+/// how a year was written; a motor policy has both answers at once.
+pub const COVER_TYPES: &[&str] = &[
+    "bundle_1_3",
+    "bundle_3_3",
+    "standalone_od",
+    "package",
+    "liability",
+];
+
 /// Whether the cover is one life or a family sharing a sum insured.
 pub const PLAN_TYPES: &[&str] = &["individual", "family_floater"];
 
@@ -295,6 +311,52 @@ pub fn rider_label(rider: &str) -> &str {
         "fast_forwarded" => "Fast Forwarded",
         other => other,
     }
+}
+
+/// How the agency says a vehicle type. Kept beside `vehicleTypeLabels` in
+/// `src/lib/format.ts`.
+pub fn vehicle_type_label(vehicle_type: &str) -> &str {
+    match vehicle_type {
+        "pvt_car" => "Private car",
+        "goods_carrying" => "Goods carrying vehicle",
+        "passenger" => "Passenger vehicle",
+        "two_wheeler" => "Two wheeler",
+        other => other,
+    }
+}
+
+/// How the agency says a cover type. The bundles are written the way the
+/// proposal writes them — 1+3 and 3+3 — which no rule could derive from the
+/// stored word.
+pub fn cover_type_label(cover_type: &str) -> &str {
+    match cover_type {
+        "bundle_1_3" => "Bundle (1+3)",
+        "bundle_3_3" => "Bundle (3+3)",
+        "standalone_od" => "Standalone OD",
+        "package" => "Package",
+        "liability" => "Liability",
+        other => other,
+    }
+}
+
+/// Whether the cover type sold includes own damage. A policy with no cover type
+/// covers neither half, so it has no own damage period and no own damage
+/// premium until the agent says which covers were bought.
+///
+/// An empty answer is no answer: an unanswered box arrives as `""` from a form
+/// and as `None` from a book that predates the question, and neither says a
+/// cover was sold. The repositories run `blank_to_none` before asking, but the
+/// two words this is asked in have to mean the same thing wherever it is asked
+/// from — that is what makes this one definition rather than a convention every
+/// caller has to remember.
+pub fn cover_has_own_damage(cover_type: Option<&str>) -> bool {
+    matches!(cover_type, Some(word) if !word.is_empty() && word != "liability")
+}
+
+/// Whether the cover type sold includes third party. Same reasoning as
+/// `cover_has_own_damage`, empty answer included.
+pub fn cover_has_third_party(cover_type: Option<&str>) -> bool {
+    matches!(cover_type, Some(word) if !word.is_empty() && word != "standalone_od")
 }
 
 pub fn normalise_gender(raw: &str) -> Option<String> {

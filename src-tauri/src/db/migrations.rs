@@ -12,6 +12,7 @@ const MIGRATIONS: &[(i32, &str)] = &[
     (6, include_str!("schema/006_health_details.sql")),
     (7, include_str!("schema/007_client_groups.sql")),
     (8, include_str!("schema/008_group_head_details.sql")),
+    (9, include_str!("schema/009_motor_details.sql")),
 ];
 
 pub fn apply(tx: &Transaction) -> AppResult<()> {

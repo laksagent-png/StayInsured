@@ -184,13 +184,23 @@ const shots = [
     prepare: click("New policy"),
   },
   {
-    name: "policy-new-general",
-    caption: "The same form for every other category: client, insurer, dates and money",
+    name: "policy-new-motor",
+    caption: "New policy: what a motor proposal asks about the vehicle and the two covers",
     route: "/policies",
     prepare: async (page) => {
       await click("New policy")(page);
       // The list behind the dialog has a category filter of its own.
       await page.getByRole("dialog").getByLabel("Category *").selectOption("motor");
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "policy-new-general",
+    caption: "The same form for every other category: client, insurer, dates and money",
+    route: "/policies",
+    prepare: async (page) => {
+      await click("New policy")(page);
+      await page.getByRole("dialog").getByLabel("Category *").selectOption("travel");
       await page.waitForTimeout(600);
     },
   },

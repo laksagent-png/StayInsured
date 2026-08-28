@@ -1077,8 +1077,10 @@ fn import_row(
         nominee_name: reader.get("nomineeName"),
         nominee_relation: reader.get("nomineeRelation"),
         vehicle_number: reader.get("vehicleNumber"),
-        // The health details are not read off a spreadsheet yet. An agency's own
-        // file predates the questions, so there is no column to map them from.
+        // The health and motor details are not read off a spreadsheet yet. An
+        // agency's own file predates the questions, so there is no column to map
+        // them from. `vehicleNumber` above is the exception: the book has held a
+        // registration number since it began.
         variant: None,
         riders: None,
         plan_type: None,
@@ -1086,6 +1088,21 @@ fn import_row(
         policy_type: None,
         broker: None,
         inbuilt_rider: None,
+        vehicle_type: None,
+        gross_vehicle_weight: None,
+        passenger_capacity: None,
+        vehicle_manufacturer: None,
+        vehicle_model: None,
+        manufacture_year: None,
+        engine_number: None,
+        chassis_number: None,
+        cover_type: None,
+        od_start_date: None,
+        od_end_date: None,
+        tp_start_date: None,
+        tp_end_date: None,
+        od_premium: None,
+        tp_premium: None,
         notes: reader.get("notes"),
         // Set after the policy exists, once the names have been resolved to
         // clients: attaching them needs a policy to check the holder against.

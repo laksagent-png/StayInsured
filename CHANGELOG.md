@@ -5,6 +5,48 @@ settings survive every version below.
 
 ## Upcoming
 
+### Added
+
+- **A motor policy now records the vehicle and both covers.** Choose Motor and the
+  form asks what a motor proposal asks: what kind of vehicle it is, who built it,
+  the model and the year, the registration, engine and chassis numbers, and which
+  covers the schedule sold. A goods carrying vehicle is asked its gross weight and
+  a passenger vehicle how many it seats; nothing else is asked either. The vehicle
+  used to live in your notes, where you could not search it or sort by it.
+
+  Own damage and third party are recorded separately, each with its own dates and
+  its own premium, and the cover type decides which of the two you are asked for —
+  a liability policy is not asked about own damage, a standalone OD policy not
+  about third party. The premium fills itself in from the two added together
+  unless you type your own.
+
+  **A motor policy has no start and expiry date to fill in any more.** It runs for
+  as long as its first cover does, so the dates come from the covers themselves.
+  A 1+3 bundle turns up on your renewals desk after a year — when the own damage
+  cover actually has to be bought again — instead of sitting quiet for three
+  years.
+
+  Searching finds a policy by its engine or chassis number as well as by its
+  registration number, so a claim that arrives quoting one of them and nothing
+  else reaches the right policy. The policy export gained a column for every new
+  field.
+
+  Renewing keeps the vehicle and asks you to restate the risk: next year comes
+  back with the same vehicle and the same cover type, and with the cover dates and
+  premiums empty, because those described last year. Fill them in on the new year
+  once the schedule arrives.
+
+  Motor policies already in your book keep their registration number and show the
+  new questions blank until you edit them.
+
+### Fixed
+
+- **Renewing no longer loses the proposal detail when you clear a figure.** If you
+  emptied the sum insured, premium, GST or commission box while recording a
+  renewal, the new year came back without the variant, riders, plan type, term,
+  policy type, broker and inbuilt rider that renewing had just carried over. They
+  are kept now, along with the vehicle on a motor policy.
+
 ## 0.7.0 — 29 August 2026
 
 ### Changed

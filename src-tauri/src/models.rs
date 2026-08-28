@@ -560,6 +560,28 @@ pub struct Policy {
     pub policy_type: Option<String>,
     pub broker: Option<String>,
     pub inbuilt_rider: Option<String>,
+    /// What the cover was written on, and what it was written for. Only a motor
+    /// policy carries these; every other category leaves them empty.
+    pub vehicle_type: Option<String>,
+    /// Gross vehicle weight in kilograms. Goods carrying vehicles only.
+    pub gross_vehicle_weight: Option<f64>,
+    /// Seats. Passenger vehicles only.
+    pub passenger_capacity: Option<i64>,
+    pub vehicle_manufacturer: Option<String>,
+    /// Make and model as one, the way the registration certificate writes it.
+    pub vehicle_model: Option<String>,
+    pub manufacture_year: Option<i64>,
+    pub engine_number: Option<String>,
+    pub chassis_number: Option<String>,
+    pub cover_type: Option<String>,
+    /// The two risk periods and what each half cost. Which of them are filled in
+    /// is decided by the cover type.
+    pub od_start_date: Option<String>,
+    pub od_end_date: Option<String>,
+    pub tp_start_date: Option<String>,
+    pub tp_end_date: Option<String>,
+    pub od_premium: Option<f64>,
+    pub tp_premium: Option<f64>,
     pub notes: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -574,7 +596,10 @@ pub const POLICY_COLUMNS: &str = "id, chain_id, policy_year, previous_policy_id,
      start_date, expiry_date, sum_insured, premium_amount, gst_amount, premium_frequency, \
      payment_mode, next_due_date, commission_rate, commission_expected, nominee_name, \
      nominee_relation, vehicle_number, variant, riders, plan_type, term, policy_type, broker, \
-     inbuilt_rider, notes, created_at, updated_at, days_to_expiry, is_renewed";
+     inbuilt_rider, vehicle_type, gross_vehicle_weight, passenger_capacity, vehicle_manufacturer, \
+     vehicle_model, manufacture_year, engine_number, chassis_number, cover_type, od_start_date, \
+     od_end_date, tp_start_date, tp_end_date, od_premium, tp_premium, notes, created_at, \
+     updated_at, days_to_expiry, is_renewed";
 
 impl Policy {
     pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
@@ -617,11 +642,26 @@ impl Policy {
             policy_type: row.get(35)?,
             broker: row.get(36)?,
             inbuilt_rider: row.get(37)?,
-            notes: row.get(38)?,
-            created_at: row.get(39)?,
-            updated_at: row.get(40)?,
-            days_to_expiry: row.get(41).unwrap_or(0),
-            is_renewed: row.get::<_, i64>(42).unwrap_or(0) != 0,
+            vehicle_type: row.get(38)?,
+            gross_vehicle_weight: row.get(39)?,
+            passenger_capacity: row.get(40)?,
+            vehicle_manufacturer: row.get(41)?,
+            vehicle_model: row.get(42)?,
+            manufacture_year: row.get(43)?,
+            engine_number: row.get(44)?,
+            chassis_number: row.get(45)?,
+            cover_type: row.get(46)?,
+            od_start_date: row.get(47)?,
+            od_end_date: row.get(48)?,
+            tp_start_date: row.get(49)?,
+            tp_end_date: row.get(50)?,
+            od_premium: row.get(51)?,
+            tp_premium: row.get(52)?,
+            notes: row.get(53)?,
+            created_at: row.get(54)?,
+            updated_at: row.get(55)?,
+            days_to_expiry: row.get(56).unwrap_or(0),
+            is_renewed: row.get::<_, i64>(57).unwrap_or(0) != 0,
         })
     }
 }
@@ -671,6 +711,24 @@ pub struct PolicyInput {
     pub policy_type: Option<String>,
     pub broker: Option<String>,
     pub inbuilt_rider: Option<String>,
+    /// The motor detail. What applies is decided by `vehicle_type` and
+    /// `cover_type`: the repository clears whatever the answer says is not
+    /// there, whatever the caller sent.
+    pub vehicle_type: Option<String>,
+    pub gross_vehicle_weight: Option<f64>,
+    pub passenger_capacity: Option<i64>,
+    pub vehicle_manufacturer: Option<String>,
+    pub vehicle_model: Option<String>,
+    pub manufacture_year: Option<i64>,
+    pub engine_number: Option<String>,
+    pub chassis_number: Option<String>,
+    pub cover_type: Option<String>,
+    pub od_start_date: Option<String>,
+    pub od_end_date: Option<String>,
+    pub tp_start_date: Option<String>,
+    pub tp_end_date: Option<String>,
+    pub od_premium: Option<f64>,
+    pub tp_premium: Option<f64>,
     pub notes: Option<String>,
     /// The clients this policy year covers. Named for clients rather than for
     /// members so that a caller still passing the old member ids fails at the

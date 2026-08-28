@@ -120,6 +120,13 @@ A policy that has run more than a year lists its earlier years under **History**
 at the foot of the dialog, so last year's premium is in front of you while you
 type this year's.
 
+Everything the dialog does not ask about comes forward on its own: the frequency,
+the payment mode, the nominee, the answers a
+[health proposal](policies.md#a-health-policy) asked, and the vehicle a
+[motor policy](policies.md#a-motor-policy) is written on. A motor policy's cover
+dates and split premiums are the exception — they described last year, so the new
+year comes back with them empty and you fill them in from this year's schedule.
+
 Press **Record renewal**, or press Enter from any box. The dialog closes, the row
 leaves the tab, and the new year takes its place on the list. An expiry date that falls before the start
 date is refused in the dialog rather than written. **Cancel**, the corner cross

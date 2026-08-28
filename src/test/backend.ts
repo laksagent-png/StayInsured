@@ -443,7 +443,14 @@ export class FakeBackend {
     if (filter.search) {
       const needle = lower(filter.search);
       rows = rows.filter((row) =>
-        [row.policyNumber, row.clientName, row.vehicleNumber, row.clientCode].some((value) =>
+        [
+          row.policyNumber,
+          row.clientName,
+          row.vehicleNumber,
+          row.clientCode,
+          row.engineNumber,
+          row.chassisNumber,
+        ].some((value) =>
           lower(value).includes(needle),
         ),
       );
@@ -1389,6 +1396,21 @@ export class FakeBackend {
         policyType: input.policyType ?? null,
         broker: input.broker ?? null,
         inbuiltRider: input.inbuiltRider ?? null,
+        vehicleType: input.vehicleType ?? null,
+        grossVehicleWeight: input.grossVehicleWeight ?? null,
+        passengerCapacity: input.passengerCapacity ?? null,
+        vehicleManufacturer: input.vehicleManufacturer ?? null,
+        vehicleModel: input.vehicleModel ?? null,
+        manufactureYear: input.manufactureYear ?? null,
+        engineNumber: input.engineNumber ?? null,
+        chassisNumber: input.chassisNumber ?? null,
+        coverType: input.coverType ?? null,
+        odStartDate: input.odStartDate ?? null,
+        odEndDate: input.odEndDate ?? null,
+        tpStartDate: input.tpStartDate ?? null,
+        tpEndDate: input.tpEndDate ?? null,
+        odPremium: input.odPremium ?? null,
+        tpPremium: input.tpPremium ?? null,
         notes: input.notes ?? null,
         createdAt: `${TODAY}T04:30:00Z`,
         updatedAt: `${TODAY}T04:30:00Z`,
@@ -1445,6 +1467,14 @@ export class FakeBackend {
         isRenewed: false,
         createdAt: `${TODAY}T04:30:00Z`,
         updatedAt: `${TODAY}T04:30:00Z`,
+        // The vehicle comes forward with the policy, but the risk it ran and
+        // what that cost belong to the year being renewed.
+        odStartDate: null,
+        odEndDate: null,
+        tpStartDate: null,
+        tpEndDate: null,
+        odPremium: null,
+        tpPremium: null,
       });
       // A cancelled year keeps saying so; every other one is now renewed.
       if (previous.status !== "cancelled") previous.status = "renewed";

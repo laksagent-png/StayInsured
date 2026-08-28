@@ -26,7 +26,7 @@ import * as XLSX from "xlsx";
 
 import { AppError } from "./errors";
 import type { Client, Policy } from "./types";
-import { categoryLabel, riderLabel } from "./util";
+import { categoryLabel, coverTypeLabel, riderLabel, vehicleTypeLabel } from "./util";
 
 /** A header paired with a value extractor, so xlsx and csv stay identical. */
 type Column<T> = [string, (row: T) => string];
@@ -65,6 +65,22 @@ const POLICY_COLUMNS: Column<Policy>[] = [
   ["Policy type", (p) => (p.policyType === null ? "" : titleCase(p.policyType))],
   ["Broker", (p) => p.broker ?? ""],
   ["Inbuilt rider", (p) => p.inbuiltRider ?? ""],
+  // The motor detail, on the same terms as the health block above it.
+  ["Vehicle type", (p) => (p.vehicleType === null ? "" : vehicleTypeLabel(p.vehicleType))],
+  ["GVW (kg)", (p) => number(p.grossVehicleWeight)],
+  ["Passengers", (p) => number(p.passengerCapacity)],
+  ["Manufacturer", (p) => p.vehicleManufacturer ?? ""],
+  ["Model", (p) => p.vehicleModel ?? ""],
+  ["Year", (p) => (p.manufactureYear === null ? "" : String(p.manufactureYear))],
+  ["Engine number", (p) => p.engineNumber ?? ""],
+  ["Chassis number", (p) => p.chassisNumber ?? ""],
+  ["Cover type", (p) => (p.coverType === null ? "" : coverTypeLabel(p.coverType))],
+  ["OD start", (p) => p.odStartDate ?? ""],
+  ["OD end", (p) => p.odEndDate ?? ""],
+  ["TP start", (p) => p.tpStartDate ?? ""],
+  ["TP end", (p) => p.tpEndDate ?? ""],
+  ["OD premium", (p) => number(p.odPremium)],
+  ["TP premium", (p) => number(p.tpPremium)],
   ["Notes", (p) => p.notes ?? ""],
 ];
 

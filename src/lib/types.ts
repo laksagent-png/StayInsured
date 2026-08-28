@@ -27,6 +27,15 @@ export type PlanType = "individual" | "family_floater";
  */
 export type PolicyType = "fresh" | "portability" | "renewal";
 
+/** What is insured on a motor policy. */
+export type VehicleType = "pvt_car" | "goods_carrying" | "passenger" | "two_wheeler";
+
+/**
+ * Which covers a motor policy was sold with. Not `PolicyType`, which says how a
+ * year was written; a motor policy has both answers at once.
+ */
+export type CoverType = "bundle_1_3" | "bundle_3_3" | "standalone_od" | "package" | "liability";
+
 /** The most years of health cover that can be bought in one go. */
 export const MAX_TERM = 5;
 
@@ -387,6 +396,24 @@ export interface Policy {
   broker: string | null;
   /** A rider the plan comes with, as against one bought on top. */
   inbuiltRider: string | null;
+  vehicleType: VehicleType | null;
+  /** Gross vehicle weight in kilograms. Goods carrying vehicles only. */
+  grossVehicleWeight: number | null;
+  /** Seats. Passenger vehicles only. */
+  passengerCapacity: number | null;
+  vehicleManufacturer: string | null;
+  /** Make and model as one, the way the registration certificate writes it. */
+  vehicleModel: string | null;
+  manufactureYear: number | null;
+  engineNumber: string | null;
+  chassisNumber: string | null;
+  coverType: CoverType | null;
+  odStartDate: string | null;
+  odEndDate: string | null;
+  tpStartDate: string | null;
+  tpEndDate: string | null;
+  odPremium: number | null;
+  tpPremium: number | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -421,6 +448,21 @@ export interface PolicyInput {
   policyType?: PolicyType | null;
   broker?: string | null;
   inbuiltRider?: string | null;
+  vehicleType?: VehicleType | null;
+  grossVehicleWeight?: number | null;
+  passengerCapacity?: number | null;
+  vehicleManufacturer?: string | null;
+  vehicleModel?: string | null;
+  manufactureYear?: number | null;
+  engineNumber?: string | null;
+  chassisNumber?: string | null;
+  coverType?: CoverType | null;
+  odStartDate?: string | null;
+  odEndDate?: string | null;
+  tpStartDate?: string | null;
+  tpEndDate?: string | null;
+  odPremium?: number | null;
+  tpPremium?: number | null;
   notes?: string | null;
   /** The clients this policy year covers, which may include the holder. */
   insuredClientIds?: number[] | null;
