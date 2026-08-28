@@ -35,6 +35,20 @@ function expiringOn(iso: string, id = 900): Policy {
   };
 }
 
+/** The policy in the book, with the whole health proposal filled in. */
+function fullyRecorded(): Policy {
+  const proposal: Partial<Policy> = {
+    variant: "Gold",
+    riders: ["safeguard", "future_ready"],
+    planType: "individual",
+    term: 1,
+    policyType: "renewal",
+    broker: "Deshmukh Insurance Services",
+    inbuiltRider: "Road ambulance cover",
+  };
+  return Object.assign(policyFrom(1), proposal);
+}
+
 /** How the desk drives the dialog: one row at a time, out of one piece of state. */
 function RenewDesk({ policies }: { policies: Policy[] }) {
   const [selected, setSelected] = useState<Policy | undefined>();
@@ -239,6 +253,37 @@ describe("the renew dialog", () => {
 
     await waitFor(() => expect(backend().countOf("renew_policy")).toBe(1));
     expect(backend().book.policies.at(-1)?.gstAmount).toBeNull();
+  });
+
+  it("keeps the health detail when a figure is cleared on renewal", async () => {
+    const expiring = fullyRecorded();
+    const { user } = renderWithProviders(<RenewModal policy={expiring} onClose={vi.fn()} />);
+    await screen.findByRole("dialog");
+
+    // Taking a figure off the new year is what makes the dialog correct it,
+    // because the core reads an absent figure as "carry last year's forward".
+    await user.clear(field(/GST/));
+    await user.click(screen.getByRole("button", { name: "Record renewal" }));
+
+    await waitFor(() => expect(backend().countOf("update_policy")).toBe(1));
+    expect(backend().lastCall("update_policy")?.input).toMatchObject({
+      gstAmount: null,
+      // The proposal renewing carried forward, named again so the correction
+      // does not write it away.
+      variant: "Gold",
+      riders: ["safeguard", "future_ready"],
+      planType: "individual",
+      term: 1,
+      policyType: "renewal",
+      broker: "Deshmukh Insurance Services",
+      inbuiltRider: "Road ambulance cover",
+    });
+
+    const newYear = backend().book.policies.at(-1)!;
+    expect(newYear.policyYear).toBe(expiring.policyYear + 1);
+    expect(newYear.broker).toBe("Deshmukh Insurance Services");
+    expect(newYear.variant).toBe("Gold");
+    expect(newYear.gstAmount).toBeNull();
   });
 
   it("records the renewal when Enter is pressed in a field", async () => {

@@ -109,6 +109,16 @@ export function RenewModal({
           nomineeName: expiring.nomineeName ?? "",
           nomineeRelation: expiring.nomineeRelation ?? "",
           vehicleNumber: expiring.vehicleNumber ?? "",
+          // An update writes every column, so anything this object leaves out
+          // is written NULL over what renewing had just carried forward. The
+          // proposal is named again to keep it.
+          variant: expiring.variant ?? "",
+          riders: expiring.riders ?? [],
+          planType: expiring.planType,
+          term: expiring.term,
+          policyType: expiring.policyType,
+          broker: expiring.broker ?? "",
+          inbuiltRider: expiring.inbuiltRider ?? "",
           notes: payload.notes ?? "",
         };
         await api.updatePolicy(id, newYear);
