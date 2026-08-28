@@ -5,6 +5,8 @@ settings survive every version below.
 
 ## Upcoming
 
+## 0.5.0 — 28 August 2026
+
 ### Added
 
 - **The policy form asks a health policy what a health proposal asks.** Choose
