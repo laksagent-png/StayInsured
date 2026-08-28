@@ -169,12 +169,12 @@ jobs:
             It sits in the notification area, locks from there, and hands a second
             launch to the copy already running.
 
-            **From this version on, it keeps itself up to date.** On Windows it
-            looks for a newer release when it starts and offers it, the way the
-            app's own edition does, and installs nothing this project did not
-            sign. Copies of 0.0.6 and earlier cannot check that signature, so
-            they will find this release and decline it — install this one by
-            hand, and it updates itself from here.
+            **It keeps itself up to date.** On Windows it looks for a newer
+            release when it starts and offers it, the way the app's own edition
+            does, and installs nothing this project did not sign. Copies of
+            0.0.6 and earlier cannot check that signature, so they will find
+            this release and decline it — install this one by hand, and it
+            updates itself from here.
 
             Run the `.exe` on Windows 7 SP1 or newer. It installs both the 64-bit
             and 32-bit builds and picks the one that fits. Launch it with

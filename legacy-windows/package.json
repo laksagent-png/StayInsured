@@ -1,7 +1,7 @@
 {
   "name": "stayinsured-legacy",
   "private": true,
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Windows 7 feasibility probe for a parallel Electron edition of StayInsured",
   "main": "out/main.js",
   "scripts": {
