@@ -1,9 +1,12 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { api, ApiError } from "../lib/api";
 import type { Client, ClientInput, ClientKind } from "../lib/types";
 import { Button, Checkbox, Field, Input, Modal, Select, Textarea, useToast } from "./ui";
+
+/** The option that opens a group by name instead of picking one. */
+const NEW_GROUP = "new";
 
 const EMPTY: ClientInput = {
   fullName: "",
@@ -37,8 +40,9 @@ const EMPTY: ClientInput = {
  * even though there is no box for it: a form that sent only what it draws would
  * empty it on the way past. The group is the one exception, and it is the core's
  * rather than the form's — `groupId` is left out of the payload entirely, and
- * the core keeps whatever the client already had. Membership is moved from the
- * group screens, where the operator can see what they are moving somebody into.
+ * the core keeps whatever the client already had. The picker below writes
+ * membership through `setClientGroup` once the client is saved, which is the
+ * one way it is ever written and the order the importer files a client in.
  */
 function toInput(client: Client): ClientInput {
   return {
@@ -125,6 +129,7 @@ export function ClientForm({
   client,
   onSaved,
   defaultKind = "individual",
+  defaultGroupId = null,
 }: {
   open: boolean;
   onClose: () => void;
@@ -132,34 +137,68 @@ export function ClientForm({
   onSaved?: (id: number) => void;
   /** What a new client starts as. A group screen opens this asking for a firm. */
   defaultKind?: ClientKind;
+  /** Which group a new client starts filed in, for a group's own Add member. */
+  defaultGroupId?: number | null;
 }) {
   const toast = useToast();
   const [form, setForm] = useState<ClientInput>(EMPTY);
   const [error, setError] = useState<string | null>(null);
+  /** The group id as a string, "" for none, or {@link NEW_GROUP}. */
+  const [groupChoice, setGroupChoice] = useState("");
+  const [newGroupName, setNewGroupName] = useState("");
+
+  const groups = useQuery({
+    queryKey: ["groups", { picker: "clientForm" }],
+    queryFn: () => api.listGroups({ page: 1, pageSize: 200, sort: "name" }),
+    enabled: open,
+  });
 
   useEffect(() => {
     if (!open) return;
     setError(null);
+    setNewGroupName("");
     if (client) {
       setForm(toInput(client));
+      setGroupChoice(client.groupId ? String(client.groupId) : "");
     } else {
       setForm({ ...EMPTY, kind: defaultKind });
+      setGroupChoice(defaultGroupId ? String(defaultGroupId) : "");
       // Reserve the next code so two people entering at once do not collide.
       api.nextClientCode().then((code) => setForm((current) => ({ ...current, clientCode: code })));
     }
-  }, [open, client, defaultKind]);
+  }, [open, client, defaultKind, defaultGroupId]);
 
   const set = <K extends keyof ClientInput>(key: K, value: ClientInput[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
+  /**
+   * The group the client should end up in, opening one first if the operator
+   * typed a name nobody is using. A name that matches a group already on the
+   * desk joins it rather than opening a second one with the same name, which is
+   * what the importer does with the group column.
+   */
+  const resolveGroupId = async (): Promise<number | null> => {
+    if (groupChoice !== NEW_GROUP) return groupChoice ? Number(groupChoice) : null;
+    const wanted = newGroupName.trim();
+    const existing = (groups.data?.rows ?? []).find(
+      (row) => row.name.toLowerCase() === wanted.toLowerCase(),
+    );
+    if (existing) return existing.id;
+    return api.createGroup({ name: wanted });
+  };
+
   const save = useMutation({
     mutationFn: async () => {
       const input = toPayload(form);
-      if (client) {
-        await api.updateClient(client.id, input);
-        return client.id;
-      }
-      return api.createClient(input);
+      const id = client
+        ? (await api.updateClient(client.id, input), client.id)
+        : await api.createClient(input);
+      // Membership is written by itself, after the client exists, because
+      // `setClientGroup` is the only thing that writes it — the payload above
+      // carries no `groupId` at all.
+      const wanted = await resolveGroupId();
+      if (wanted !== (client?.groupId ?? null)) await api.setClientGroup(id, wanted);
+      return id;
     },
     onSuccess: (id) => {
       toast.success(client ? "Client updated" : "Client added");
@@ -177,11 +216,23 @@ export function ClientForm({
       setError(`"${email}" is not a valid email address`);
       return;
     }
+    if (groupChoice === NEW_GROUP && !newGroupName.trim()) {
+      setError("Give the new group a name");
+      return;
+    }
     setError(null);
     save.mutate();
   };
 
   const company = form.kind === "company";
+
+  // The group the client is already in may sit past the page of groups read
+  // here, and a picker that quietly dropped it would move them out of it.
+  const options = groups.data?.rows ?? [];
+  const listed =
+    client?.groupId && !options.some((row) => row.id === client.groupId)
+      ? [{ id: client.groupId, name: client.groupName ?? "Current group" }, ...options]
+      : options;
 
   return (
     <Modal
@@ -234,6 +285,42 @@ export function ClientForm({
             autoFocus
           />
         </Field>
+
+        {/* Filed here rather than only on the group screen, because the agent
+            usually knows the group while they are entering the client. The
+            payload carries no group: the save writes it afterwards. */}
+        <Field
+          label="Group"
+          className="sm:col-span-2"
+          hint="Clients worked as one book — a holding company's firms, or everyone one introducer brought in"
+        >
+          <Select
+            value={groupChoice}
+            onChange={(event) => setGroupChoice(event.target.value)}
+          >
+            <option value="">No group</option>
+            {listed.map((row) => (
+              <option key={row.id} value={String(row.id)}>
+                {row.name}
+              </option>
+            ))}
+            <option value={NEW_GROUP}>Open a new group…</option>
+          </Select>
+        </Field>
+
+        {groupChoice === NEW_GROUP && (
+          <Field
+            label="New group name"
+            className="sm:col-span-2"
+            hint="Opened when this client is saved, and they are filed in it"
+          >
+            <Input
+              value={newGroupName}
+              onChange={(event) => setNewGroupName(event.target.value)}
+              placeholder="Sundaram Group"
+            />
+          </Field>
+        )}
 
         <Field label="Client code">
           <Input

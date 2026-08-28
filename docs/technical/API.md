@@ -211,9 +211,10 @@ every client entered before companies existed was. A company carries
 birth and a gender.
 
 **`groupId` on `ClientInput` is coalesced, not assigned.** Omitting it leaves a
-client in whatever group they are in, so a client form that draws no group cannot
-empty one by saving a name change. Moving a client between groups, or out of one,
-goes through `set_client_group`.
+client in whatever group they are in, so a payload that says nothing about the
+group cannot empty one by saving a name change. Moving a client between groups, or
+out of one, goes through `set_client_group` — including from the client form,
+which sends no `groupId` and calls `set_client_group` after the save.
 
 `Client` responses add `activePolicies`, `totalPolicies`, `nextExpiry`,
 `relatives` (edges in either direction), `isDependent` and `groupName`.
@@ -287,41 +288,52 @@ their own is the ordinary case.
 | `set_client_group` | `clientId: number`, `groupId?: number` | `void` |
 | `next_group_code` | — | `string` |
 
-A group is a named set of clients the agency works as one book, and the client who
-referred them. Unlike a family it is a row, because it has the boundary a family
-lacks — see [DATA-MODEL](DATA-MODEL.md) for why the two are stored differently.
-The roster is not a command here: it is `list_clients` with `groupId` set.
+A group is a named set of clients the agency works as one book, and the contact
+who referred them. Unlike a family it is a row, because it has the boundary a
+family lacks — see [DATA-MODEL](DATA-MODEL.md) for why the two are stored
+differently. The roster is not a command here: it is `list_clients` with
+`groupId` set.
 
-`GroupInput` is `name` (required), `headClientId` (required), `groupCode` and
-`notes`. `groupCode` is allocated as the next `GR-000NN` when omitted, and
-coalesced on update the way `clientCode` is. **A group needs a group head**: one
-opened without a referrer is not a group with a blank field but a referral nobody
-recorded, so a missing or unknown `headClientId` is `validation`. The column is
-still nullable, because deleting the referrer leaves the group standing; editing
-such a group asks for the new referrer by name.
+`GroupInput` is `name` (required), `headName`, `headDesignation`, `headPhone`,
+`headEmail`, `groupCode` and `notes`, all optional and all nullable. `groupCode`
+is allocated as the next `GR-000NN` when omitted, and coalesced on update the way
+`clientCode` is. **Only the name is required**: a group is a filing arrangement
+first and a referral second, so all four head fields may be left empty, and a
+`headName` of whitespace is stored as `NULL` rather than as empty text.
+
+The head is held to the shape a client's contact details are. `headName` is
+title-cased by `util::tidy_name`, `headPhone` normalised by
+`util::normalise_phone` — `+91 98765-43210` stores as `+919876543210`, and a
+number that normalises to nothing stores `NULL` — and `headEmail` checked by
+`util::looks_like_email`, returning `validation` with **The group head's email is
+not an address**. A blank email is `NULL` rather than an error.
+`headDesignation` is stored as typed, the way `contactDesignation` is.
 
 `GroupFilter`: `search`, `includeArchived`, `sort`, `descending`, `page`,
 `pageSize`. `search` is a `LIKE` scan over the group name, the group code and the
-referrer's name — an operator looking for "the firms Mehta brought us" knows the
-introducer, not the folder. Sort keys: `name` (default), `code`, `members`,
-`policies`, `premium`, `nextExpiry`, `created`, `updated`.
+head's name, all read off `client_groups` — an operator looking for "the firms
+Mehta brought us" knows the introducer, not the folder. Sort keys: `name`
+(default), `code`, `members`, `policies`, `premium`, `nextExpiry`, `created`,
+`updated`.
 
-`Group` responses carry `headName` and `headClientCode` alongside `headClientId`,
-and the group's book summed across its members: `members`, `activePolicies`,
-`totalPolicies`, `premiumUnderManagement` and `nextExpiry`. **The referrer
-contributes none of it unless they are also a member**, which is why headship and
-membership are answered separately.
+`Group` responses carry `headName`, `headDesignation`, `headPhone` and
+`headEmail`, and the group's book summed across its members: `members`,
+`activePolicies`, `totalPolicies`, `premiumUnderManagement` and `nextExpiry`.
+**The head contributes none of it**: they are a name and a phone number rather
+than somebody who holds policies. Nothing about a group references `clients`, so
+there is no id to follow to a client page and no way to ask which groups a client
+referred.
 
 **`delete_group`** removes the group and answers with how many clients it let go.
 They stay in the book with no group. **`set_group_archived`** archives or restores
-the group and every client in it, answering with how many clients moved, and
-leaves the referrer alone unless they are a member.
+the group and every client in it, answering with how many clients moved. Deleting
+a client reaches no group.
 
 **`set_client_group`** is the only place membership is said out loud. Passing no
 `groupId` takes the client out of whatever group they are in.
 
-Errors: `validation` (missing name, missing or unknown group head), `conflict`
-(group code or name in use), `not_found`.
+Errors: `validation` (missing name, malformed head email), `conflict` (group code
+or name in use), `not_found`.
 
 ## Documents
 
@@ -539,7 +551,7 @@ containing `compan`, `corp`, `firm`, `llp`, `ltd`, `pvt`, `private limited`,
 and the client's name is never read for it. On an existing client the type fills
 upwards only: `company` overwrites `individual`, and nothing overwrites
 `company`. `groupName` finds a group by name, case-insensitively, or opens one
-with a NULL `headClientId`, then files the client through the same path
+with no head on file, then files the client through the same path
 `set_client_group` uses; a blank leaves membership alone.
 
 These six are matched last, so headings an older book already spends keep their

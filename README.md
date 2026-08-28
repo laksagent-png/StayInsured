@@ -106,8 +106,9 @@ the group they are filed in, every policy they hold, past and present, and the
 scanned paperwork behind them.
 
 **Groups** — the corporate side of the book. A group is a set of companies you
-placed together, with the client who referred them recorded as its head, so you
-can see one employer's whole book on a page and know who to thank for it.
+placed together, with the name, designation, phone and email of whoever
+introduced them recorded as its head, so you can see one employer's whole book on
+a page and know who to thank for it.
 
 **Policies** — every policy you have placed, searchable by policy number, client
 name or vehicle number, filterable by category, status and expiry window.

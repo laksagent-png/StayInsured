@@ -47,20 +47,22 @@ describe("the groups list", () => {
     expect(patel.getByText("28 Feb 2027")).toBeInTheDocument();
   });
 
-  it("names the referrer, and links to them rather than to the group", async () => {
+  it("names the head as plain text, with what they do beneath it", async () => {
     openGroups();
     await screen.findByText("Patel Group");
 
-    const referrer = within(row(/Patel Group/)).getByRole("link", { name: /Vikram Patel/ });
-    expect(referrer).toHaveAttribute("href", "/clients/3");
+    const patel = within(row(/Patel Group/));
+    expect(patel.getByText("Vikram Patel")).toBeInTheDocument();
+    expect(patel.getByText("Insurance broker")).toBeInTheDocument();
+    // The head is a contact written on the group, so there is no client page
+    // for the column to lead to.
+    expect(patel.queryByRole("link", { name: /Vikram Patel/ })).toBeNull();
   });
 
-  it("says so plainly when a group has outlived the client who referred it", async () => {
+  it("says so plainly when nobody is named as the head", async () => {
     const book = withGroups(createBook());
-    // What the schema does when a referrer is deleted: the group stands, with
-    // nobody named on it.
-    book.groups[0].headClientId = null;
     book.groups[0].headName = null;
+    book.groups[0].headDesignation = null;
     installBackend(book);
     renderWithProviders(<GroupsPage />);
 
@@ -84,7 +86,7 @@ describe("the groups list", () => {
     expect(within(row(/Patel Group/)).getByText("Archived")).toBeInTheDocument();
   });
 
-  it("searches by name, code or the referrer's name", async () => {
+  it("searches by name, code or the head's name", async () => {
     const { user } = openGroups();
     await screen.findByText("Patel Group");
 
@@ -115,7 +117,8 @@ describe("archiving a group from the list", () => {
     const clients = backend().book.clients;
     expect(clients.find((row) => row.id === 12)?.isArchived).toBe(true);
     expect(clients.find((row) => row.id === 13)?.isArchived).toBe(true);
-    // The referrer was never in the group, so they stay where they were.
+    // The client who shares the head's name was never in the group, so nothing
+    // about archiving it reaches him.
     expect(clients.find((row) => row.id === 3)?.isArchived).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 /**
  * A port of `src-tauri/src/repo/groups.rs`.
  *
- * Groups: a named folder of clients, and the referrer who introduced them.
+ * Groups: a named folder of clients, and the person who introduced them.
  *
  * This is the deliberate opposite of `relations.ts`. A family is not stored
  * anywhere — it is whoever the edges reach, a person is in several at once, and
@@ -9,11 +9,10 @@
  * stop at. A group has that edge. It is named, entered on purpose, holds a client
  * at a time, and can be listed, summed, archived and deleted as itself.
  *
- * The referrer is held apart from the membership. Whoever brought the group in is
- * a client the agency deals with, but they are not thereby part of the book the
- * group represents: the rollups sum the members, and the group archive moves the
- * members, so an introducer who placed ten firms is not archived along with them
- * and their own policies are not counted as the group's.
+ * The head is a contact, not a client. A referrer is usually a broker, an HR
+ * manager or an accountant — somebody to ring and nobody to insure — so their
+ * name and their number are written on the group rather than filed as a client
+ * who would then be counted, listed and exported as part of the book.
  */
 
 import type { Conn } from "../db";
@@ -21,6 +20,7 @@ import { AppError, describe } from "../errors";
 import { Conditions, likePattern, orderBy, paginate } from "../query";
 import { blankToNull, boolToInt, toModel, toModels } from "../rows";
 import type { Group, GroupFilter, GroupInput, Page } from "../types";
+import { looksLikeEmail, normalisePhone, tidyName } from "../util";
 import * as clients from "./clients";
 import { count, isConstraintViolation } from "./shared";
 
@@ -36,15 +36,12 @@ const SORTABLE: Record<string, string> = {
 };
 
 const COLUMNS =
-  "g.id, g.group_code, g.name, g.head_client_id, " +
-  "(SELECT h.full_name FROM clients h WHERE h.id = g.head_client_id) AS head_name, " +
-  "(SELECT h.client_code FROM clients h WHERE h.id = g.head_client_id) AS head_client_code, " +
+  "g.id, g.group_code, g.name, g.head_name, g.head_designation, g.head_phone, g.head_email, " +
   "g.notes, g.is_archived, g.created_at, g.updated_at";
 
 /**
- * The group's book, summed over its members. The referrer contributes nothing
- * unless they are also in the group, which is the point of holding headship and
- * membership in separate columns.
+ * The group's book, summed over its members. The head is not one of them: they
+ * are a name and a phone number on the folder, and the folder holds companies.
  */
 const DERIVED =
   "(SELECT COUNT(*) FROM clients c WHERE c.group_id = g.id) AS members, " +
@@ -62,20 +59,15 @@ function buildConditions(filter: GroupFilter): Conditions {
 
   if (!filter.includeArchived) c.addRaw("g.is_archived = 0");
 
-  // Headship read from the referrer's end. Their page needs the groups they
-  // brought in, and the group list already knows how to answer that.
-  if (filter.headClientId != null) c.add("g.head_client_id = ?", filter.headClientId);
-
   // A small table, so a LIKE scan is the right tool and there is no FTS index to
-  // keep in step. The referrer's name is searched too: an operator looking for
-  // "the firms Mehta brought us" knows the introducer, not the folder.
+  // keep in step. The head's name is searched too: an operator looking for "the
+  // firms Mehta brought us" knows the introducer, not the folder.
   const search = blankToNull(filter.search);
   if (search) {
     const pattern = likePattern(search);
     c.addMany(
       "(g.name LIKE ? ESCAPE '\\' OR g.group_code LIKE ? ESCAPE '\\' " +
-        " OR EXISTS (SELECT 1 FROM clients h WHERE h.id = g.head_client_id " +
-        "              AND h.full_name LIKE ? ESCAPE '\\'))",
+        " OR g.head_name LIKE ? ESCAPE '\\')",
       [pattern, pattern, pattern],
     );
   }
@@ -128,36 +120,45 @@ export function nextGroupCode(conn: Conn): string {
 }
 
 /**
- * A group names the client who introduced it. That is what a group head is, so a
- * group opened without one is not a group with a blank field — it is a referral
- * nobody recorded, and the book is the only place that record exists.
+ * Only the name is asked for. An agent often knows that a set of firms files
+ * together long before they can say who introduced them, and a group with nobody
+ * named is an honest record of that rather than a form half filled in.
  *
- * The column is still nullable, because deleting the referrer must leave the
- * group standing. Editing such a group asks for the new referrer by name.
+ * The head's phone and email go through the checks a client's do, because they
+ * are dialled and written to by the same person on the same screen.
  */
-function validate(conn: Conn, input: GroupInput): void {
+function validate(input: GroupInput): void {
   if (input.name.trim() === "") throw AppError.validation("Group name is required");
 
-  if (input.headClientId == null) {
-    throw AppError.validation("A group needs a group head — the client who referred it");
-  }
-  try {
-    clients.get(conn, input.headClientId);
-  } catch {
-    throw AppError.validation("The group head named here is not a client in the book");
+  const email = blankToNull(input.headEmail);
+  if (email !== null && !looksLikeEmail(email)) {
+    throw AppError.validation("The group head's email is not an address");
   }
 }
 
+/** The four head columns, in the order every statement here binds them. */
+function headFields(input: GroupInput): (string | null)[] {
+  const name = blankToNull(input.headName);
+  return [
+    name === null ? null : tidyName(name),
+    blankToNull(input.headDesignation),
+    input.headPhone ? normalisePhone(input.headPhone) : null,
+    blankToNull(input.headEmail),
+  ];
+}
+
 export function create(conn: Conn, input: GroupInput): number {
-  validate(conn, input);
+  validate(input);
   const code = blankToNull(input.groupCode) ?? nextGroupCode(conn);
 
   try {
     const result = conn
       .prepare(
-        "INSERT INTO client_groups (group_code, name, head_client_id, notes) VALUES (?, ?, ?, ?)",
+        "INSERT INTO client_groups " +
+          "(group_code, name, head_name, head_designation, head_phone, head_email, notes) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(code, input.name.trim(), input.headClientId ?? null, blankToNull(input.notes));
+      .run(code, input.name.trim(), ...headFields(input), blankToNull(input.notes));
     return Number(result.lastInsertRowid);
   } catch (error) {
     throw mapUniqueError(error);
@@ -168,15 +169,9 @@ export function create(conn: Conn, input: GroupInput): number {
  * The importer's door into the same table, matching on the name and opening a
  * group when the book has none by that name.
  *
- * `create` refuses a group with no head, because a group is a referral and this
- * book is the only place that referral is written down. A spreadsheet is the one
- * caller that can honestly say it does not know: it carries the grouping — which
- * companies file together — and carries nothing at all about who introduced
- * them. So this leaves the head NULL, which is not a new state to explain. It is
- * exactly what a group becomes when its referrer is deleted, and the group page
- * already meets it by asking for a new referrer by name. Refusing the row
- * instead would throw away the grouping the sheet does know in order to protect
- * a fact it was never going to carry.
+ * A spreadsheet carries the grouping — which companies file together — and
+ * nothing at all about who introduced them, so the head is left blank and the
+ * group page asks for it later.
  */
 export function findOrCreateByName(conn: Conn, name: string): number {
   const trimmed = name.trim();
@@ -190,7 +185,7 @@ export function findOrCreateByName(conn: Conn, name: string): number {
   const code = nextGroupCode(conn);
   try {
     const result = conn
-      .prepare("INSERT INTO client_groups (group_code, name, head_client_id) VALUES (?, ?, NULL)")
+      .prepare("INSERT INTO client_groups (group_code, name) VALUES (?, ?)")
       .run(code, trimmed);
     return Number(result.lastInsertRowid);
   } catch (error) {
@@ -199,18 +194,19 @@ export function findOrCreateByName(conn: Conn, name: string): number {
 }
 
 export function update(conn: Conn, id: number, input: GroupInput): void {
-  validate(conn, input);
+  validate(input);
 
   let changes: number;
   try {
     const result = conn
       .prepare(
-        "UPDATE client_groups SET name = ?, head_client_id = ?, notes = ?, " +
+        "UPDATE client_groups SET name = ?, head_name = ?, head_designation = ?, " +
+          "head_phone = ?, head_email = ?, notes = ?, " +
           "group_code = COALESCE(?, group_code) WHERE id = ?",
       )
       .run(
         input.name.trim(),
-        input.headClientId ?? null,
+        ...headFields(input),
         blankToNull(input.notes),
         blankToNull(input.groupCode),
         id,
@@ -227,11 +223,10 @@ export function update(conn: Conn, id: number, input: GroupInput): void {
  * Archives or restores the group and every client in it, answering with how many
  * clients it moved.
  *
- * It moves the members and stops. The referrer is not in the group unless they
- * joined it, and putting away a book they introduced is no reason to put away the
- * person who introduced it. Unlike the family archive this needs no depth limit:
- * the group row says exactly who is in it, which is the whole reason for keeping
- * one.
+ * It moves the members and stops. The head is a contact written on the folder
+ * rather than a client in it, so there is nobody else to put away. Unlike the
+ * family archive this needs no depth limit: the group row says exactly who is in
+ * it, which is the whole reason for keeping one.
  */
 export function setArchived(conn: Conn, id: number, archived: boolean): number {
   get(conn, id);

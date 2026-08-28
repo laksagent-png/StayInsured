@@ -227,39 +227,37 @@ export function GroupDetailPage() {
       </header>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        {/* The referrer, given a card of their own rather than a line in a
-            details list. They are the person the agency rings about the group,
-            and they are a client, so the card leads to their page. */}
-        <Card title="Group head">
-          {data.headClientId ? (
+        {/* The person who introduced the group, given a card of their own. They
+            are a contact written on the group, not a client, so there is
+            nowhere for the card to lead. */}
+        <Card
+          title="Group head"
+          action={
+            <Button size="sm" variant="ghost" onClick={() => setEditOpen(true)}>
+              Edit head
+            </Button>
+          }
+        >
+          {data.headName ? (
             <>
-              <Link
-                to={`/clients/${data.headClientId}`}
-                className="group block rounded-lg bg-slate-50 px-3 py-2.5 hover:bg-slate-100"
-              >
-                <p className="text-sm font-medium text-slate-700 group-hover:underline">
-                  {data.headName}
-                </p>
-                <p className="text-xs text-slate-400">{data.headClientCode}</p>
-              </Link>
+              <div className="rounded-lg bg-slate-50 px-3 py-2.5">
+                <p className="text-sm font-medium text-slate-700">{data.headName}</p>
+                {data.headDesignation && (
+                  <p className="text-xs text-slate-400">{data.headDesignation}</p>
+                )}
+              </div>
+              <dl className="mt-3 space-y-2.5 text-sm">
+                <Detail label="Phone" value={data.headPhone} />
+                <Detail label="Email" value={data.headEmail} />
+              </dl>
               <p className="mt-3 text-xs text-slate-500">
-                The client who referred this group. They are not counted as a member and are left
-                alone when the group is archived, unless they joined it themselves.
+                Who introduced this group. They are not a client and are not counted as a member.
               </p>
             </>
           ) : (
-            <>
-              <p className="rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
-                The referrer has been deleted from the book, so this group has none on file.
-              </p>
-              <Button
-                variant="ghost"
-                className="mt-3 w-full justify-start"
-                onClick={() => setEditOpen(true)}
-              >
-                Name the referrer
-              </Button>
-            </>
+            <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+              No referrer on file
+            </p>
           )}
         </Card>
 
@@ -505,15 +503,17 @@ function AddMemberModal({ group, onClose }: { group: Group; onClose: () => void 
 
       {/* Opened as a client first, then put into the group — the same two steps
           the search path takes, so there is one way membership is written and
-          the client form stays a form about one client. */}
+          the client form stays a form about one client. The form starts on this
+          group, so the operator is not asked which one they meant. */}
       <ClientForm
         open={newClientOpen}
         defaultKind="company"
+        defaultGroupId={group.id}
         onClose={() => {
           setNewClientOpen(false);
           onClose();
         }}
-        onSaved={(id) => join.mutate(id)}
+        onSaved={() => toast.success(`Added to ${group.name}`)}
       />
     </>
   );

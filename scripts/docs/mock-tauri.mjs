@@ -146,9 +146,6 @@ export function installTauriMock({ fixtures, scenario = {} }) {
     let rows = visibleGroups.slice();
 
     if (!filter.includeArchived) rows = rows.filter((row) => !row.isArchived);
-    if (filter.headClientId != null) {
-      rows = rows.filter((row) => row.headClientId === filter.headClientId);
-    }
     if (filter.search) {
       const needle = lower(filter.search);
       rows = rows.filter((row) =>

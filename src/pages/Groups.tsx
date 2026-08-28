@@ -80,18 +80,17 @@ export function GroupsPage() {
       key: "head",
       header: "Group head",
       render: (row) =>
-        row.headClientId ? (
-          <Link
-            to={`/clients/${row.headClientId}`}
-            className="block truncate text-xs text-slate-600 hover:text-brand-700"
-          >
-            {row.headName}
-            <span className="block text-slate-400">{row.headClientCode}</span>
-          </Link>
+        row.headName ? (
+          // Plain text, because the head is a contact written on the group and
+          // there is no client page to lead to.
+          <span className="block min-w-0">
+            <span className="block truncate text-xs text-slate-600">{row.headName}</span>
+            {row.headDesignation && (
+              <span className="block truncate text-xs text-slate-400">{row.headDesignation}</span>
+            )}
+          </span>
         ) : (
-          // The referrer was deleted and the group outlived them, which the core
-          // allows on purpose. Saying so is how it gets put right.
-          <span className="text-xs text-amber-600">No referrer on file</span>
+          <span className="text-xs text-slate-400">No referrer on file</span>
         ),
     },
     {

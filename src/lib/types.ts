@@ -251,27 +251,31 @@ export interface RelationInput {
 }
 
 /**
- * A named set of clients the agency works as one book, and the client who
+ * A named set of clients the agency works as one book, and the contact who
  * referred them.
  *
  * Unlike a family this is a record of its own, because it has the boundary a
  * family lacks: it is named, entered deliberately, holds a client at a time, and
  * the operator can say where it ends. The roster is not part of this shape —
  * it is `listClients` with `groupId` set.
+ *
+ * The head is four columns written on the group and nothing more. A broker or an
+ * HR manager is worth ringing and never worth insuring, so naming one does not
+ * put a client in the book.
  */
 export interface Group {
   id: number;
   groupCode: string;
   name: string;
-  /** The referrer, who need not be a member of the group they brought in. */
-  headClientId: number | null;
   headName: string | null;
-  headClientCode: string | null;
+  headDesignation: string | null;
+  headPhone: string | null;
+  headEmail: string | null;
   notes: string | null;
   isArchived: boolean;
   createdAt: string;
   updatedAt: string;
-  /** The group's book, summed across its members and not its referrer. */
+  /** The group's book, summed across its members and not its head. */
   members: number;
   activePolicies: number;
   totalPolicies: number;
@@ -282,16 +286,16 @@ export interface Group {
 export interface GroupInput {
   groupCode?: string | null;
   name: string;
-  /** Required: a group without a referrer is a referral nobody recorded. */
-  headClientId?: number | null;
+  headName?: string | null;
+  headDesignation?: string | null;
+  headPhone?: string | null;
+  headEmail?: string | null;
   notes?: string | null;
 }
 
 export interface GroupFilter {
   search?: string;
   includeArchived?: boolean;
-  /** Groups this client referred: headship read from the referrer's end. */
-  headClientId?: number;
   sort?: string;
   descending?: boolean;
   page?: number;

@@ -69,17 +69,17 @@
     },
     {
       "name": "groups",
-      "caption": "Groups: clients worked as one book, each with the referrer who introduced them",
+      "caption": "Groups: clients worked as one book, each with the contact who introduced them",
       "route": "/groups"
     },
     {
       "name": "group-new",
-      "caption": "Opening a group: the referrer is a client, so the field searches the book",
+      "caption": "Opening a group: only the name is required, and the head is four plain boxes",
       "route": "/groups"
     },
     {
       "name": "group-detail",
-      "caption": "Group page: the referrer, what the members hold between them, and who is in it",
+      "caption": "Group page: who introduced the group, what the members hold between them, and who is in it",
       "route": "/groups/1"
     },
     {

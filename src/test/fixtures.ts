@@ -147,23 +147,36 @@ const rawClients: RawClient[] = [
  * The corporate half, which the plain book leaves out.
  *
  * A firm is a client with no birthday: what it has instead is somebody to ask
- * for and a number the registrar issued. Both of these were introduced by Vikram
- * Patel, which is what puts them in a group and makes him its head without being
- * in it. Added by {@link withGroups} rather than sitting in every book, so a test
- * about renewals is not also a test about companies.
+ * for and a number the registrar issued. Both are filed in the Patel Group.
+ * Added by {@link withGroups} rather than sitting in every book, so a test about
+ * renewals is not also a test about companies.
  */
 const rawCompanies: RawClient[] = [
   { id: 12, clientCode: "CL-00012", fullName: "Patel Weaves Pvt Ltd", kind: "company", groupId: 1, email: "accounts@patelweaves.in", phone: "79 2630 4411", city: "Ahmedabad", state: "Gujarat", pincode: "380015", occupation: "Textile manufacturing", pan: "AABCP1429B", gstin: "24AABCP1429B1ZK", registrationNo: "U17111GJ2011PTC067421", contactPerson: "Nishita Patel", contactDesignation: "Finance Manager", addressLine1: "Unit 4, Pirana Industrial Estate" },
   { id: 13, clientCode: "CL-00013", fullName: "Patel Logistics LLP", kind: "company", groupId: 1, email: "ops@patellogistics.in", phone: "79 2630 8890", city: "Ahmedabad", state: "Gujarat", pincode: "380023", occupation: "Freight and warehousing", pan: "AAEFP7712H", gstin: "24AAEFP7712H1Z9", registrationNo: "AAF-3391", contactPerson: "Devang Patel", contactDesignation: "Partner", addressLine1: "Warehouse 12, Naroda Road" },
 ];
 
-/** A group is a row, unlike a family: named, entered deliberately, and endable. */
-const rawGroups: Array<Pick<Group, "id" | "groupCode" | "name" | "headClientId" | "notes">> = [
+/**
+ * A group is a row, unlike a family: named, entered deliberately, and endable.
+ *
+ * Its head is written on it. The book happens to hold a client of the same
+ * name, which is the point: the two are unrelated records, and deleting the
+ * client leaves the group exactly as it was.
+ */
+const rawGroups: Array<
+  Pick<
+    Group,
+    "id" | "groupCode" | "name" | "headName" | "headDesignation" | "headPhone" | "headEmail" | "notes"
+  >
+> = [
   {
     id: 1,
     groupCode: "GR-00001",
     name: "Patel Group",
-    headClientId: 3,
+    headName: "Vikram Patel",
+    headDesignation: "Insurance broker",
+    headPhone: "+919925044556",
+    headEmail: "vikram.patel@example.com",
     notes: "Both firms renew together each March; one invoice for the group.",
   },
 ];
@@ -493,9 +506,8 @@ export function recountClients(
  * Recomputes what a group row derives from its members, and the group name each
  * client reads through the join.
  *
- * The rollups count the members and nobody else. A referrer who is not in the
- * group they introduced brings none of their own policies to its total, which is
- * the whole reason headship and membership are separate.
+ * The rollups count the members and nobody else. The head is not derived at
+ * all: it is four columns stored on the group, so nothing here writes them.
  */
 export function recountGroups(groups: Group[], clients: Client[], policies: Policy[]): void {
   for (const group of groups) {
@@ -504,7 +516,6 @@ export function recountGroups(groups: Group[], clients: Client[], policies: Poli
       members.some((member) => member.id === policy.clientId),
     );
     const active = held.filter((policy) => policy.status === "active");
-    const head = clients.find((client) => client.id === group.headClientId) ?? null;
 
     group.members = members.length;
     group.totalPolicies = held.length;
@@ -514,8 +525,6 @@ export function recountGroups(groups: Group[], clients: Client[], policies: Poli
       0,
     );
     group.nextExpiry = active.map((policy) => policy.expiryDate).sort()[0] ?? null;
-    group.headName = head?.fullName ?? null;
-    group.headClientCode = head?.clientCode ?? null;
   }
 
   for (const client of clients) {
@@ -671,7 +680,7 @@ export function createBook(): Book {
       unlocked: true,
       canUseKeychain: true,
       encrypted: true,
-      schemaVersion: 7,
+      schemaVersion: 8,
       dataDir: "/Users/you/Library/Application Support/com.stayinsured.app",
     },
     clients,
@@ -714,16 +723,15 @@ export function makePolicy(overrides: Partial<Policy> = {}): Policy {
 }
 
 /**
- * Adds the corporate side to a book: two firms, one group, and a referrer who is
- * not in it.
+ * Adds the corporate side to a book: two firms and the group they are filed in.
  *
  * Kept out of every book on purpose. A company changes what the clients list
  * counts, what the dashboard adds up and what the category mix shows, and a test
  * about renewals should not have to know that. Ask for it where it is the point:
  * `installBackend(withGroups(createBook()))`.
  *
- * The head is Vikram Patel, a client with a book of his own, so a test can tell
- * apart what a group holds from what its referrer does.
+ * The group names Vikram Patel as its head, and the book separately holds a
+ * client of that name, so a test can prove the two never touch.
  */
 export function withGroups(book: Book): Book {
   const template = book.clients[0];
@@ -751,8 +759,6 @@ export function withGroups(book: Book): Book {
   book.groups.push(
     ...rawGroups.map((row) => ({
       ...row,
-      headName: null,
-      headClientCode: null,
       isArchived: false,
       createdAt: "2025-02-19T10:05:00Z",
       updatedAt: "2026-03-02T08:20:00Z",

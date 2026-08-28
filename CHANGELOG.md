@@ -5,6 +5,32 @@ settings survive every version below.
 
 ## Upcoming
 
+### Changed
+
+- **A group's head is a contact you write down, not a client you have to enter.**
+  The person who sends you work is usually a broker, an HR manager or an
+  accountant — somebody you ring and never insure — and recording one used to mean
+  opening a client for them, where they padded your client count, sat in your
+  clients list holding no policies, and came out in every export as a
+  policyholder with nothing to their name. A group now carries their **Group
+  head**, **Designation**, **Phone** and **Email** in four plain boxes, and all
+  four may be left empty: open the group when you know which firms belong
+  together and fill the head in when you find out. **Edit head** on the head card
+  is where you do that. Searching groups still finds them by the head's name.
+
+  Every group you already have keeps its head. The name, phone number and email
+  of the client who was down as the referrer are copied onto the group, so the
+  only thing you lose is the link from the group to that client's page — and the
+  *Group head of N groups* list on a client's page, which no longer means
+  anything.
+
+- **The client form can file a client into a group while you enter them.** A
+  **Group** box lists your groups and starts on **No group**. Choose **Open a new
+  group…**, type a **New group name**, and the group is opened and the client
+  filed into it when you save. Typing the name of a group you already have joins
+  that one rather than opening a second. **New company** on a group's page starts
+  the form already filed in that group.
+
 ## 0.6.0 — 28 August 2026
 
 ### Added

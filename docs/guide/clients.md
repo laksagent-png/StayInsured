@@ -40,6 +40,8 @@ appear.
 | --- | --- | --- |
 | **Client type** | | **Individual** or **Company**. See [companies and groups](groups.md) |
 | **Full name** | Yes | The only required field. Reads **Company name** for a firm |
+| **Group** | | Which [group](groups.md) to file them in. **No group** unless you say otherwise |
+| **New group name** | | Appears when **Group** is set to **Open a new group…**. The group is opened as the client is saved |
 | **Client code** | | Allocated as `CL-00001` if you leave it blank |
 | **Mobile** | | Digits are cleaned up as they are stored |
 | **Email** | | Reminders cannot be sent without this. An address that is not one is refused |
@@ -69,10 +71,10 @@ Tick **Do not send reminders** for a client who has asked not to be emailed. The
 stay in your book and keep their policies, but **Copy emails** on the
 [renewals desk](renewals.md) will never include them.
 
-Two things stop a save: a client with no name, and an email address that is not
-an address — `rohit@example` and `rohit at example.com` are both turned back.
-The dialog says which it is, keeps everything you typed, and waits for you to
-put it right.
+Three things stop a save: a client with no name, an email address that is not an
+address — `rohit@example` and `rohit at example.com` are both turned back — and
+**Open a new group…** chosen with **New group name** left empty. The dialog says
+which it is, keeps everything you typed, and waits for you to put it right.
 
 ## Find a client
 
@@ -117,9 +119,9 @@ Click a client's name.
 ![Client page](screenshots/client-detail.png)
 
 Everything about them is on one page: contact details, their
-[family](families.md), the [group](groups.md) they are filed in and any groups
-they referred, every policy they hold with its status and expiry date,
-and the [documents](documents.md) you have attached.
+[family](families.md), the [group](groups.md) they are filed in, every policy
+they hold with its status and expiry date, and the [documents](documents.md) you
+have attached.
 
 A company's page reads a little differently, since a firm has no family: the
 contact person, their designation, the GSTIN and the registration number sit in

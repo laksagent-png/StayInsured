@@ -774,16 +774,17 @@ describe("a company, and the groups a client meets", () => {
     );
   });
 
-  it("gives the referrer their groups, which is what a group head's page is for", async () => {
+  it("says nothing about groups a client is not in, even one that names them", async () => {
     installBackend(withGroups(createBook()));
     renderWithProviders(<ClientDetailPage />, { route: "/clients/3", path: "/clients/:id" });
     await screen.findByRole("heading", { name: "Vikram Patel" });
 
-    // He introduced the group without joining it, so his page says both: not in
-    // a group, and head of one.
-    expect(await screen.findByText("Group head of 1 group")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Patel Group/ })).toHaveAttribute("href", "/groups/1");
-    expect(screen.getByText(/Not in a group/)).toBeInTheDocument();
+    // The Patel Group names him as its head, but a head is a contact written on
+    // the group. Nothing reads from this end, so his page shows one thing: he
+    // is in no group.
+    expect(await screen.findByText(/Not in a group/)).toBeInTheDocument();
+    expect(screen.queryByText(/Group head of/)).toBeNull();
+    expect(screen.queryByRole("link", { name: /Patel Group/ })).toBeNull();
   });
 
   it("files a client into a group from their own page", async () => {

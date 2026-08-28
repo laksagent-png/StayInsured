@@ -302,7 +302,7 @@ pub enum DeleteScope {
 
 // ---------------------------------------------------------------- groups
 
-/// A named set of clients the agency works as one book, and the referrer who
+/// A named set of clients the agency works as one book, and the contact who
 /// introduced them.
 ///
 /// Unlike a family, this is a row. A family is whoever the relationship edges
@@ -315,18 +315,20 @@ pub struct Group {
     pub id: i64,
     pub group_code: String,
     pub name: String,
-    /// The referrer, and a client in their own right. They need not be a member
-    /// of the group they brought in — an introducer who placed ten firms is
-    /// nobody's subsidiary — so headship and membership are answered separately.
-    pub head_client_id: Option<i64>,
+    /// Whoever introduced the group, written down rather than looked up. A
+    /// broker or an HR manager is somebody to ring and nobody to insure, so
+    /// these four are contact details on the group and not a link to a client.
+    /// All of them may be blank: the grouping is often known long before the
+    /// introduction is.
     pub head_name: Option<String>,
-    pub head_client_code: Option<String>,
+    pub head_designation: Option<String>,
+    pub head_phone: Option<String>,
+    pub head_email: Option<String>,
     pub notes: Option<String>,
     pub is_archived: bool,
     pub created_at: String,
     pub updated_at: String,
-    /// Everything below is the group's book, summed across its members. The
-    /// referrer's own policies are not in it unless they are also a member.
+    /// Everything below is the group's book, summed across its members.
     pub members: i64,
     pub active_policies: i64,
     pub total_policies: i64,
@@ -334,10 +336,8 @@ pub struct Group {
     pub next_expiry: Option<String>,
 }
 
-pub const GROUP_COLUMNS: &str = "g.id, g.group_code, g.name, g.head_client_id, \
-     (SELECT h.full_name FROM clients h WHERE h.id = g.head_client_id) AS head_name, \
-     (SELECT h.client_code FROM clients h WHERE h.id = g.head_client_id) AS head_client_code, \
-     g.notes, g.is_archived, g.created_at, g.updated_at";
+pub const GROUP_COLUMNS: &str = "g.id, g.group_code, g.name, g.head_name, g.head_designation, \
+     g.head_phone, g.head_email, g.notes, g.is_archived, g.created_at, g.updated_at";
 
 impl Group {
     /// Expects `GROUP_COLUMNS` followed by members, active_policies,
@@ -347,18 +347,19 @@ impl Group {
             id: row.get(0)?,
             group_code: row.get(1)?,
             name: row.get(2)?,
-            head_client_id: row.get(3)?,
-            head_name: row.get(4)?,
-            head_client_code: row.get(5)?,
-            notes: row.get(6)?,
-            is_archived: row.get::<_, i64>(7)? != 0,
-            created_at: row.get(8)?,
-            updated_at: row.get(9)?,
-            members: row.get(10).unwrap_or(0),
-            active_policies: row.get(11).unwrap_or(0),
-            total_policies: row.get(12).unwrap_or(0),
-            premium_under_management: row.get(13).unwrap_or(0.0),
-            next_expiry: row.get(14).unwrap_or(None),
+            head_name: row.get(3)?,
+            head_designation: row.get(4)?,
+            head_phone: row.get(5)?,
+            head_email: row.get(6)?,
+            notes: row.get(7)?,
+            is_archived: row.get::<_, i64>(8)? != 0,
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
+            members: row.get(11).unwrap_or(0),
+            active_policies: row.get(12).unwrap_or(0),
+            total_policies: row.get(13).unwrap_or(0),
+            premium_under_management: row.get(14).unwrap_or(0.0),
+            next_expiry: row.get(15).unwrap_or(None),
         })
     }
 }
@@ -368,7 +369,10 @@ impl Group {
 pub struct GroupInput {
     pub group_code: Option<String>,
     pub name: String,
-    pub head_client_id: Option<i64>,
+    pub head_name: Option<String>,
+    pub head_designation: Option<String>,
+    pub head_phone: Option<String>,
+    pub head_email: Option<String>,
     pub notes: Option<String>,
 }
 
@@ -377,10 +381,6 @@ pub struct GroupInput {
 pub struct GroupFilter {
     pub search: Option<String>,
     pub include_archived: Option<bool>,
-    /// Groups this client referred. What a group head's page is: the same list,
-    /// narrowed to the introductions one person made, so headship can be read
-    /// from either end without a second command.
-    pub head_client_id: Option<i64>,
     pub sort: Option<String>,
     pub descending: Option<bool>,
     pub page: Option<u32>,

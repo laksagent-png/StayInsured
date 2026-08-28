@@ -150,7 +150,8 @@ fn a_book_edited_before_the_fix_has_its_search_index_put_right() {
             // disagreeing with the client list the way an edit under that trigger
             // could leave it, the member tables 005 has since replaced —
             // including a daughter, so that re-applying has a family to move —
-            // the health questions 006 has since added, and the groups 007 has.
+            // the health questions 006 has since added, and the groups 007 and
+            // 008 have.
             //
             // Every step after 3 has to replay, so the fixture has to be a book
             // that has genuinely had none of them. A migration left in place
@@ -160,6 +161,14 @@ fn a_book_edited_before_the_fix_has_its_search_index_put_right() {
                 "DROP TRIGGER clients_fts_au; \
                  UPDATE clients SET full_name = 'Rohit Kumar Sharma' WHERE id = {id}; \
                  {OLD_TRIGGER} \
+                 DROP INDEX idx_groups_head_name; \
+                 ALTER TABLE client_groups DROP COLUMN head_name; \
+                 ALTER TABLE client_groups DROP COLUMN head_designation; \
+                 ALTER TABLE client_groups DROP COLUMN head_phone; \
+                 ALTER TABLE client_groups DROP COLUMN head_email; \
+                 ALTER TABLE client_groups ADD COLUMN head_client_id INTEGER \
+                     REFERENCES clients (id) ON DELETE SET NULL; \
+                 CREATE INDEX idx_groups_head ON client_groups (head_client_id); \
                  DROP INDEX idx_clients_group; \
                  DROP INDEX idx_clients_kind; \
                  ALTER TABLE clients DROP COLUMN group_id; \
@@ -1166,15 +1175,20 @@ fn archiving_a_family_moves_the_household_and_stops() {
         .unwrap();
 }
 
-/// A company client, and a group of them under the referrer who brought them in.
-/// Returns the group and its two members, with the referrer left outside it.
+/// A company client, and a group of them under the contact who brought them in.
+/// Returns the group and its two members.
+///
+/// The second value is a client of the same name as the group's head, and no
+/// relation to it. The book may well hold one — a broker who also insures his
+/// own car — and several of these tests turn on the two having nothing to do
+/// with each other.
 fn a_group_of_two(conn: &rusqlite::Connection) -> crate::error::AppResult<(i64, i64, i64, i64)> {
-    let referrer = clients::create(conn, &sample_client("Anil Mehta"))?;
+    let namesake = clients::create(conn, &sample_client("Anil Mehta"))?;
     let group = groups::create(
         conn,
         &GroupInput {
             name: "Sundaram Group".into(),
-            head_client_id: Some(referrer),
+            head_name: Some("Anil Mehta".into()),
             ..Default::default()
         },
     )?;
@@ -1194,7 +1208,7 @@ fn a_group_of_two(conn: &rusqlite::Connection) -> crate::error::AppResult<(i64, 
             ..sample_client("Sundaram Logistics")
         },
     )?;
-    Ok((group, referrer, first, second))
+    Ok((group, namesake, first, second))
 }
 
 #[test]
@@ -1202,12 +1216,11 @@ fn a_group_is_a_folder_and_a_family_is_not() {
     let temp = TempDb::new("group-shape");
     temp.db
         .with(|conn| {
-            let (group, referrer, first, _second) = a_group_of_two(conn)?;
+            let (group, _namesake, first, _second) = a_group_of_two(conn)?;
 
             let saved = groups::get(conn, group)?;
             assert_eq!(saved.group_code, "GR-00001");
-            assert_eq!(saved.members, 2, "the two companies, not the referrer");
-            assert_eq!(saved.head_client_id, Some(referrer));
+            assert_eq!(saved.members, 2, "the two companies, not the head");
             assert_eq!(saved.head_name.as_deref(), Some("Anil Mehta"));
 
             // The whole point of the separation: being in a group is not being
@@ -1235,7 +1248,7 @@ fn a_company_in_a_group_is_not_a_dependent() {
     let temp = TempDb::new("group-dependents");
     temp.db
         .with(|conn| {
-            let (_group, _referrer, first, _second) = a_group_of_two(conn)?;
+            let (_group, _namesake, first, _second) = a_group_of_two(conn)?;
 
             assert!(
                 !clients::get(conn, first)?.is_dependent,
@@ -1258,7 +1271,7 @@ fn deleting_a_group_leaves_its_companies_standing() {
     let temp = TempDb::new("group-delete");
     temp.db
         .with(|conn| {
-            let (group, _referrer, first, second) = a_group_of_two(conn)?;
+            let (group, _namesake, first, second) = a_group_of_two(conn)?;
 
             let released = groups::delete(conn, group)?;
             assert_eq!(released, 2, "and it says how many it let go");
@@ -1278,34 +1291,21 @@ fn deleting_a_group_leaves_its_companies_standing() {
 }
 
 #[test]
-fn deleting_the_referrer_leaves_the_group_standing() {
-    let temp = TempDb::new("group-referrer-delete");
+fn deleting_a_client_leaves_every_group_exactly_as_it_was() {
+    let temp = TempDb::new("group-client-delete");
     temp.db
         .with(|conn| {
-            let (group, referrer, first, _second) = a_group_of_two(conn)?;
+            let (group, namesake, first, _second) = a_group_of_two(conn)?;
 
-            clients::delete(conn, referrer)?;
+            clients::delete(conn, namesake)?;
 
+            // Nothing followed the delete into the group, because there was
+            // never a link for it to follow. Sharing a name with the head is a
+            // coincidence, not a reference.
             let saved = groups::get(conn, group)?;
-            assert_eq!(
-                saved.head_client_id, None,
-                "the introducer is gone and the group is not"
-            );
+            assert_eq!(saved.head_name.as_deref(), Some("Anil Mehta"));
             assert_eq!(saved.members, 2);
             assert_eq!(clients::get(conn, first)?.group_id, Some(group));
-
-            // Naming a new referrer is how such a group is put right, and it is
-            // asked for rather than left blank.
-            let nobody = groups::update(
-                conn,
-                group,
-                &GroupInput {
-                    name: "Sundaram Group".into(),
-                    head_client_id: None,
-                    ..Default::default()
-                },
-            );
-            assert!(matches!(nobody, Err(crate::error::AppError::Validation(_))));
             Ok(())
         })
         .unwrap();
@@ -1316,7 +1316,7 @@ fn archiving_a_group_moves_its_members_and_not_its_referrer() {
     let temp = TempDb::new("group-archive");
     temp.db
         .with(|conn| {
-            let (group, referrer, first, second) = a_group_of_two(conn)?;
+            let (group, namesake, first, second) = a_group_of_two(conn)?;
 
             let moved = groups::set_archived(conn, group, true)?;
             assert_eq!(moved, 2);
@@ -1324,8 +1324,8 @@ fn archiving_a_group_moves_its_members_and_not_its_referrer() {
             assert!(clients::get(conn, second)?.is_archived);
             assert!(groups::get(conn, group)?.is_archived);
             assert!(
-                !clients::get(conn, referrer)?.is_archived,
-                "the introducer is not part of the book he introduced"
+                !clients::get(conn, namesake)?.is_archived,
+                "a client outside the folder is untouched, head's name or not"
             );
 
             let back = groups::set_archived(conn, group, false)?;
@@ -1337,35 +1337,114 @@ fn archiving_a_group_moves_its_members_and_not_its_referrer() {
 }
 
 #[test]
-fn a_group_needs_the_client_who_referred_it() {
-    let temp = TempDb::new("group-head-required");
+fn a_group_records_its_head_without_making_them_a_client() {
+    let temp = TempDb::new("group-head-contact");
     temp.db
         .with(|conn| {
-            let headless = groups::create(
+            clients::create(conn, &sample_client("Rajesh Kumar"))?;
+            let before = clients::list(conn, &ClientFilter::default())?.total;
+
+            let group = groups::create(
+                conn,
+                &GroupInput {
+                    name: "Coromandel Group".into(),
+                    head_name: Some("Anil Mehta".into()),
+                    head_designation: Some("Broker".into()),
+                    head_phone: Some("9876543210".into()),
+                    head_email: Some("anil@example.com".into()),
+                    ..Default::default()
+                },
+            )?;
+
+            let saved = groups::get(conn, group)?;
+            assert_eq!(saved.head_name.as_deref(), Some("Anil Mehta"));
+            assert_eq!(saved.head_designation.as_deref(), Some("Broker"));
+            assert_eq!(saved.head_phone.as_deref(), Some("9876543210"));
+            assert_eq!(saved.head_email.as_deref(), Some("anil@example.com"));
+
+            assert_eq!(
+                clients::list(conn, &ClientFilter::default())?.total,
+                before,
+                "naming an introducer does not add a policyholder to the book"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_group_may_be_opened_before_anybody_knows_who_referred_it() {
+    let temp = TempDb::new("group-headless");
+    temp.db
+        .with(|conn| {
+            let bare = groups::create(
                 conn,
                 &GroupInput {
                     name: "Nobody's Group".into(),
-                    head_client_id: None,
+                    ..Default::default()
+                },
+            )?;
+            let saved = groups::get(conn, bare)?;
+            assert_eq!(saved.head_name, None);
+            assert_eq!(saved.head_designation, None);
+            assert_eq!(saved.head_phone, None);
+            assert_eq!(saved.head_email, None);
+
+            // A box the agent tabbed through is empty, not a name made of
+            // spaces that would sort and search as if somebody were there.
+            let whitespace = groups::create(
+                conn,
+                &GroupInput {
+                    name: "Ghost Group".into(),
+                    head_name: Some("   ".into()),
+                    ..Default::default()
+                },
+            )?;
+            assert_eq!(groups::get(conn, whitespace)?.head_name, None);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_group_heads_details_are_held_to_the_same_shape_a_clients_are() {
+    let temp = TempDb::new("group-head-contact-shape");
+    temp.db
+        .with(|conn| {
+            let group = groups::create(
+                conn,
+                &GroupInput {
+                    name: "Sundaram Group".into(),
+                    head_name: Some("anil  mehta".into()),
+                    head_phone: Some("+91 98765-43210".into()),
+                    head_email: Some("  ".into()),
+                    ..Default::default()
+                },
+            )?;
+            let saved = groups::get(conn, group)?;
+            assert_eq!(
+                saved.head_name.as_deref(),
+                Some("Anil Mehta"),
+                "a head's name is tidied the way a client's is"
+            );
+            assert_eq!(saved.head_phone.as_deref(), Some("+919876543210"));
+            assert_eq!(saved.head_email, None, "a blank address is not an error");
+
+            let malformed = groups::update(
+                conn,
+                group,
+                &GroupInput {
+                    name: "Sundaram Group".into(),
+                    head_name: Some("Anil Mehta".into()),
+                    head_email: Some("mehta at example.com".into()),
                     ..Default::default()
                 },
             );
             assert!(matches!(
-                headless,
-                Err(crate::error::AppError::Validation(_))
+                malformed,
+                Err(crate::error::AppError::Validation(message))
+                    if message == "The group head's email is not an address"
             ));
-
-            let stranger = groups::create(
-                conn,
-                &GroupInput {
-                    name: "Ghost Group".into(),
-                    head_client_id: Some(9_999),
-                    ..Default::default()
-                },
-            );
-            assert!(
-                matches!(stranger, Err(crate::error::AppError::Validation(_))),
-                "a referrer who is not in the book is refused in words, not by a foreign key"
-            );
             Ok(())
         })
         .unwrap();
@@ -1376,13 +1455,12 @@ fn a_group_code_and_name_belong_to_one_group() {
     let temp = TempDb::new("group-codes");
     temp.db
         .with(|conn| {
-            let (_group, referrer, _first, _second) = a_group_of_two(conn)?;
+            let (_group, _namesake, _first, _second) = a_group_of_two(conn)?;
 
             let same_name = groups::create(
                 conn,
                 &GroupInput {
                     name: "Sundaram Group".into(),
-                    head_client_id: Some(referrer),
                     ..Default::default()
                 },
             );
@@ -1396,7 +1474,6 @@ fn a_group_code_and_name_belong_to_one_group() {
                 &GroupInput {
                     group_code: Some("GR-00001".into()),
                     name: "Another Group".into(),
-                    head_client_id: Some(referrer),
                     ..Default::default()
                 },
             );
@@ -1411,7 +1488,6 @@ fn a_group_code_and_name_belong_to_one_group() {
                 conn,
                 &GroupInput {
                     name: "Third Group".into(),
-                    head_client_id: Some(referrer),
                     ..Default::default()
                 },
             )?;
@@ -1426,12 +1502,11 @@ fn a_client_belongs_to_one_group_at_a_time() {
     let temp = TempDb::new("group-membership");
     temp.db
         .with(|conn| {
-            let (group, referrer, first, _second) = a_group_of_two(conn)?;
+            let (group, _namesake, first, _second) = a_group_of_two(conn)?;
             let other = groups::create(
                 conn,
                 &GroupInput {
                     name: "Coromandel Group".into(),
-                    head_client_id: Some(referrer),
                     ..Default::default()
                 },
             )?;
@@ -1459,7 +1534,7 @@ fn editing_a_client_leaves_the_group_they_are_in_alone() {
     let temp = TempDb::new("group-untouched");
     temp.db
         .with(|conn| {
-            let (group, _referrer, first, _second) = a_group_of_two(conn)?;
+            let (group, _namesake, first, _second) = a_group_of_two(conn)?;
 
             clients::update(
                 conn,
@@ -1485,13 +1560,14 @@ fn a_group_sums_the_book_of_its_members_and_not_its_referrer() {
     let temp = TempDb::new("group-rollup");
     temp.db
         .with(|conn| {
-            let (group, referrer, first, second) = a_group_of_two(conn)?;
+            let (group, namesake, first, second) = a_group_of_two(conn)?;
             let insurer = insurers::find_or_create(conn, "Niva Bupa")?;
 
             policies::create(conn, &sample_policy(first, insurer, "G-1", "2027-06-30"))?;
             policies::create(conn, &sample_policy(second, insurer, "G-2", "2027-03-31"))?;
-            // The referrer's own cover is his, not the group's.
-            policies::create(conn, &sample_policy(referrer, insurer, "G-3", "2026-12-31"))?;
+            // The cover held by the client who shares the head's name is his own
+            // and not the group's, however the head came to be written down.
+            policies::create(conn, &sample_policy(namesake, insurer, "G-3", "2026-12-31"))?;
             policies::sync_statuses(conn)?;
 
             let saved = groups::get(conn, group)?;
@@ -1515,7 +1591,7 @@ fn a_policy_does_not_cover_another_company_in_the_group() {
     let temp = TempDb::new("group-cover");
     temp.db
         .with(|conn| {
-            let (_group, _referrer, first, second) = a_group_of_two(conn)?;
+            let (_group, _namesake, first, second) = a_group_of_two(conn)?;
             let insurer = insurers::find_or_create(conn, "Niva Bupa")?;
             let policy =
                 policies::create(conn, &sample_policy(first, insurer, "G-1", "2027-06-30"))?;
@@ -1586,36 +1662,15 @@ fn a_company_is_a_client_without_a_date_of_birth() {
 }
 
 #[test]
-fn a_group_list_is_searched_by_its_name_its_code_or_its_referrer() {
+fn a_group_list_is_searched_by_its_name_its_code_or_its_head() {
     let temp = TempDb::new("group-search");
     temp.db
         .with(|conn| {
-            let (group, referrer, _first, _second) = a_group_of_two(conn)?;
+            let (group, _namesake, _first, _second) = a_group_of_two(conn)?;
 
-            // Headship read from the referrer's end, which is what makes a group
-            // head's page possible without a command of its own.
-            let referred = groups::list(
-                conn,
-                &GroupFilter {
-                    head_client_id: Some(referrer),
-                    ..Default::default()
-                },
-            )?;
-            assert_eq!(referred.total, 1);
-            assert_eq!(referred.rows[0].id, group);
-            assert_eq!(
-                groups::list(
-                    conn,
-                    &GroupFilter {
-                        head_client_id: Some(9_999),
-                        ..Default::default()
-                    }
-                )?
-                .total,
-                0,
-                "a client who introduced nobody heads nothing"
-            );
-
+            // The head's name is read off the group itself, so an operator
+            // looking for "the firms Mehta brought us" finds them without the
+            // book holding Mehta as a client at all.
             for term in ["Sundaram", "GR-00001", "Mehta"] {
                 let found = groups::list(
                     conn,
@@ -3224,7 +3279,7 @@ fn a_group_named_in_a_sheet_is_opened_once_however_the_rows_spell_it() {
 }
 
 #[test]
-fn a_group_opened_by_import_has_no_referrer_until_somebody_names_one() {
+fn a_group_opened_by_import_has_no_head_until_somebody_names_one() {
     let temp = TempDb::new("import-group-head");
     let path = temp.dir.join("corporate.csv");
     std::fs::write(&path, CORPORATE_SHEET).unwrap();
@@ -3235,28 +3290,27 @@ fn a_group_opened_by_import_has_no_referrer_until_somebody_names_one() {
             let listed = groups::list(conn, &GroupFilter::default())?;
             let folder = &listed.rows[0];
             assert_eq!(
-                folder.head_client_id, None,
+                folder.head_name, None,
                 "the sheet carried the grouping and nothing about the introduction"
             );
 
-            // Which is the state deleting a referrer already leaves behind, and
-            // it is put right the same way: by naming somebody, with the folder
+            // Which is put right whenever the agent learns it, with the folder
             // keeping everyone in it.
-            let referrer = clients::create(conn, &sample_client("Anil Mehta"))?;
             groups::update(
                 conn,
                 folder.id,
                 &GroupInput {
                     name: folder.name.clone(),
-                    head_client_id: Some(referrer),
+                    head_name: Some("Anil Mehta".into()),
+                    head_designation: Some("Broker".into()),
                     ..Default::default()
                 },
             )?;
 
             let named = groups::get(conn, folder.id)?;
-            assert_eq!(named.head_client_id, Some(referrer));
             assert_eq!(named.head_name.as_deref(), Some("Anil Mehta"));
-            assert_eq!(named.members, 2, "naming the referrer moved nobody");
+            assert_eq!(named.head_designation.as_deref(), Some("Broker"));
+            assert_eq!(named.members, 2, "naming the head moved nobody");
             Ok(())
         })
         .unwrap();
@@ -4082,12 +4136,12 @@ fn a_client_export_carries_the_type_the_group_and_the_corporate_columns() {
     let temp = TempDb::new("export-corporate");
     temp.db
         .with(|conn| {
-            let referrer = clients::create(conn, &sample_client("Anil Mehta"))?;
+            clients::create(conn, &sample_client("Anil Mehta"))?;
             let group = groups::create(
                 conn,
                 &GroupInput {
                     name: "Sundaram Group".into(),
-                    head_client_id: Some(referrer),
+                    head_name: Some("Anil Mehta".into()),
                     ..Default::default()
                 },
             )?;

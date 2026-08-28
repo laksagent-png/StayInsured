@@ -113,8 +113,8 @@ export interface ClientFilter {
 }
 
 /**
- * A named set of clients the agency works as one book, and the client who
- * referred them.
+ * A named set of clients the agency works as one book, and the person who
+ * introduced them.
  *
  * Unlike a family this is a row, because it has the boundary a family lacks: it
  * is named, entered deliberately, holds a client at a time, and the operator can
@@ -124,15 +124,20 @@ export interface Group {
   id: number;
   groupCode: string;
   name: string;
-  /** The referrer, who need not be a member of the group they brought in. */
-  headClientId: number | null;
+  /**
+   * Whoever introduced the group, written down rather than looked up. A broker
+   * or an HR manager is worth ringing and never worth insuring, so recording one
+   * must not put a client in the book.
+   */
   headName: string | null;
-  headClientCode: string | null;
+  headDesignation: string | null;
+  headPhone: string | null;
+  headEmail: string | null;
   notes: string | null;
   isArchived: boolean;
   createdAt: string;
   updatedAt: string;
-  /** The group's book, summed across its members and not its referrer. */
+  /** The group's book, summed across its members. */
   members: number;
   activePolicies: number;
   totalPolicies: number;
@@ -143,15 +148,16 @@ export interface Group {
 export interface GroupInput {
   groupCode?: string | null;
   name: string;
-  headClientId?: number | null;
+  headName?: string | null;
+  headDesignation?: string | null;
+  headPhone?: string | null;
+  headEmail?: string | null;
   notes?: string | null;
 }
 
 export interface GroupFilter {
   search?: string | null;
   includeArchived?: boolean | null;
-  /** Groups this client referred: headship read from the referrer's end. */
-  headClientId?: number | null;
   sort?: string | null;
   descending?: boolean | null;
   page?: number | null;

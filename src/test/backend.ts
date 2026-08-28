@@ -553,14 +553,27 @@ export class FakeBackend {
     recountGroups(this.book.groups, this.book.clients, this.book.policies);
   }
 
+  /**
+   * The head as it is stored: whitespace is nothing at all, and the name and
+   * phone go through the same tidying a client's name and phone get.
+   */
+  private headColumns(input: GroupInput) {
+    const name = blankToNone(input.headName);
+    return {
+      headName: name === null ? null : tidyName(name),
+      headDesignation: blankToNone(input.headDesignation),
+      headPhone: normalisePhone(input.headPhone),
+      headEmail: blankToNone(input.headEmail),
+    };
+  }
+
   private validateGroup(input: GroupInput, self?: number): void {
     const name = blankToNone(input?.name);
     if (!name) this.invalid("Group name is required");
-    // A referrer is asked for, though the column is nullable: a group whose head
-    // was deleted keeps standing, but one may not be opened without naming who
-    // brought it in.
-    if (input.headClientId == null) this.invalid("A group needs the client who referred it");
-    this.client(input.headClientId);
+    // The head is optional in every part: a group may be opened before anybody
+    // knows who referred it. What is checked is the shape of what was given.
+    const email = blankToNone(input.headEmail);
+    if (email && !looksLikeEmail(email)) this.invalid("The group head's email is not an address");
 
     const code = blankToNone(input.groupCode);
     const clash = this.book.groups.find(
@@ -579,9 +592,6 @@ export class FakeBackend {
     let rows = this.book.groups.map((row) => ({ ...row }));
 
     if (!filter.includeArchived) rows = rows.filter((row) => !row.isArchived);
-    if (filter.headClientId != null) {
-      rows = rows.filter((row) => row.headClientId === filter.headClientId);
-    }
     if (filter.search) {
       const needle = lower(filter.search);
       rows = rows.filter((row) =>
@@ -1050,10 +1060,8 @@ export class FakeBackend {
       this.book.groups.push({
         id,
         groupCode: blankToNone(input.groupCode) ?? this.nextGroupCode(),
-        name: tidyName(input.name),
-        headClientId: input.headClientId ?? null,
-        headName: null,
-        headClientCode: null,
+        name: input.name.trim(),
+        ...this.headColumns(input),
         notes: blankToNone(input.notes),
         isArchived: false,
         createdAt: `${TODAY}T04:30:00Z`,
@@ -1072,9 +1080,9 @@ export class FakeBackend {
       const input = args.input as GroupInput;
       this.validateGroup(input, group.id);
       Object.assign(group, {
-        name: tidyName(input.name),
+        name: input.name.trim(),
         groupCode: blankToNone(input.groupCode) ?? group.groupCode,
-        headClientId: input.headClientId ?? null,
+        ...this.headColumns(input),
         notes: blankToNone(input.notes),
         updatedAt: `${TODAY}T04:30:00Z`,
       });

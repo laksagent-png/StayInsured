@@ -58,40 +58,42 @@ group** in the middle of the screen instead.
 | --- | --- | --- |
 | **Group name** | Yes | *Patel Group*, *Sundaram Group* |
 | **Group code** | | Reserved for you as *GR-00001*; type your own numbering over it |
-| **Group head** | Yes | The client who referred the group. Type two letters and the book offers matches |
+| **Group head** | | Who introduced this group. A name you type, not a client you pick |
+| **Designation** | | *Chartered accountant*, *HR Manager*, *Broker* |
+| **Phone** | | The number you ring when the whole group is due |
+| **Email** | | An address that is not one is turned back |
 | **Notes** | | How the group is worked — one invoice, renewals together, who signs off |
 
-The group head is a client rather than a name you type, so the field searches
-your book. If nobody answers to what you typed, the form says so and stops:
-unlike the family panel, it will not open a client for you. A referrer is
-somebody you already deal with, and if they are not in the book yet,
-[add them as a client](clients.md) first.
+Only the group name is required. Open the group when you know which firms belong
+together, and fill the head in later — or never, if nobody introduced them.
 
 ## The group head
 
-The group head is whoever introduced the group. That is a real relationship with
-its own phone number — when the whole group is due, they are who you ring — so
-the book holds them as a client and the group points at them.
+The group head is whoever introduced the group, written down on the group itself:
+a name, what they do, a phone number and an email address.
 
-They need not be in the group they brought you. A broker who placed ten firms is
-nobody's subsidiary, and an accountant who sends you their clients holds their
-own personal policies and nothing else. So headship and membership are separate:
+They are **not** a client, and naming one does not put anybody in your book. The
+person who sends you work is usually a broker, an HR manager at the parent
+company or an accountant recommending you to their clients — somebody worth
+ringing and never worth insuring. Entering them as a client would have them
+counted in your client total, sitting in your clients list holding no policies,
+and turning up in every export as a policyholder with nothing to their name.
+
+So the head sits apart from the book entirely:
 
 - The group head is **not** counted in the group's member count.
-- Their policies are **not** in the group's totals.
-- Archiving the group **leaves them alone**.
+- The group's totals are the members' policies and nothing else.
+- Archiving or deleting the group does nothing to anybody.
+- Deleting a client does nothing to any group, even one they introduced.
 
-Unless, of course, they joined the group as well — a parent company that is both
-the referrer and one of the firms is in it, and is counted, like any other
-member.
+A phone number is stored the way a client's is — spaces and dashes cleaned off —
+the name is tidied for capitals, and an email that is not an address is refused
+with *The group head's email is not an address*. Leave the boxes blank and
+nothing is stored.
 
-Their own client page says so from their end. Under **Groups** it reads **Group
-head of 1 group**, listing what they referred, whether or not they are filed in
-any group themselves.
-
-If a group head is ever deleted from the book, the group stays. It reads **No
-referrer on file** on the list, and its page offers **Name the referrer** to put
-that right. Losing an introducer must not lose the group.
+A group with nobody down as its head reads **No referrer on file**, on the list
+and on the group's own page. **Edit head** on the head card is where you name one
+when you find out.
 
 ## Put clients in a group
 
@@ -100,9 +102,17 @@ From the group's page, **Add member**:
 ![Adding a member](screenshots/group-member.png)
 
 Search the book and pick the firm. If it is not there yet, **New company** opens
-the client form ready for a company, and files it into the group as soon as it is
-saved. Either way a member is a client in its own right, with its own page,
-policies and paperwork — a group never holds a company inside itself.
+the client form ready for a company, already filed into this group, so it lands
+where you meant as soon as it is saved. Either way a member is a client in its
+own right, with its own page, policies and paperwork — a group never holds a
+company inside itself.
+
+The client form files a client too, so you can do it while you are entering them
+rather than afterwards. **Group** lists every group you have and starts on **No
+group**. Choose **Open a new group…** and a **New group name** box appears: the
+group is opened when you press **Add client**, and the client is filed straight
+into it. Type the name of a group you already have and they join that one instead
+of a second group with the same name.
 
 From the other direction, any client's page has a **Groups** card with **Add to
 group**, and **Move** once they are in one.
@@ -111,10 +121,9 @@ A client sits in one group at a time. Putting somebody into a group is therefore
 how they leave the last one, and the search says which group they are currently
 in before you move them.
 
-Editing a client never changes their group. The client form draws no group at
-all, so saving a corrected phone number cannot tip a firm out of the group it
-belongs to — membership only moves from the group screens and the **Groups**
-card, where you can see what you are moving somebody into.
+Editing a client leaves the group they are in alone unless you change **Group**
+yourself, so saving a corrected phone number cannot tip a firm out of the group
+it belongs to.
 
 An [imported file](import-your-book.md) with a group column does this in bulk.
 
@@ -122,22 +131,21 @@ An [imported file](import-your-book.md) with a group column does this in bulk.
 
 ![Groups](screenshots/groups.png)
 
-The list gives each group its referrer, how many members it holds, the active and
-total policies across all of them, the premium under management, and the next
-date anything in the group expires. Search reaches the group's name, its code and
-its referrer's name, so *Vikram* finds the group Vikram brought you. Sort by
-premium to see which groups carry the book.
+The list gives each group its head with their designation underneath, how many
+members it holds, the active and total policies across all of them, the premium
+under management, and the next date anything in the group expires. Search reaches
+the group's name, its code and its head's name, so *Vikram* finds the group
+Vikram brought you. Sort by premium to see which groups carry the book.
 
 ![A group](screenshots/group-detail.png)
 
-The group's own page puts the referrer in a card of their own, the rolled-up book
-beside it, and the roster underneath, marked **Company** or **Individual**, each
-with its own policy counts and next expiry. A member's name leads to their client
-page.
+The group's own page puts the head in a card of their own, with their designation,
+phone and email; the rolled-up book beside it; and the roster underneath, marked
+**Company** or **Individual**, each with its own policy counts and next expiry. A
+member's name leads to their client page. The head's does not — they are a
+contact, not a client, so there is no page to open.
 
-Those roll-ups add up the members and nobody else. If the numbers look smaller
-than you expected, check whether the policies you have in mind belong to the
-referrer rather than to anybody in the group.
+Those roll-ups add up the members and nobody else.
 
 ## Take somebody out, archive, or delete
 
@@ -146,7 +154,7 @@ Three different things, and the difference matters:
 | Action | Where | What happens |
 | --- | --- | --- |
 | Take a member out | The button at the end of their row, named for them | They leave the group and stay in the book, with every policy and document intact |
-| **Archive group and members** | The group page, under **Manage** | The group and everybody filed in it are put away together. The referrer is untouched. **Restore group and members** puts them all back |
+| **Archive group and members** | The group page, under **Manage** | The group and everybody filed in it are put away together. **Restore group and members** puts them all back |
 | **Delete group** | The group page, under **Manage** | The group is removed. Every client in it stays |
 
 Deleting asks first, and the dialog says how many clients survive it before you
@@ -182,8 +190,9 @@ The practical consequences:
   member** rule that keeps dependants out of the browsing list looks at
   relationships only, so a firm you have entered but not yet written cover for is
   in the clients list where you left it.
-- Group membership survives an edit. A family link survives one too, but for a
-  different reason — the client form draws neither.
+- A group is a folder and nothing more. Its head is a name and a phone number
+  written on the folder, not a client, so nothing about a group reaches into your
+  book except the list of who is filed in it.
 
 ---
 

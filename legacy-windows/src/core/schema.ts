@@ -24,6 +24,7 @@ export const MIGRATIONS = [
   "005_client_relations.sql",
   "006_health_details.sql",
   "007_client_groups.sql",
+  "008_group_head_details.sql",
 ];
 
 export const LATEST_VERSION = MIGRATIONS.length;

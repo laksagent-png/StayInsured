@@ -383,7 +383,8 @@ designation, and a registration number.
 Companies arrive in bunches — a holding company's subsidiaries, or ten unrelated
 firms that all came through the same introducer — and the agency works the bunch
 as one book. `client_groups` is that bunch, `clients.group_id` says who is in it,
-and `head_client_id` is the **group head**: the client who referred them.
+and `head_name`, `head_designation`, `head_phone` and `head_email` are the
+**group head**: whoever introduced them.
 
 The obvious implementation is a relationship word, since `client_relations` is
 already there and a group head reads like a relation. It is the wrong one, and
@@ -402,25 +403,31 @@ deliberately, holds a client at a time, and the operator can say where it ends,
 so it is a row — and being a row is what lets it be listed, summed, archived and
 deleted as itself. Consequences, enforced in `repo::groups`:
 
-- **The referrer is held apart from the membership.** Whoever introduced the
-  group need not be in it; an introducer who placed ten firms is nobody's
-  subsidiary. So the rollups sum the members, the group archive moves the
-  members, and the referrer is left alone in both cases.
-- **A group names its referrer.** A group opened without one is not a group with
-  a blank field but a referral nobody recorded, so `create` and `update` refuse
-  it. The column is nullable only so that deleting the referrer leaves the group
-  standing; editing such a group asks for the new one.
-- **Both links let go rather than cascade**, which is the opposite of
+- **The head is a contact, not a client.** A broker, an HR manager or an
+  accountant is somebody worth ringing and never worth insuring, so the head is
+  four columns on the group. Opening a client record for one would inflate the
+  client count, fill the clients list with people who hold nothing, and put a
+  policyholder with no policies into every export. Nothing about a group
+  references `clients`, so the rollups sum the members and deleting a client
+  cannot touch a group.
+- **Only the name is required.** A group is a filing arrangement first and a
+  referral second — the agent knows which firms file together long before they
+  can always say who introduced them — so all four head boxes may be left empty,
+  and a name made of spaces is stored as `NULL`. The email is the one head field
+  that can be wrong rather than merely absent, and `validate` holds it to the
+  same `util::looks_like_email` a client's email meets.
+- **Membership lets go rather than cascades**, which is the opposite of
   `client_relations`, where the edge dies with either person. A group is a filing
   arrangement: deleting the folder releases the companies, and `delete` answers
   with how many so the interface can say so.
 - **The archive needs no depth limit.** The family one stops at one step because
   a family has no edge of its own to stop at. The group row says exactly who is
   in it, which is the whole reason for keeping one.
-- **Membership moves through one operation.** `clients::update` coalesces
-  `group_id`, so a client form that draws no group cannot empty one by saving a
-  name change, and `set_client_group` is the only place membership is said out
-  loud.
+- **Membership moves through one operation.** `set_client_group` is the only
+  place it is said out loud. `clients::update` coalesces `group_id`, so a payload
+  that omits it cannot empty a group by saving a name change — which is what lets
+  the client form carry a group picker without owning membership: it saves the
+  client, then calls `set_client_group`, in the order the importer files a row.
 - **The roster is the client list.** `list_clients` with `groupId` set, rather
   than a second paged command that would drift from the filters and sorts the
   clients screen already has.
@@ -496,12 +503,12 @@ flowchart LR
   on name or short code, then on a contained name, before creating anything, so
   "HDFC Ergo" does not become a third spelling of an insurer already on file.
 - **Groups are found or opened by name.** `groups::find_or_create_by_name` is the
-  importer's own door into a table whose `create` insists on a head, because a
-  sheet carries the grouping and nothing about who introduced it. A group it
-  opens has `head_client_id` NULL — the same state a group reaches when its
-  referrer is deleted, which the group page already asks about. Membership is set
-  after the client id is known, so a created and a matched client are filed by
-  one path, and a blank group column leaves membership alone.
+  importer's own door into the table, matching on the name and opening a group
+  when the book has none by it. A sheet carries the grouping and nothing about
+  who introduced it, so the group it opens has a code, a name and a blank head —
+  an ordinary group rather than a half-made one. Membership is set after the
+  client id is known, so a created and a matched client are filed by one path,
+  and a blank group column leaves membership alone.
 - **The client type fills upwards only.** `read_client_kind` reads a hand-typed
   column loosely ("Pvt Ltd", "Corporate", "Partnership firm") and never reads the
   name. In `fill_client_gaps` it is written as
@@ -722,11 +729,16 @@ database in a temporary directory, with no window:
 - a group is a folder and a family is not: sharing one relates nobody to anybody
 - a company in a group is not a dependent, and is still browsed to before it
   places any cover
-- deleting a group leaves its companies standing, and deleting the referrer
-  leaves the group standing
-- archiving a group moves its members, leaves the referrer alone, and reverses
-- a group needs the client who referred it, and a referrer who is not in the book
-  is refused in words rather than by a foreign key
+- deleting a group leaves its companies standing, and deleting a client leaves
+  every group exactly as it was
+- archiving a group moves its members, leaves a client who shares the head's name
+  alone, and reverses
+- a group records its head without making them a client, so naming an introducer
+  adds nobody to the book
+- a group may be opened before anybody knows who referred it, and a head made of
+  spaces is stored as nothing
+- a group head's details are held to the same shape a client's are: the name
+  tidied, the phone normalised, and an address that is not one refused
 - a group code and a group name each belong to one group, and a code typed by
   hand moves the counter past it
 - a client belongs to one group at a time, and editing a client leaves the group
@@ -735,7 +747,7 @@ database in a temporary directory, with no window:
 - a policy does not cover another company that merely shares its group
 - a company is a client without a date of birth, however the register spells the
   word, and a payload that says nothing describes a person
-- a group is searched by its name, its code or its referrer, and an archived one
+- a group is searched by its name, its code or its head, and an archived one
   is out of the way until it is asked for
 - a blank field is stored as nothing rather than as empty text
 - renewal builds a chain, carries values forward and preserves last year's
@@ -772,7 +784,7 @@ database in a temporary directory, with no window:
 - a sheet that says a client is a company stores one, and a sheet that says
   nothing stores a person
 - a group named in a sheet is opened once however the rows spell it, and is left
-  without a referrer until somebody names one
+  without a head until somebody names one
 - a second import that says nothing about groups leaves the filing alone
 - an import can promote a client to a company but never demote one
 - the corporate columns do not take a heading that already meant the policy

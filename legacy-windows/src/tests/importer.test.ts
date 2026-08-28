@@ -473,7 +473,7 @@ suite("the commands the import screen calls", () => {
 /**
  * Ported from `a_sheet_that_says_company_stores_one_and_a_sheet_that_says_nothing_stores_a_person`,
  * `a_group_named_in_a_sheet_is_opened_once_however_the_rows_spell_it`,
- * `a_group_opened_by_import_has_no_referrer_until_somebody_names_one`,
+ * `a_group_opened_by_import_has_no_head_until_somebody_names_one`,
  * `a_second_import_that_says_nothing_about_groups_leaves_the_filing_alone` and
  * `an_import_can_promote_a_client_to_a_company_but_never_demote_one`.
  */
@@ -553,7 +553,7 @@ suite("a sheet that knows about companies", () => {
     db.close();
   });
 
-  test("opens it with no referrer, until somebody names one", () => {
+  test("opens a group with no head, until somebody names one", () => {
     const file = fileWith("import-group-head", "corporate.csv", CORPORATE_SHEET);
     const db = tempDb("import-group-head");
     importSheet(db, file);
@@ -561,21 +561,23 @@ suite("a sheet that knows about companies", () => {
     db.with((conn) => {
       const folder = groups.list(conn, {}).rows[0]!;
       expect.equal(
-        folder.headClientId,
+        folder.headName,
         null,
         "the sheet carried the grouping and nothing about the introduction",
       );
 
-      // Which is the state deleting a referrer already leaves behind, and it is
-      // put right the same way: by naming somebody, with the folder keeping
-      // everyone in it.
-      const referrer = clients.create(conn, sampleClient("Anil Mehta"));
-      groups.update(conn, folder.id, { name: folder.name, headClientId: referrer });
+      // Which is put right on the group screen, by writing down whoever the agent
+      // knows introduced them, with the folder keeping everyone in it.
+      groups.update(conn, folder.id, {
+        name: folder.name,
+        headName: "Anil Mehta",
+        headDesignation: "Managing Partner",
+      });
 
       const named = groups.get(conn, folder.id);
-      expect.equal(named.headClientId, referrer);
       expect.equal(named.headName, "Anil Mehta");
-      expect.equal(named.members, 2, "naming the referrer moved nobody");
+      expect.equal(named.headDesignation, "Managing Partner");
+      expect.equal(named.members, 2, "naming the head moved nobody");
     });
     db.close();
   });

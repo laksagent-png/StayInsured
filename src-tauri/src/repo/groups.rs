@@ -1,4 +1,4 @@
-//! Groups: a named folder of clients, and the referrer who introduced them.
+//! Groups: a named folder of clients, and the contact who introduced them.
 //!
 //! This is the deliberate opposite of `relations.rs`. A family is not stored
 //! anywhere — it is whoever the edges reach, a person is in several at once, and
@@ -6,17 +6,19 @@
 //! stop at. A group has that edge. It is named, entered on purpose, holds a
 //! client at a time, and can be listed, summed, archived and deleted as itself.
 //!
-//! The referrer is held apart from the membership. Whoever brought the group in
-//! is a client the agency deals with, but they are not thereby part of the book
-//! the group represents: the rollups sum the members, and the group archive
-//! moves the members, so an introducer who placed ten firms is not archived
-//! along with them and their own policies are not counted as the group's.
+//! The head is not a client. Whoever brought the group in is a broker, an HR
+//! manager or an accountant — somebody the agency rings and never insures — so
+//! their name and contact details are written on the group rather than opened
+//! as a client record nobody will ever sell a policy to. Nothing about them
+//! reaches the book: the rollups sum the members, the archive moves the
+//! members, and a client who happens to be an introducer is only ever a client.
 
 use rusqlite::{params, params_from_iter, types::Value, Connection};
 
 use crate::error::{AppError, AppResult};
 use crate::models::{blank_to_none, Group, GroupFilter, GroupInput, Page, GROUP_COLUMNS};
 use crate::query::{self, Conditions};
+use crate::util;
 
 const SORTABLE: &[(&str, &str)] = &[
     ("name", "g.name"),
@@ -29,9 +31,9 @@ const SORTABLE: &[(&str, &str)] = &[
     ("updated", "g.updated_at"),
 ];
 
-/// The group's book, summed over its members. The referrer contributes nothing
-/// unless they are also in the group, which is the point of holding headship and
-/// membership in separate columns.
+/// The group's book, summed over its members. The head contributes nothing to
+/// it, because a head is a name and a phone number rather than somebody who
+/// holds policies.
 const DERIVED: &str = "(SELECT COUNT(*) FROM clients c WHERE c.group_id = g.id) AS members, \
      (SELECT COUNT(*) FROM policies p JOIN clients c ON c.id = p.client_id \
         WHERE c.group_id = g.id AND p.status = 'active') AS active_policies, \
@@ -49,21 +51,14 @@ fn build_conditions(filter: &GroupFilter) -> Conditions {
         c.add_raw("g.is_archived = 0");
     }
 
-    // Headship read from the referrer's end. Their page needs the groups they
-    // brought in, and the group list already knows how to answer that.
-    if let Some(head) = filter.head_client_id {
-        c.add("g.head_client_id = ?", Value::Integer(head));
-    }
-
     // A small table, so a LIKE scan is the right tool and there is no FTS index
-    // to keep in step. The referrer's name is searched too: an operator looking
-    // for "the firms Mehta brought us" knows the introducer, not the folder.
+    // to keep in step. The head's name is searched too: an operator looking for
+    // "the firms Mehta brought us" knows the introducer, not the folder.
     if let Some(search) = blank_to_none(filter.search.clone()) {
         let pattern = query::like_pattern(&search);
         c.add_many(
             "(g.name LIKE ? ESCAPE '\\' OR g.group_code LIKE ? ESCAPE '\\' \
-              OR EXISTS (SELECT 1 FROM clients h WHERE h.id = g.head_client_id \
-                           AND h.full_name LIKE ? ESCAPE '\\'))"
+              OR g.head_name LIKE ? ESCAPE '\\')"
                 .into(),
             vec![
                 Value::Text(pattern.clone()),
@@ -134,25 +129,22 @@ pub fn next_group_code(conn: &Connection) -> AppResult<String> {
     Ok(format!("GR-{next:05}"))
 }
 
-/// A group names the client who introduced it. That is what a group head is, so
-/// a group opened without one is not a group with a blank field — it is a
-/// referral nobody recorded, and the book is the only place that record exists.
+/// Only the name is asked for. A group is a filing arrangement first and a
+/// referral second — the agent knows which firms file together long before they
+/// can always say who introduced them — so the head is four boxes that may all
+/// be left empty.
 ///
-/// The column is still nullable, because deleting the referrer must leave the
-/// group standing. Editing such a group asks for the new referrer by name.
-fn validate(conn: &Connection, input: &GroupInput) -> AppResult<()> {
+/// The email is the one head field that can be wrong rather than merely absent,
+/// and it is held to the same shape a client's is so that a group cannot carry
+/// an address the mailer will later choke on.
+fn validate(input: &GroupInput) -> AppResult<()> {
     if input.name.trim().is_empty() {
         return Err(AppError::validation("Group name is required"));
     }
-    match input.head_client_id {
-        Some(head) => {
-            super::clients::get(conn, head).map_err(|_| {
-                AppError::validation("The group head named here is not a client in the book")
-            })?;
-        }
-        None => {
+    if let Some(email) = blank_to_none(input.head_email.clone()) {
+        if !util::looks_like_email(&email) {
             return Err(AppError::validation(
-                "A group needs a group head — the client who referred it",
+                "The group head's email is not an address",
             ));
         }
     }
@@ -160,7 +152,7 @@ fn validate(conn: &Connection, input: &GroupInput) -> AppResult<()> {
 }
 
 pub fn create(conn: &Connection, input: &GroupInput) -> AppResult<i64> {
-    validate(conn, input)?;
+    validate(input)?;
 
     let code = match blank_to_none(input.group_code.clone()) {
         Some(code) => code,
@@ -168,12 +160,16 @@ pub fn create(conn: &Connection, input: &GroupInput) -> AppResult<i64> {
     };
 
     conn.execute(
-        "INSERT INTO client_groups (group_code, name, head_client_id, notes) \
-         VALUES (?1, ?2, ?3, ?4)",
+        "INSERT INTO client_groups \
+             (group_code, name, head_name, head_designation, head_phone, head_email, notes) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             code,
             input.name.trim(),
-            input.head_client_id,
+            blank_to_none(input.head_name.clone()).map(|n| util::tidy_name(&n)),
+            blank_to_none(input.head_designation.clone()),
+            input.head_phone.as_deref().and_then(util::normalise_phone),
+            blank_to_none(input.head_email.clone()),
             blank_to_none(input.notes.clone()),
         ],
     )
@@ -185,15 +181,11 @@ pub fn create(conn: &Connection, input: &GroupInput) -> AppResult<i64> {
 /// The importer's door into the same table, matching on the name and opening a
 /// group when the book has none by that name.
 ///
-/// `create` refuses a group with no head, because a group is a referral and this
-/// book is the only place that referral is written down. A spreadsheet is the one
-/// caller that can honestly say it does not know: it carries the grouping — which
-/// companies file together — and carries nothing at all about who introduced
-/// them. So this leaves the head NULL, which is not a new state to explain. It is
-/// exactly what a group becomes when its referrer is deleted, and the group page
-/// already meets it by asking for a new referrer by name. Refusing the row
-/// instead would throw away the grouping the sheet does know in order to protect
-/// a fact it was never going to carry.
+/// A spreadsheet carries the grouping — which companies file together — and
+/// carries nothing at all about who introduced them, so the group it opens has
+/// a code, a name and a blank head. That is an ordinary group rather than a
+/// half-made one, and the group screen fills the head in whenever the agent
+/// learns it.
 pub fn find_or_create_by_name(conn: &Connection, name: &str) -> AppResult<i64> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -213,7 +205,7 @@ pub fn find_or_create_by_name(conn: &Connection, name: &str) -> AppResult<i64> {
 
     let code = next_group_code(conn)?;
     conn.execute(
-        "INSERT INTO client_groups (group_code, name, head_client_id) VALUES (?1, ?2, NULL)",
+        "INSERT INTO client_groups (group_code, name) VALUES (?1, ?2)",
         params![code, trimmed],
     )
     .map_err(map_unique_error)?;
@@ -222,17 +214,21 @@ pub fn find_or_create_by_name(conn: &Connection, name: &str) -> AppResult<i64> {
 }
 
 pub fn update(conn: &Connection, id: i64, input: &GroupInput) -> AppResult<()> {
-    validate(conn, input)?;
+    validate(input)?;
 
     let changed = conn
         .execute(
-            "UPDATE client_groups SET name = ?2, head_client_id = ?3, notes = ?4, \
-                 group_code = COALESCE(?5, group_code) \
+            "UPDATE client_groups SET name = ?2, head_name = ?3, head_designation = ?4, \
+                 head_phone = ?5, head_email = ?6, notes = ?7, \
+                 group_code = COALESCE(?8, group_code) \
              WHERE id = ?1",
             params![
                 id,
                 input.name.trim(),
-                input.head_client_id,
+                blank_to_none(input.head_name.clone()).map(|n| util::tidy_name(&n)),
+                blank_to_none(input.head_designation.clone()),
+                input.head_phone.as_deref().and_then(util::normalise_phone),
+                blank_to_none(input.head_email.clone()),
                 blank_to_none(input.notes.clone()),
                 blank_to_none(input.group_code.clone()),
             ],
@@ -248,11 +244,10 @@ pub fn update(conn: &Connection, id: i64, input: &GroupInput) -> AppResult<()> {
 /// Archives or restores the group and every client in it, answering with how
 /// many clients it moved.
 ///
-/// It moves the members and stops. The referrer is not in the group unless they
-/// joined it, and putting away a book they introduced is no reason to put away
-/// the person who introduced it. Unlike the family archive this needs no depth
-/// limit: the group row says exactly who is in it, which is the whole reason for
-/// keeping one.
+/// It moves the members and stops. The head is not a client, so putting away a
+/// book somebody introduced has nothing of theirs to reach. Unlike the family
+/// archive this needs no depth limit: the group row says exactly who is in it,
+/// which is the whole reason for keeping one.
 pub fn set_archived(conn: &Connection, id: i64, archived: bool) -> AppResult<usize> {
     get(conn, id)?;
 

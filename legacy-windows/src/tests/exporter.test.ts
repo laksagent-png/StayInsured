@@ -131,8 +131,8 @@ suite("an export", () => {
     const dir = tempDir("export-corporate");
     const db = tempDb("export-corporate");
     db.with((conn) => {
-      const referrer = clients.create(conn, sampleClient("Anil Mehta"));
-      const group = groups.create(conn, { name: "Sundaram Group", headClientId: referrer });
+      clients.create(conn, sampleClient("Anil Mehta"));
+      const group = groups.create(conn, { name: "Sundaram Group", headName: "Anil Mehta" });
       clients.create(conn, {
         ...sampleClient("Sundaram Textiles"),
         kind: "company",

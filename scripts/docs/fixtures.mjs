@@ -104,17 +104,19 @@ const clients = [
 
 /**
  * The groups on the desk. A group is a row where a family is not: it is named,
- * entered deliberately, and its referrer is a client who need not be in it.
- * The rollups below count the two member firms and not the referrer.
+ * entered deliberately, and its head is somebody to ring rather than somebody in
+ * the book. The rollups below count the two member firms; the head is not one of
+ * them and holds no policy here.
  */
 const groups = [
   {
     id: 1,
     groupCode: "GR-00001",
     name: "Patel Group",
-    headClientId: 3,
     headName: "Vikram Patel",
-    headClientCode: "CL-00003",
+    headDesignation: "Managing Partner",
+    headPhone: "+919820134567",
+    headEmail: "vikram@patelgroup.in",
     notes: "Both firms renew together each March; one invoice for the group.",
     isArchived: false,
     createdAt: "2025-02-19T10:05:00Z",
@@ -613,7 +615,7 @@ export const fixtures = {
     unlocked: true,
     canUseKeychain: true,
     encrypted: true,
-    schemaVersion: 7,
+    schemaVersion: 8,
     dataDir: "/Users/you/Library/Application Support/com.stayinsured.app",
   },
   clients,

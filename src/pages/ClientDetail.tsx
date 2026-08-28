@@ -429,36 +429,20 @@ export function ClientDetailPage() {
 }
 
 /**
- * Where this client sits among the groups, from both ends.
+ * The one group this client is filed in.
  *
- * A client meets a group in two unrelated ways and the card says both, because
- * one of them is easy to forget: they can be filed in one, and they can be the
- * referrer of any number of others without being in a single one. The broker who
- * placed ten firms is nobody's subsidiary, and their page would otherwise show
- * no sign of the ten.
+ * There is no second half to this card. A client cannot refer a group: the head
+ * of a group is a contact written on the group itself, so nothing about a
+ * client's page reads from the other end.
  */
 function GroupsCard({ client, onJoin }: { client: Client; onJoin: () => void }) {
   const toast = useToast();
-
-  const referred = useQuery({
-    queryKey: ["groupsHeadedBy", client.id],
-    queryFn: () =>
-      api.listGroups({
-        headClientId: client.id,
-        includeArchived: true,
-        page: 1,
-        pageSize: 25,
-        sort: "name",
-      }),
-  });
 
   const leave = useMutation({
     mutationFn: () => api.setClientGroup(client.id, null),
     onSuccess: () => toast.success("Taken out of the group. They stay in the book."),
     onError: (err: ApiError) => toast.error(err.message),
   });
-
-  const heads = referred.data?.rows ?? [];
 
   return (
     <Card
@@ -509,33 +493,6 @@ function GroupsCard({ client, onJoin }: { client: Client; onJoin: () => void }) 
           Not in a group. Groups hold clients who are worked as one book — a company's firms, or
           everyone one introducer brought in.
         </p>
-      )}
-
-      {heads.length > 0 && (
-        <div className="mt-4 border-t border-slate-100 pt-3">
-          <p className="text-xs tracking-wide text-slate-400 uppercase">
-            Group head of {plural(heads.length, "group")}
-          </p>
-          <ul className="mt-1.5 space-y-1">
-            {heads.map((group) => (
-              <li key={group.id}>
-                <Link
-                  to={`/groups/${group.id}`}
-                  className="flex items-center gap-2 text-sm text-slate-700 hover:underline"
-                >
-                  <span className="min-w-0 truncate">{group.name}</span>
-                  <span className="shrink-0 text-xs text-slate-400">
-                    {plural(group.members, "member")}
-                  </span>
-                  {group.isArchived && <Badge tone="warning">Archived</Badge>}
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-xs text-slate-400">
-            They referred these groups. Archiving a group leaves its referrer alone.
-          </p>
-        </div>
       )}
     </Card>
   );

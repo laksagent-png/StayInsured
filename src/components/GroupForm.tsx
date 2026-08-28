@@ -1,15 +1,17 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { api, ApiError } from "../lib/api";
-import type { Client, Group, GroupInput } from "../lib/types";
-import { plural } from "../lib/format";
+import type { Group, GroupInput } from "../lib/types";
 import { Button, Field, Input, Modal, Textarea, useToast } from "./ui";
 
 const EMPTY: GroupInput = {
   name: "",
   groupCode: "",
-  headClientId: null,
+  headName: "",
+  headDesignation: "",
+  headPhone: "",
+  headEmail: "",
   notes: "",
 };
 
@@ -17,7 +19,10 @@ function toInput(group: Group): GroupInput {
   return {
     name: group.name,
     groupCode: group.groupCode,
-    headClientId: group.headClientId,
+    headName: group.headName ?? "",
+    headDesignation: group.headDesignation ?? "",
+    headPhone: group.headPhone ?? "",
+    headEmail: group.headEmail ?? "",
     notes: group.notes ?? "",
   };
 }
@@ -30,10 +35,10 @@ function blank(value: string | null | undefined): string | null {
 /**
  * Opens a group, or edits one.
  *
- * The group head is a client rather than a name typed into this form, which is
- * why it is a search rather than a box. An introducer the agency deals with is
- * already in the book — they have a phone number and usually policies of their
- * own — and a group whose referrer were only a string could not be rung up.
+ * The head is written on the group rather than looked up in the book. The
+ * person who introduces a group is usually a broker, an HR manager or an
+ * accountant — somebody worth ringing and never worth insuring — so naming one
+ * is four boxes, and leaving all four empty is a group like any other.
  */
 export function GroupForm({
   open,
@@ -49,27 +54,14 @@ export function GroupForm({
   const toast = useToast();
   const [form, setForm] = useState<GroupInput>(EMPTY);
   const [error, setError] = useState<string | null>(null);
-  const [headSearch, setHeadSearch] = useState("");
-  const [head, setHead] = useState<{ id: number; name: string; code: string } | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setError(null);
-    setHeadSearch("");
     if (group) {
       setForm(toInput(group));
-      setHead(
-        group.headClientId
-          ? {
-              id: group.headClientId,
-              name: group.headName ?? "This client",
-              code: group.headClientCode ?? "",
-            }
-          : null,
-      );
     } else {
       setForm(EMPTY);
-      setHead(null);
       api.nextGroupCode().then((code) => setForm((current) => ({ ...current, groupCode: code })));
     }
   }, [open, group]);
@@ -77,20 +69,15 @@ export function GroupForm({
   const set = <K extends keyof GroupInput>(key: K, value: GroupInput[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
-  const search = headSearch.trim();
-  const matches = useQuery({
-    queryKey: ["clientSearch", search],
-    queryFn: () =>
-      api.listClients({ search, includeFamily: true, page: 1, pageSize: 6, sort: "name" }),
-    enabled: open && !head && search.length >= 2,
-  });
-
   const save = useMutation({
     mutationFn: async () => {
       const input: GroupInput = {
         name: form.name.trim(),
         groupCode: blank(form.groupCode),
-        headClientId: head?.id ?? null,
+        headName: blank(form.headName),
+        headDesignation: blank(form.headDesignation),
+        headPhone: blank(form.headPhone),
+        headEmail: blank(form.headEmail),
         notes: blank(form.notes),
       };
       if (group) {
@@ -110,13 +97,6 @@ export function GroupForm({
   const submit = () => {
     if (!form.name.trim()) {
       setError("Give the group a name");
-      return;
-    }
-    // Caught here as well as in the core, because the reason is worth saying
-    // while the box is still on screen: a group without its referrer is a
-    // referral nobody recorded.
-    if (!head) {
-      setError("Name the client who referred this group");
       return;
     }
     setError(null);
@@ -166,75 +146,38 @@ export function GroupForm({
           />
         </Field>
 
-        {head ? (
-          /* Not a Field, because a Field is a label and a label must not have a
-             button inside it: the click would land on the label's control and
-             the button would answer to the label's name. */
-          <div className="block">
-            <span className="field-label">Group head</span>
-            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
-              <span className="min-w-0 truncate">
-                {head.name}
-                {head.code ? <span className="text-slate-400"> · {head.code}</span> : null}
-              </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setHead(null);
-                  setHeadSearch("");
-                }}
-              >
-                Change
-              </Button>
-            </div>
-            <span className="mt-1 block text-xs text-slate-400">
-              The client who referred this group
-            </span>
-          </div>
-        ) : (
-          <Field
-            label="Group head"
-            required
-            hint="The client who referred this group. They need not be in it."
-          >
-            <Input
-              value={headSearch}
-              onChange={(event) => setHeadSearch(event.target.value)}
-              placeholder="Search the book by name"
-            />
-          </Field>
-        )}
+        <Field label="Group head" hint="Who introduced this group">
+          <Input
+            value={form.headName ?? ""}
+            onChange={(event) => set("headName", event.target.value)}
+            placeholder="Nirmal Shah"
+          />
+        </Field>
 
-        {!head && (matches.data?.rows.length ?? 0) > 0 && (
-          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-            {matches.data?.rows.map((row: Client) => (
-              <li key={row.id}>
-                <button
-                  type="button"
-                  className="w-full cursor-pointer px-3 py-2 text-left hover:bg-slate-50"
-                  onClick={() =>
-                    setHead({ id: row.id, name: row.fullName, code: row.clientCode })
-                  }
-                >
-                  <p className="text-sm text-slate-700">{row.fullName}</p>
-                  <p className="text-xs text-slate-400">
-                    {row.clientCode}
-                    {row.city ? ` · ${row.city}` : ""}
-                    {` · ${plural(row.totalPolicies, "policy", "policies")}`}
-                  </p>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <Field label="Designation">
+          <Input
+            value={form.headDesignation ?? ""}
+            onChange={(event) => set("headDesignation", event.target.value)}
+            placeholder="Chartered accountant"
+          />
+        </Field>
 
-        {!head && search.length >= 2 && (matches.data?.rows.length ?? 0) === 0 && !matches.isFetching && (
-          <p className="text-xs text-slate-400">
-            Nobody in the book by that name. A group head has to be a client, so add them from the
-            clients screen first.
-          </p>
-        )}
+        <Field label="Phone">
+          <Input
+            value={form.headPhone ?? ""}
+            onChange={(event) => set("headPhone", event.target.value)}
+            placeholder="98765 43210"
+          />
+        </Field>
+
+        <Field label="Email">
+          <Input
+            type="email"
+            value={form.headEmail ?? ""}
+            onChange={(event) => set("headEmail", event.target.value)}
+            placeholder="nirmal@example.com"
+          />
+        </Field>
 
         <Field label="Notes">
           <Textarea

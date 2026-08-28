@@ -184,7 +184,7 @@ or **Registration number** when you mean the company's.
 | **Client type** is read loosely | "Pvt Ltd", "Corporate", "Partnership firm" and "LLP" all mean a company. Anything else, including a blank, means a person. The name is never read for this — a firm called "Sharma & Sons" is a company only because the column says so |
 | A type can promote a client but never demote one | The corporate sheet that says a client is a company settles it. A retail sheet listing the same firm's director will not turn the firm back into a person |
 | A **Group** that does not exist yet is opened | The second row naming it joins it rather than opening a second one, and `Patel Group` and `patel group` are one group |
-| A group opened by import has nobody down as its head | A spreadsheet carries the grouping but not who introduced it. The [group's page](groups.md#the-group-head) asks you to name a head, and you can leave it unanswered |
+| A group opened by import has nobody down as its head | A spreadsheet carries the grouping but not who introduced it. Name a head on the [group's page](groups.md#the-group-head) when you have one, or leave it blank |
 | A file with no **Group** column leaves your groups alone | A blank means the file is silent about groups, not that the client belongs to none |
 
 ## When a row fails

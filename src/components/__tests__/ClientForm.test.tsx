@@ -68,6 +68,7 @@ describe("the new client form", () => {
     for (const label of [
       /^Client type/,
       /^Full name/,
+      /^Group/,
       /^Client code/,
       /^Mobile/,
       /^Email/,
@@ -583,10 +584,159 @@ describe("entering a company", () => {
     await user.type(screen.getByLabelText(/^Mobile/), "7926304412");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
-    // The form draws no group, so it sends none, and the core keeps the one the
-    // client is in. Editing a phone number is not a way out of a group.
+    // The payload carries no group, so the core keeps the one the client is in.
+    // Editing a phone number is not a way out of a group.
     await waitFor(() => expect(backend().countOf("update_client")).toBe(1));
     expect(sentInput("update_client").groupId).toBeUndefined();
+    expect(backend().countOf("set_client_group")).toBe(0);
     expect(backend().book.clients.find((row) => row.id === 12)?.groupId).toBe(1);
+  });
+});
+
+describe("filing a client into a group", () => {
+  /** The picker, found by its label rather than by what it is made of. */
+  function groupPicker(): HTMLElement {
+    return screen.getByLabelText(/^Group/);
+  }
+
+  /** The commands the form sent, in the order it sent them. */
+  function order(): string[] {
+    return backend()
+      .calls.map((call) => call.command)
+      .filter((command) => command === "create_client" || command === "set_client_group");
+  }
+
+  async function groupsListed(): Promise<void> {
+    await waitFor(() => expect(screen.getByRole("option", { name: "Patel Group" })).toBeDefined());
+  }
+
+  it("offers the groups on the desk, no group, and a way to open one", async () => {
+    installBackend(withGroups(createBook()));
+    renderWithProviders(<ClientForm open onClose={vi.fn()} />);
+    await groupsListed();
+
+    expect(screen.getByRole("option", { name: "No group" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Open a new group…" })).toBeInTheDocument();
+    // A client entered from the clients screen belongs nowhere until it is said.
+    expect(groupPicker()).toHaveValue("");
+  });
+
+  it("files a new client into the group that was picked, once they exist", async () => {
+    installBackend(withGroups(createBook()));
+    const { user } = renderWithProviders(<ClientForm open onClose={vi.fn()} />);
+    await groupsListed();
+
+    await user.type(screen.getByLabelText(/^Full name/), "Nikhil Rao");
+    await user.selectOptions(groupPicker(), "1");
+    await user.click(screen.getByRole("button", { name: "Add client" }));
+
+    await waitFor(() => expect(backend().countOf("set_client_group")).toBe(1));
+    // The group never rides along in the payload; it is written afterwards, in
+    // the order the importer writes it.
+    expect(sentInput("create_client").groupId).toBeUndefined();
+    expect(order()).toEqual(["create_client", "set_client_group"]);
+    expect(backend().lastCall("set_client_group")).toMatchObject({ groupId: 1 });
+    expect(backend().book.clients.find((row) => row.fullName === "Nikhil Rao")?.groupId).toBe(1);
+  });
+
+  it("says nothing to the core when the group is left as it was", async () => {
+    const book = withGroups(createBook());
+    installBackend(book);
+    const { user } = renderWithProviders(
+      <ClientForm open client={book.clients.find((row) => row.id === 12)!} onClose={vi.fn()} />,
+    );
+    await groupsListed();
+
+    expect(groupPicker()).toHaveValue("1");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(backend().countOf("update_client")).toBe(1));
+    expect(backend().countOf("set_client_group")).toBe(0);
+  });
+
+  it("takes a client out of their group by choosing no group", async () => {
+    const book = withGroups(createBook());
+    installBackend(book);
+    const { user } = renderWithProviders(
+      <ClientForm open client={book.clients.find((row) => row.id === 12)!} onClose={vi.fn()} />,
+    );
+    await groupsListed();
+
+    await user.selectOptions(groupPicker(), "");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(backend().countOf("set_client_group")).toBe(1));
+    expect(backend().lastCall("set_client_group")).toMatchObject({ groupId: null });
+    expect(backend().book.clients.find((row) => row.id === 12)?.groupId).toBeNull();
+  });
+
+  it("opens a group by name from inside the form", async () => {
+    installBackend(withGroups(createBook()));
+    const { user } = renderWithProviders(<ClientForm open onClose={vi.fn()} />);
+    await groupsListed();
+
+    await user.type(screen.getByLabelText(/^Full name/), "Sundaram Textiles Pvt Ltd");
+    await user.selectOptions(groupPicker(), "new");
+    await user.type(screen.getByLabelText(/^New group name/), "Sundaram Group");
+    await user.click(screen.getByRole("button", { name: "Add client" }));
+
+    await waitFor(() => expect(backend().countOf("create_group")).toBe(1));
+    const opened = backend().book.groups.find((row) => row.name === "Sundaram Group")!;
+    // A group opened this way has no head at all, which is now a group like any
+    // other.
+    expect(opened.headName).toBeNull();
+    await waitFor(() =>
+      expect(
+        backend().book.clients.find((row) => row.fullName === "Sundaram Textiles Pvt Ltd")?.groupId,
+      ).toBe(opened.id),
+    );
+  });
+
+  it("joins a group of that name rather than opening a second one", async () => {
+    installBackend(withGroups(createBook()));
+    const { user } = renderWithProviders(<ClientForm open onClose={vi.fn()} />);
+    await groupsListed();
+
+    await user.type(screen.getByLabelText(/^Full name/), "Nikhil Rao");
+    await user.selectOptions(groupPicker(), "new");
+    await user.type(screen.getByLabelText(/^New group name/), "patel group");
+    await user.click(screen.getByRole("button", { name: "Add client" }));
+
+    await waitFor(() => expect(backend().countOf("set_client_group")).toBe(1));
+    expect(backend().countOf("create_group")).toBe(0);
+    expect(backend().book.groups).toHaveLength(1);
+    expect(backend().lastCall("set_client_group")).toMatchObject({ groupId: 1 });
+  });
+
+  it("will not open a group with no name", async () => {
+    installBackend(withGroups(createBook()));
+    const { user } = renderWithProviders(<ClientForm open onClose={vi.fn()} />);
+    await groupsListed();
+
+    await user.type(screen.getByLabelText(/^Full name/), "Nikhil Rao");
+    await user.selectOptions(groupPicker(), "new");
+    await user.click(screen.getByRole("button", { name: "Add client" }));
+
+    expect(await screen.findByText("Give the new group a name")).toBeInTheDocument();
+    expect(backend().countOf("create_client")).toBe(0);
+  });
+
+  it("starts on the group whose screen opened the form", async () => {
+    installBackend(withGroups(createBook()));
+    const { user } = renderWithProviders(
+      <ClientForm open defaultKind="company" defaultGroupId={1} onClose={vi.fn()} />,
+    );
+    await groupsListed();
+
+    expect(groupPicker()).toHaveValue("1");
+
+    await user.type(screen.getByLabelText(/^Company name/), "Patel Spinning Pvt Ltd");
+    await user.click(screen.getByRole("button", { name: "Add client" }));
+
+    await waitFor(() =>
+      expect(
+        backend().book.clients.find((row) => row.fullName === "Patel Spinning Pvt Ltd")?.groupId,
+      ).toBe(1),
+    );
   });
 });

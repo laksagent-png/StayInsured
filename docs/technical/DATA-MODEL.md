@@ -4,12 +4,13 @@ The schema lives in `src-tauri/src/db/schema/`, applied by
 `src-tauri/src/db/migrations.rs`. Everything below is one encrypted SQLite
 database, `stayinsured.db`, opened through SQLCipher.
 
-Current schema version: **7** — `001_init.sql` (structure), `002_seed.sql`
+Current schema version: **8** — `001_init.sql` (structure), `002_seed.sql`
 (defaults), `003_documents.sql` (stored files), `004_search_index.sql` (the
 client search triggers, and a rebuild of the index behind them),
 `005_client_relations.sql` (family members as clients),
-`006_health_details.sql` (what a health proposal asks for) and
-`007_client_groups.sql` (corporate clients, and the groups they sit in).
+`006_health_details.sql` (what a health proposal asks for),
+`007_client_groups.sql` (corporate clients, and the groups they sit in) and
+`008_group_head_details.sql` (a group's head as contact details on the group).
 `session_state.schemaVersion` reports it at runtime.
 
 ## Migration policy
@@ -28,7 +29,6 @@ schema fresh installs get. Any change is a new numbered file added to the list.
 erDiagram
     clients ||--o{ client_relations : "related to"
     client_groups ||--o{ clients : contains
-    clients ||--o| client_groups : "referred as head"
     clients ||--o{ policies : holds
     clients ||--o{ documents : keeps
     policies ||--o{ documents : "evidenced by"
@@ -68,8 +68,8 @@ already here and mean the same thing for a company as for a person, and
 `occupation` carries the industry.
 
 `group_id` is the group this client sits in, `ON DELETE SET NULL`. It is written
-only by `set_client_group`; `clients::update` coalesces it, so a client form that
-draws no group cannot empty one by saving a name change.
+only by `set_client_group`; `clients::update` coalesces it, so a payload that says
+nothing about the group cannot empty one by saving a name change.
 
 Names are title-cased, phones reduced to digits with an optional leading `+`, PAN,
 GSTIN and the registration number upper-cased, and blank text stored as `NULL`.
@@ -77,11 +77,18 @@ Indexed on name, email, phone, city, archived state, kind and group.
 
 ### `client_groups`
 
-A named set of clients the agency works as one book, and the client who referred
+A named set of clients the agency works as one book, and the contact who referred
 them. `group_code` is unique and allocated as `GR-00001` upward the way client
-codes are; `name` is unique; `head_client_id` is the referrer, `ON DELETE SET
-NULL`; plus `notes`, `is_archived` and timestamps maintained by
-`client_groups_touch`.
+codes are; `name` is unique; plus `notes`, `is_archived` and timestamps
+maintained by `client_groups_touch`.
+
+`head_name`, `head_designation`, `head_phone` and `head_email` are the group
+head, all nullable. `head_name` is title-cased and `head_phone` reduced to digits
+with an optional leading `+`, by the same `util::tidy_name` and
+`util::normalise_phone` a client's name and phone go through; `head_designation`
+is stored as typed, the way `clients.contact_designation` is. `head_email` is
+refused unless it looks like an address. Indexed on `head_name` and on
+`is_archived`.
 
 **A group is a row and a family is not, and that is not an inconsistency.** A
 family has no boundary — it is whoever the relationship edges reach, a person is
@@ -92,17 +99,19 @@ deliberately, holds a client at a time, and the operator can say where it ends.
 Having that boundary is what lets a group be listed, summed, archived and deleted
 as itself.
 
-**Headship and membership are separate columns.** The referrer is whoever
-introduced the group, and they need not be in the group they brought in — an
-introducer who placed ten firms is nobody's subsidiary. So the rollups sum the
-members, the group archive moves the members, and the referrer is left where they
-are in both cases.
+**The head is a contact, not a client.** Whoever introduced the group is usually
+a broker, an HR manager or an accountant — somebody the agency rings and never
+insures — so their details are written on the group rather than opened as a
+client record with no policies. Nothing about a group references `clients`, which
+is why the rollups sum only the members and why deleting a client can do nothing
+to a group. All four columns may be blank: an agent knows which firms file
+together long before they can always say who introduced them, and a spreadsheet
+import knows the grouping and never the introduction.
 
-Both links let go rather than cascade, which is the opposite of
+`clients.group_id` lets go rather than cascades, which is the opposite of
 `client_relations`, where the edge dies with either person because an edge between
 two people is nothing once one of them is gone. A group is a filing arrangement:
-deleting the folder must not delete the companies, and losing the referrer must
-not lose the group.
+deleting the folder must not delete the companies.
 
 ### `client_relations`
 
@@ -261,14 +270,13 @@ These hold across the whole database and the code depends on them.
 7. **Deleting a group releases its clients rather than removing them.**
    `clients.group_id` is `ON DELETE SET NULL`, so emptying the filing cabinet of
    one folder does not empty it of the papers. `groups::delete` answers with how
-   many it let go so the interface can say so. Deleting the referrer is the same
-   shape from the other side: `head_client_id` goes to `NULL` and the group
-   stands.
+   many it let go so the interface can say so. Deleting a client is the same
+   shape from the other side, and reaches no group at all: the head is text on
+   `client_groups` rather than a link into the book.
 8. **A group archive moves its members and stops.** It needs no depth limit the
    way the family archive does, because the group row says exactly who is in it —
-   which is the whole reason for keeping one. The referrer is not moved unless
-   they are also a member: putting away a book somebody introduced is no reason
-   to put away the person who introduced it.
+   which is the whole reason for keeping one. The head has nothing to move:
+   naming an introducer records a contact, not a client to be put away.
 9. **Group membership is not a relationship.** A group is a column on `clients`
    and never an edge in `client_relations`, so it reaches none of the family
    behaviour. A subsidiary holding no cover of its own is not a dependent and

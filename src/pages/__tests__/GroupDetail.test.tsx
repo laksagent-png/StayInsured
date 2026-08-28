@@ -1,11 +1,11 @@
 /**
- * One group in full: the referrer, the book its members hold, the roster, and
- * the writes an operator makes from this page — joining, leaving, archiving and
+ * One group in full: its head, the book its members hold, the roster, and the
+ * writes an operator makes from this page — joining, leaving, archiving and
  * deleting.
  *
  * The distinction this page has to keep straight is the one the schema makes: a
- * member is filed in the group, a referrer merely introduced it, and the two are
- * treated differently by every button here.
+ * member is a client filed in the group, while the head is four columns written
+ * on the group and nobody in the book at all.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -47,6 +47,12 @@ function memberRow(name: string | RegExp): HTMLElement {
   return screen.getByRole("row", { name });
 }
 
+/** The Group head card, to read the head's own fields rather than the page's. */
+function headCard() {
+  const heading = screen.getByRole("heading", { name: "Group head" });
+  return within(heading.closest("section") as HTMLElement);
+}
+
 describe("the group header and cards", () => {
   it("names the group, counts its members and adds up their book", async () => {
     openGroup();
@@ -59,26 +65,36 @@ describe("the group header and cards", () => {
     expect(detailValue("Next expiry")).toBe("28 Feb 2027");
   });
 
-  it("gives the referrer a card of their own, leading to their page", async () => {
+  it("gives the head a card of their own, with no client page behind them", async () => {
     openGroup();
     await screen.findByRole("heading", { name: "Patel Group" });
 
-    const head = screen.getByRole("link", { name: /Vikram Patel/ });
-    expect(head).toHaveAttribute("href", "/clients/3");
-    // Said out loud, because the referrer being outside the group is the part an
-    // operator would otherwise have to infer from a count that does not add up.
-    expect(screen.getByText(/not counted as a member/)).toBeInTheDocument();
+    const card = headCard();
+    expect(card.getByText("Vikram Patel")).toBeInTheDocument();
+    expect(card.getByText("Insurance broker")).toBeInTheDocument();
+    expect(card.getByText("+919925044556")).toBeInTheDocument();
+    expect(card.getByText("vikram.patel@example.com")).toBeInTheDocument();
+    // A head is a contact, so nothing here leads anywhere — least of all to the
+    // client who happens to share the name.
+    expect(card.queryByRole("link")).toBeNull();
+    expect(card.getByText(/not a client/)).toBeInTheDocument();
   });
 
-  it("offers to name a referrer when the group has outlived theirs", async () => {
+  it("says the head is unknown, and still offers to add one", async () => {
     const book = withGroups(createBook());
-    book.groups[0].headClientId = null;
     book.groups[0].headName = null;
+    book.groups[0].headDesignation = null;
+    book.groups[0].headPhone = null;
+    book.groups[0].headEmail = null;
     installBackend(book);
     renderWithProviders(<GroupDetailPage />, { route: "/groups/1", path: "/groups/:id" });
 
-    expect(await screen.findByText(/has been deleted from the book/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Name the referrer" })).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Patel Group" });
+    expect(headCard().getByText("No referrer on file")).toBeInTheDocument();
+
+    // The card keeps its own way in, because an empty head is a thing to fill
+    // in rather than a fault to report.
+    expect(headCard().getByRole("button", { name: "Edit head" })).toBeInTheDocument();
   });
 
   it("says the group is not there rather than failing, when it is not", async () => {
@@ -103,8 +119,8 @@ describe("the roster", () => {
       "/clients/12",
     );
 
-    // The referrer holds a book of his own and is not on this list, because he
-    // is not in the group.
+    // The client who shares the head's name holds a book of his own and is not
+    // on this list, because he is not in the group.
     expect(screen.queryByText("Vikram Patel", { selector: "a.font-medium" })).toBeNull();
   });
 
@@ -149,6 +165,28 @@ describe("adding a member", () => {
     expect(await screen.findByText("Added to Patel Group")).toBeInTheDocument();
   });
 
+  it("opens a company already filed in the group", async () => {
+    const { user } = openGroup();
+    await screen.findByRole("heading", { name: "Patel Group" });
+
+    await user.click(screen.getByRole("button", { name: /Add member/ }));
+    await user.click(screen.getByRole("button", { name: "New company" }));
+
+    // The form is asked for from this group's page, so it opens on this group
+    // rather than asking which one was meant.
+    await waitFor(() => expect(screen.getByLabelText(/^Group/)).toHaveValue("1"));
+
+    await user.type(screen.getByLabelText(/^Company name/), "Patel Spinning Pvt Ltd");
+    await user.click(screen.getByRole("button", { name: "Add client" }));
+
+    await waitFor(() =>
+      expect(
+        backend().book.clients.find((row) => row.fullName === "Patel Spinning Pvt Ltd")?.groupId,
+      ).toBe(1),
+    );
+    expect(await screen.findByText("Added to Patel Group")).toBeInTheDocument();
+  });
+
   it("warns before moving somebody who is already filed elsewhere", async () => {
     const { user } = openGroup();
     await screen.findByRole("heading", { name: "Patel Group" });
@@ -163,7 +201,7 @@ describe("adding a member", () => {
 });
 
 describe("archiving and deleting a group", () => {
-  it("archives the members with the group, and leaves the referrer standing", async () => {
+  it("archives the members with the group, and reaches no one else", async () => {
     const { user } = openGroup();
     await screen.findByRole("heading", { name: "Patel Group" });
 
