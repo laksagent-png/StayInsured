@@ -84,7 +84,7 @@ click the tray icon and choose Quit.
 
 ---
 
-## The eight screens
+## The nine screens
 
 **Dashboard** — the state of your book at a glance: how many clients, how many
 live policies, what expires in the next stretch, the premium you manage, your
@@ -96,12 +96,18 @@ is clickable and takes you to the list behind it.
 **Reminders** — what the app writes to your clients, when, and what happened to
 each message. See below.
 
-**Clients** — everybody in your book. Search by name, phone, email, client code
-or PAN. Narrow by city, by the kind of cover they hold, by who has no email
+**Clients** — everybody in your book, people and companies alike. Search by name,
+phone, email, client code or PAN. Narrow by city, by the kind of cover they hold,
+by whether they are a person or a firm, by who has no email
 address on file, or show archived clients and family members.
 
 **Client page** — one client in full: contact details, the family they belong to,
-every policy they hold, past and present, and the scanned paperwork behind them.
+the group they are filed in, every policy they hold, past and present, and the
+scanned paperwork behind them.
+
+**Groups** — the corporate side of the book. A group is a set of companies you
+placed together, with the client who referred them recorded as its head, so you
+can see one employer's whole book on a page and know who to thank for it.
 
 **Policies** — every policy you have placed, searchable by policy number, client
 name or vehicle number, filterable by category, status and expiry window.

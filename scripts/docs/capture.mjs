@@ -146,6 +146,33 @@ const shots = [
     prepare: click("Attach"),
   },
   {
+    name: "client-company",
+    caption: "A company client: the person to ask for in place of a date of birth, and the group it is filed in",
+    route: "/clients/12",
+  },
+  {
+    name: "groups",
+    caption: "Groups: clients worked as one book, each with the referrer who introduced them",
+    route: "/groups",
+  },
+  {
+    name: "group-new",
+    caption: "Opening a group: the referrer is a client, so the field searches the book",
+    route: "/groups",
+    prepare: click("New group"),
+  },
+  {
+    name: "group-detail",
+    caption: "Group page: the referrer, what the members hold between them, and who is in it",
+    route: "/groups/1",
+  },
+  {
+    name: "group-member",
+    caption: "Adding a member: find the firm in the book, or open a company for it",
+    route: "/groups/1",
+    prepare: click("Add member"),
+  },
+  {
     name: "policies",
     caption: "Policies: every policy year, filtered by category, status, insurer and expiry window",
     route: "/policies",

@@ -1,11 +1,11 @@
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { save } from "@tauri-apps/plugin-dialog";
-import { Download, Plus, Search, UserPlus, Users } from "lucide-react";
+import { Building2, Download, Plus, Search, UserPlus, Users } from "lucide-react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { api, ApiError } from "../lib/api";
-import type { Client, ClientFilter } from "../lib/types";
+import type { Client, ClientFilter, ClientKind } from "../lib/types";
 import { count, date, initials } from "../lib/format";
 import { ClientForm } from "../components/ClientForm";
 import { DataTable, type Column } from "../components/DataTable";
@@ -54,7 +54,9 @@ export function ClientsPage() {
   // opening an empty book should be invited to start it, not told to clear
   // filters they never set. Archived clients are let in rather than kept out,
   // so asking for them narrows nothing.
-  const narrowed = Boolean(filter.search || filter.city || filter.category || filter.missingEmail);
+  const narrowed = Boolean(
+    filter.search || filter.city || filter.category || filter.missingEmail || filter.kind,
+  );
 
   const exportRows = useMutation({
     meta: readsOnly,
@@ -91,7 +93,11 @@ export function ClientsPage() {
       render: (row) => (
         <div className="flex items-center gap-2.5">
           <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand-100 text-xs font-semibold text-brand-800">
-            {initials(row.fullName)}
+            {row.kind === "company" ? (
+              <Building2 className="size-4" />
+            ) : (
+              initials(row.fullName)
+            )}
           </span>
           <span className="min-w-0">
             <Link
@@ -107,6 +113,22 @@ export function ClientsPage() {
           </span>
         </div>
       ),
+    },
+    {
+      key: "group",
+      header: "Group",
+      sortKey: "group",
+      render: (row) =>
+        row.groupId ? (
+          <Link
+            to={`/groups/${row.groupId}`}
+            className="block truncate text-xs text-slate-600 hover:text-brand-700"
+          >
+            {row.groupName}
+          </Link>
+        ) : (
+          <span className="text-xs text-slate-300">—</span>
+        ),
     },
     {
       key: "contact",
@@ -231,6 +253,22 @@ export function ClientsPage() {
                 {city}
               </option>
             ))}
+          </Select>
+
+          {/* People and firms are both clients, and most days an operator wants
+              one or the other: the corporate desk and the retail desk are not
+              usually the same afternoon's work. */}
+          <Select
+            aria-label="Client type"
+            className="w-40"
+            value={filter.kind ?? ""}
+            onChange={(event) =>
+              setFilter({ kind: (event.target.value || undefined) as ClientKind, page: 1 })
+            }
+          >
+            <option value="">People and companies</option>
+            <option value="individual">People only</option>
+            <option value="company">Companies only</option>
           </Select>
 
           <Select

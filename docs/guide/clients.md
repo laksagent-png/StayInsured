@@ -38,22 +38,32 @@ appear.
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| **Full name** | Yes | The only required field |
+| **Client type** | | **Individual** or **Company**. See [companies and groups](groups.md) |
+| **Full name** | Yes | The only required field. Reads **Company name** for a firm |
 | **Client code** | | Allocated as `CL-00001` if you leave it blank |
 | **Mobile** | | Digits are cleaned up as they are stored |
 | **Email** | | Reminders cannot be sent without this. An address that is not one is refused |
 | **Alternate phone** | | A landline or a second number |
-| **Date of birth** | | Used to know when age-banded premiums move |
-| **Gender** | | Male, female or other |
+| **Contact person** | | Companies only. Who you ask for when you ring |
+| **Designation** | | Companies only. Their job title |
+| **Date of birth** | | People only. Used to know when age-banded premiums move |
+| **Gender** | | People only. Male, female or other |
 | **Address** | | Street address |
 | **Area / locality** | | |
 | **City** | | Also a filter on the client list |
 | **State** | | |
 | **Pincode** | | |
-| **Occupation** | | |
+| **Occupation** | | Reads **Industry** for a firm |
 | **PAN** | | Searchable, so a PAN in hand finds the client |
+| **GSTIN** | | Companies only |
+| **Registration number** | | Companies only. CIN, LLPIN or as registered |
 | **Do not send reminders** | | Keeps this client out of every mailing list the app produces |
 | **Notes** | | Anything you want to remember before you call them |
+
+**Client type** decides which of those fields the form draws. Switching it to
+**Company** puts the contact person, the GSTIN and the registration number in
+place of the date of birth and the gender, because a firm has no birthday and a
+person has no CIN. Everything else is the same either way.
 
 Tick **Do not send reminders** for a client who has asked not to be emailed. They
 stay in your book and keep their policies, but **Copy emails** on the
@@ -73,10 +83,11 @@ put it right.
 | Search box | Matches name, phone, email, client code or PAN |
 | **All cities** | Narrows to one city. A screen reader calls it City |
 | **Any policy type** | Narrows to clients holding that kind of cover. A screen reader calls it Policy type |
+| **People and companies** | Narrows to **People only** or **Companies only**. A screen reader calls it Client type |
 | **Missing email** | Only clients who cannot be emailed |
 | **Include archived** | Brings archived clients back into view |
 | **Include family members** | Brings in the people covered on somebody else's policy, with none of their own |
-| Column headings | Sort by client, by number of policies, or by next expiry |
+| Column headings | Sort by client, by group, by number of policies, or by next expiry |
 
 Filters combine, so "Mumbai, health, missing email" is one click each. The list
 pages at the foot when there is more than a screenful.
@@ -86,10 +97,12 @@ hold the cover and marks anybody else **Family member** when you ask for them.
 Searching reaches the whole book either way: a child's name finds the child
 whether the box is ticked or not.
 
-Each row shows the client's contact details, how many of their policies are
+Each row shows the client's contact details, the [group](groups.md) they are
+filed in, how many of their policies are
 active out of the total, and when the next one expires — enough to decide who to
 call without opening anyone. A client with no email address is marked **No
-email** in amber on their row.
+email** in amber on their row, and a company carries a building mark instead of
+initials.
 
 Three answers are told apart rather than run together. A search that matches
 nobody says **No clients match** and suggests clearing the filters. A book with
@@ -104,8 +117,14 @@ Click a client's name.
 ![Client page](screenshots/client-detail.png)
 
 Everything about them is on one page: contact details, their
-[family](families.md), every policy they hold with its status and expiry date,
+[family](families.md), the [group](groups.md) they are filed in and any groups
+they referred, every policy they hold with its status and expiry date,
 and the [documents](documents.md) you have attached.
+
+A company's page reads a little differently, since a firm has no family: the
+contact person, their designation, the GSTIN and the registration number sit in
+place of the date of birth and the gender, and the family card gives way to the
+group.
 
 From here you can **Edit** the client, **Add policy** without choosing the client
 again, link or unlink a relative, and renew or edit any policy on the list. A

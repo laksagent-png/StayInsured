@@ -17,13 +17,21 @@ import path from "node:path";
 import * as XLSX from "xlsx";
 
 import { dispatch } from "../core/commands";
+import type { Conn, Database } from "../core/db";
 import * as importer from "../core/importer";
 import * as clients from "../core/repo/clients";
+import * as groups from "../core/repo/groups";
 import * as policies from "../core/repo/policies";
 import * as relations from "../core/repo/relations";
-import type { ImportFieldInfo, ImportOptions, ImportPreview } from "../core/types";
+import type {
+  Client,
+  ImportFieldInfo,
+  ImportOptions,
+  ImportPreview,
+  ImportReport,
+} from "../core/types";
 import { expect, suite, test, throwsKind } from "./harness";
-import { daysFromToday, scalar, tempDb, tempDir, unlockedSession } from "./support";
+import { daysFromToday, sampleClient, scalar, tempDb, tempDir, unlockedSession } from "./support";
 
 /**
  * Deliberately messy: agency-style headers, day-first dates, currency symbols,
@@ -80,6 +88,58 @@ suite("matching a header to a field", () => {
     // read one column into two.
     const claimed = Object.values(mapping);
     expect.equal(new Set(claimed).size, claimed.length);
+  });
+
+  test("leaves the corporate fields out of headings that already meant something", () => {
+    // Three words a book written before companies existed already spends: "Type"
+    // on the policy category, "GST" on the tax charged, "Registration No" on the
+    // vehicle. The corporate fields answer to all three in longer forms, so the
+    // agent who never asked for companies is the one to protect here.
+    const mapping = importer.suggestMapping([
+      "Client Name",
+      "Policy No",
+      "Expiry",
+      "Type",
+      "GST",
+      "Registration No",
+    ]);
+
+    expect.equal(mapping["category"], "Type");
+    expect.equal(mapping["gstAmount"], "GST");
+    expect.equal(mapping["vehicleNumber"], "Registration No");
+    for (const field of ["clientKind", "gstin", "registrationNo"]) {
+      expect.ok(
+        mapping[field] === undefined,
+        `${field} took a column an older field had already answered to`,
+      );
+    }
+
+    // Spelled out, the same sheet means the corporate fields and nothing else,
+    // which is what makes the export worth re-importing.
+    const spelled = importer.suggestMapping([
+      "Client Name",
+      "Policy No",
+      "Expiry",
+      "Client Type",
+      "GSTIN",
+      "Registration Number",
+      "Group",
+      "Contact Person",
+      "Designation",
+    ]);
+
+    expect.equal(spelled["clientKind"], "Client Type");
+    expect.equal(spelled["gstin"], "GSTIN");
+    expect.equal(spelled["registrationNo"], "Registration Number");
+    expect.equal(spelled["groupName"], "Group");
+    expect.equal(spelled["contactPerson"], "Contact Person");
+    expect.equal(spelled["contactDesignation"], "Designation");
+    for (const field of ["category", "gstAmount", "vehicleNumber"]) {
+      expect.ok(
+        spelled[field] === undefined,
+        `${field} answered to a heading that spells out a company's details`,
+      );
+    }
   });
 });
 
@@ -407,6 +467,191 @@ suite("the commands the import screen calls", () => {
       "expired",
       "a year that ended before the file arrived must not land on the desk as current",
     );
+  });
+});
+
+/**
+ * Ported from `a_sheet_that_says_company_stores_one_and_a_sheet_that_says_nothing_stores_a_person`,
+ * `a_group_named_in_a_sheet_is_opened_once_however_the_rows_spell_it`,
+ * `a_group_opened_by_import_has_no_referrer_until_somebody_names_one`,
+ * `a_second_import_that_says_nothing_about_groups_leaves_the_filing_alone` and
+ * `an_import_can_promote_a_client_to_a_company_but_never_demote_one`.
+ */
+suite("a sheet that knows about companies", () => {
+  /**
+   * Imports a file with the mapping the previewer suggests, which is the path the
+   * screen takes and so puts the sheet's own headers through the matcher on the
+   * way in rather than handing the importer a mapping written by the test.
+   */
+  function importSheet(db: Database, file: string): ImportReport {
+    const mapping = importer.preview(file, null).suggestedMapping;
+    return db.with((conn) => importer.run(conn, options(file, mapping, false)));
+  }
+
+  /** The client a sheet called this, read back the way a screen reads it. */
+  function clientNamed(conn: Conn, name: string): Client {
+    return clients.get(
+      conn,
+      scalar<number>(conn, "SELECT id FROM clients WHERE lower(full_name) = lower(?)", name),
+    );
+  }
+
+  /** Two companies filed together, spelt the way two rows of one sheet get spelt. */
+  const CORPORATE_SHEET =
+    "Customer Name,Client Group,Policy No,Insurance Company,Valid Till\n" +
+    "Patel Textiles,Patel Group,GRP/2026/1,Star Health,31/03/2027\n" +
+    "Patel Logistics,patel group,GRP/2026/2,Star Health,31/03/2027\n";
+
+  test("stores a company where it says one, and a person where it says nothing", () => {
+    const file = fileWith(
+      "import-kind",
+      "mixed.csv",
+      "Customer Name,Entity Type,Policy No,Insurance Company,Valid Till\n" +
+        "Sundaram Textiles Pvt Ltd,Pvt Ltd,GRP/2026/1,Star Health,31/03/2027\n" +
+        "Rohit Sharma,,HS/2026/2,Star Health,31/03/2027\n" +
+        "Anita Sharma,Individual,HS/2026/3,Star Health,31/03/2027\n",
+    );
+    const db = tempDb("import-kind");
+
+    expect.equal(importSheet(db, file).clientsCreated, 3);
+
+    db.with((conn) => {
+      expect.equal(
+        clientNamed(conn, "Sundaram Textiles Pvt Ltd").kind,
+        "company",
+        '"Pvt Ltd" is not one of the two stored words, and still names a firm',
+      );
+      expect.equal(
+        clientNamed(conn, "Rohit Sharma").kind,
+        "individual",
+        "a blank column describes the kind of client the book held first",
+      );
+      expect.equal(clientNamed(conn, "Anita Sharma").kind, "individual");
+    });
+    db.close();
+  });
+
+  test("opens the group it names once, however the rows spell it", () => {
+    const file = fileWith("import-group", "corporate.csv", CORPORATE_SHEET);
+    const db = tempDb("import-group");
+
+    expect.equal(importSheet(db, file).clientsCreated, 2);
+
+    db.with((conn) => {
+      const listed = groups.list(conn, {});
+      expect.equal(listed.total, 1, "two spellings of one name are one folder, not two");
+
+      const folder = listed.rows[0]!;
+      expect.equal(folder.name, "Patel Group", "spelt as the first row spelt it");
+      expect.equal(folder.groupCode, "GR-00001");
+      expect.equal(folder.members, 2);
+
+      for (const company of ["Patel Textiles", "Patel Logistics"]) {
+        expect.equal(clientNamed(conn, company).groupName, "Patel Group");
+      }
+    });
+    db.close();
+  });
+
+  test("opens it with no referrer, until somebody names one", () => {
+    const file = fileWith("import-group-head", "corporate.csv", CORPORATE_SHEET);
+    const db = tempDb("import-group-head");
+    importSheet(db, file);
+
+    db.with((conn) => {
+      const folder = groups.list(conn, {}).rows[0]!;
+      expect.equal(
+        folder.headClientId,
+        null,
+        "the sheet carried the grouping and nothing about the introduction",
+      );
+
+      // Which is the state deleting a referrer already leaves behind, and it is
+      // put right the same way: by naming somebody, with the folder keeping
+      // everyone in it.
+      const referrer = clients.create(conn, sampleClient("Anil Mehta"));
+      groups.update(conn, folder.id, { name: folder.name, headClientId: referrer });
+
+      const named = groups.get(conn, folder.id);
+      expect.equal(named.headClientId, referrer);
+      expect.equal(named.headName, "Anil Mehta");
+      expect.equal(named.members, 2, "naming the referrer moved nobody");
+    });
+    db.close();
+  });
+
+  test("leaves the filing alone when a second sheet says nothing about groups", () => {
+    const db = tempDb("import-group-quiet");
+    importSheet(db, fileWith("import-group-quiet", "corporate.csv", CORPORATE_SHEET));
+
+    // The same two companies from a system that has never heard of groups.
+    const plain = fileWith(
+      "import-group-quiet",
+      "plain.csv",
+      "Customer Name,Policy No,Insurance Company,Valid Till\n" +
+        "Patel Textiles,GRP/2026/1,Star Health,31/03/2027\n" +
+        "Patel Logistics,GRP/2026/2,Star Health,31/03/2027\n",
+    );
+    expect.equal(importSheet(db, plain).clientsCreated, 0, "the same two clients were found");
+
+    db.with((conn) => {
+      const listed = groups.list(conn, {});
+      expect.equal(listed.total, 1);
+      expect.equal(
+        listed.rows[0]!.members,
+        2,
+        "a sheet with no group column empties no folders",
+      );
+    });
+    db.close();
+  });
+
+  test("promotes a client to a company but never demotes one", () => {
+    const db = tempDb("import-kind-promote");
+    db.withTx((conn) => {
+      clients.create(conn, { ...sampleClient("Sharma & Sons"), kind: "company" });
+      clients.create(conn, sampleClient("Deepak Shah"));
+    });
+
+    // A retail sheet listing the firm under the name its director trades by, and
+    // a corporate sheet that knows what Deepak Shah's consultancy actually is.
+    importSheet(
+      db,
+      fileWith(
+        "import-kind-promote",
+        "retail.csv",
+        "Customer Name,Client Type,Policy No,Insurance Company,Valid Till\n" +
+          "Sharma & Sons,Individual,HS/2026/1,Star Health,31/03/2027\n" +
+          "Deepak Shah,Corporate,HS/2026/2,Star Health,31/03/2027\n",
+      ),
+    );
+
+    db.with((conn) => {
+      expect.equal(
+        clientNamed(conn, "Sharma & Sons").kind,
+        "company",
+        "one sheet's opinion does not turn a firm back into a person",
+      );
+      expect.equal(clientNamed(conn, "Deepak Shah").kind, "company");
+    });
+
+    // And a sheet that offers no opinion at all leaves both of them alone.
+    importSheet(
+      db,
+      fileWith(
+        "import-kind-promote",
+        "quiet.csv",
+        "Customer Name,Policy No,Insurance Company,Valid Till\n" +
+          "Sharma & Sons,HS/2026/1,Star Health,31/03/2027\n" +
+          "Deepak Shah,HS/2026/2,Star Health,31/03/2027\n",
+      ),
+    );
+
+    db.with((conn) => {
+      expect.equal(clientNamed(conn, "Sharma & Sons").kind, "company");
+      expect.equal(clientNamed(conn, "Deepak Shah").kind, "company");
+    });
+    db.close();
   });
 });
 

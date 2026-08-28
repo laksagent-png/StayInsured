@@ -23,6 +23,7 @@ import * as reminders from "./reminders";
 import * as clients from "./repo/clients";
 import * as dashboard from "./repo/dashboard";
 import * as documents from "./repo/documents";
+import * as groups from "./repo/groups";
 import * as insurers from "./repo/insurers";
 import * as notifications from "./repo/notifications";
 import * as policies from "./repo/policies";
@@ -56,6 +57,16 @@ function obj<T>(args: Args, key: string): T {
   const value = args[key];
   if (value === null || typeof value !== "object") throw AppError.other(`${key} must be an object`);
   return value as T;
+}
+
+/**
+ * An id that may be left unsaid, matching `Option<i64>` in the Rust handler.
+ * Absent is an answer here rather than an omission: `set_client_group` with no
+ * group is how a client is taken out of one.
+ */
+function optNum(args: Args, key: string): number | null {
+  const value = args[key];
+  return typeof value === "number" ? value : null;
 }
 
 function optBool(args: Args, key: string): boolean {
@@ -149,6 +160,23 @@ export const COMMANDS: Record<string, Handler> = {
       .withTx((conn) =>
         relations.unlink(conn, num(args, "clientId"), num(args, "relatedClientId")),
       ),
+
+  // ---------------------------------------------------------------- groups
+  list_groups: (session, args) => session.db().with((conn) => groups.list(conn, obj(args, "filter"))),
+  get_group: (session, args) => session.db().with((conn) => groups.get(conn, num(args, "id"))),
+  next_group_code: (session) => session.db().with(groups.nextGroupCode),
+  create_group: (session, args) =>
+    session.db().withTx((conn) => groups.create(conn, obj(args, "input"))),
+  update_group: (session, args) =>
+    session.db().withTx((conn) => groups.update(conn, num(args, "id"), obj(args, "input"))),
+  set_group_archived: (session, args) =>
+    session.db().withTx((conn) => groups.setArchived(conn, num(args, "id"), optBool(args, "archived"))),
+  delete_group: (session, args) =>
+    session.db().withTx((conn) => groups.remove(conn, num(args, "id"))),
+  set_client_group: (session, args) =>
+    session
+      .db()
+      .withTx((conn) => groups.setClientGroup(conn, num(args, "clientId"), optNum(args, "groupId"))),
 
   // ---------------------------------------------------------------- documents
   list_documents: (session, args) =>

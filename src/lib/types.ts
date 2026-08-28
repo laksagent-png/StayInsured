@@ -47,6 +47,13 @@ export type Relationship =
 /** What a client delete takes with it besides the client. */
 export type DeleteScope = "linksOnly" | "immediateFamily";
 
+/**
+ * Whether a client is a person or a company. A company holds policies like
+ * anybody else but has no date of birth and no gender, so the forms read this
+ * rather than inferring an entity from which fields happen to be filled in.
+ */
+export type ClientKind = "individual" | "company";
+
 export interface Page<T> {
   rows: T[];
   total: number;
@@ -92,13 +99,27 @@ export interface Client {
   isArchived: boolean;
   createdAt: string;
   updatedAt: string;
+  kind: ClientKind;
+  /** The group this client sits in. Cleared, not cascaded, when the group goes. */
+  groupId: number | null;
+  /** Who to ask for at a company, and what they do there. */
+  contactPerson: string | null;
+  contactDesignation: string | null;
+  /** CIN, LLPIN or whatever the registrar issued. */
+  registrationNo: string | null;
   activePolicies: number;
   totalPolicies: number;
   nextExpiry: string | null;
   /** People related to this client, either direction of the edge. */
   relatives: number;
-  /** No policy of their own and listed under somebody else. Derived on read. */
+  /**
+   * No policy of their own and listed under somebody else. Derived on read.
+   *
+   * Group membership is no part of this: a subsidiary that has not placed cover
+   * yet is a client the agent browses to, not somebody's dependent.
+   */
   isDependent: boolean;
+  groupName: string | null;
 }
 
 export interface ClientInput {
@@ -120,6 +141,16 @@ export interface ClientInput {
   preferredLanguage?: string | null;
   remindersOptedOut?: boolean;
   notes?: string | null;
+  kind?: ClientKind | null;
+  /**
+   * Coalesced rather than assigned: leaving it out keeps a client in the group
+   * they are in, so a form that draws no group cannot empty one. Moving between
+   * groups goes through `setClientGroup`.
+   */
+  groupId?: number | null;
+  contactPerson?: string | null;
+  contactDesignation?: string | null;
+  registrationNo?: string | null;
 }
 
 export interface ClientFilter {
@@ -134,6 +165,9 @@ export interface ClientFilter {
    */
   includeFamily?: boolean;
   missingEmail?: boolean;
+  kind?: ClientKind | "";
+  /** The group roster: this list, narrowed to one folder. */
+  groupId?: number;
   sort?: string;
   descending?: boolean;
   page?: number;
@@ -214,6 +248,54 @@ export interface RelationInput {
   clientId: number;
   relatedClientId: number;
   relationship: string;
+}
+
+/**
+ * A named set of clients the agency works as one book, and the client who
+ * referred them.
+ *
+ * Unlike a family this is a record of its own, because it has the boundary a
+ * family lacks: it is named, entered deliberately, holds a client at a time, and
+ * the operator can say where it ends. The roster is not part of this shape —
+ * it is `listClients` with `groupId` set.
+ */
+export interface Group {
+  id: number;
+  groupCode: string;
+  name: string;
+  /** The referrer, who need not be a member of the group they brought in. */
+  headClientId: number | null;
+  headName: string | null;
+  headClientCode: string | null;
+  notes: string | null;
+  isArchived: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** The group's book, summed across its members and not its referrer. */
+  members: number;
+  activePolicies: number;
+  totalPolicies: number;
+  premiumUnderManagement: number;
+  nextExpiry: string | null;
+}
+
+export interface GroupInput {
+  groupCode?: string | null;
+  name: string;
+  /** Required: a group without a referrer is a referral nobody recorded. */
+  headClientId?: number | null;
+  notes?: string | null;
+}
+
+export interface GroupFilter {
+  search?: string;
+  includeArchived?: boolean;
+  /** Groups this client referred: headship read from the referrer's end. */
+  headClientId?: number;
+  sort?: string;
+  descending?: boolean;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface Insurer {

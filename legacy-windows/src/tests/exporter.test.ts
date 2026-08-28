@@ -1,6 +1,7 @@
 /**
  * Ported from `export_writes_both_formats`,
- * `an_export_carries_every_column_and_reads_like_the_screen` and
+ * `an_export_carries_every_column_and_reads_like_the_screen`,
+ * `a_client_export_carries_the_type_the_group_and_the_corporate_columns` and
  * `an_export_refuses_a_format_it_cannot_write`.
  *
  * An export is the one thing the agency hands to someone else — an insurer asking
@@ -17,6 +18,7 @@ import * as XLSX from "xlsx";
 import { dispatch } from "../core/commands";
 import * as exporter from "../core/exporter";
 import * as clients from "../core/repo/clients";
+import * as groups from "../core/repo/groups";
 import * as insurers from "../core/repo/insurers";
 import * as policies from "../core/repo/policies";
 import * as products from "../core/repo/products";
@@ -113,7 +115,7 @@ suite("an export", () => {
       const headers = lines[0]!.split(",");
       expect.equal(headers[0], "Client code");
       expect.equal(headers[headers.length - 1], "Notes");
-      expect.equal(headers.length, 18, "a column added to the export needs a line in the guide too");
+      expect.equal(headers.length, 24, "a column added to the export needs a line in the guide too");
 
       const row = lines[1]!;
       expect.ok(row.includes("Ananya Sharma"));
@@ -121,6 +123,58 @@ suite("an export", () => {
       expect.ok(row.includes("Pune"));
       expect.ok(row.includes(",On"), "an opt-out reads as words, not as 0 or 1");
       expect.equal(lines.length, 2, "one client, one row");
+    });
+    db.close();
+  });
+
+  test("carries the type, the group and the corporate columns", () => {
+    const dir = tempDir("export-corporate");
+    const db = tempDb("export-corporate");
+    db.with((conn) => {
+      const referrer = clients.create(conn, sampleClient("Anil Mehta"));
+      const group = groups.create(conn, { name: "Sundaram Group", headClientId: referrer });
+      clients.create(conn, {
+        ...sampleClient("Sundaram Textiles"),
+        kind: "company",
+        groupId: group,
+        contactPerson: "Meera Rao",
+        contactDesignation: "HR Head",
+        registrationNo: "U17110MH1995PLC012345",
+        gstin: "27AABCS1429B1ZX",
+      });
+
+      const rows = clients.list(conn, {}).rows;
+      const file = path.join(dir, "clients.csv");
+      expect.equal(exporter.exportClients(rows, file), 2);
+
+      const lines = fs.readFileSync(file, "utf8").split("\r\n").filter((line) => line !== "");
+      const headers = lines[0]!.split(",");
+      const cells = lines.slice(1).map((line) => line.split(","));
+      const column = (name: string): number => headers.indexOf(name);
+      const row = (name: string): string[] =>
+        cells.find((values) => values[column("Name")] === name)!;
+
+      const company = row("Sundaram Textiles");
+      expect.equal(
+        company[column("Type")],
+        "Company",
+        "the word the screen shows, not the word the column stores",
+      );
+      expect.equal(company[column("Group")], "Sundaram Group");
+      expect.equal(company[column("Contact person")], "Meera Rao");
+      expect.equal(company[column("Designation")], "HR Head");
+      expect.equal(company[column("Registration number")], "U17110MH1995PLC012345");
+      expect.equal(company[column("GSTIN")], "27AABCS1429B1ZX");
+
+      const person = row("Anil Mehta");
+      expect.equal(person[column("Type")], "Individual");
+      for (const empty of ["Group", "Contact person", "Registration number", "GSTIN"]) {
+        expect.equal(
+          person[column(empty)],
+          "",
+          `${empty} is blank for a person, and blank is an empty cell rather than the word null`,
+        );
+      }
     });
     db.close();
   });

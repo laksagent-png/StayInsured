@@ -1,7 +1,7 @@
 # API specification
 
 StayInsured has no HTTP API. Its API is the set of Tauri commands the Rust core
-exposes to the webview — 74 commands that are the only way the interface reaches
+exposes to the webview — 82 commands that are the only way the interface reaches
 data.
 
 The contract is defined in four files that must always agree:
@@ -179,11 +179,18 @@ in `secondary`. It needs no database.
 | `next_client_code` | — | `string` |
 
 `ClientFilter`: `search`, `city`, `state`, `category`, `includeArchived`,
-`includeFamily`, `missingEmail`, `sort`, `descending`, `page`, `pageSize`.
-Archived clients are excluded unless `includeArchived` is true. `search` runs
-against the FTS5 index over name, email, phone, client code and PAN, falling back
-to a `LIKE` scan when the term has no searchable tokens. Sort keys: `name`
-(default), `code`, `city`, `created`, `updated`, `policies`, `nextExpiry`.
+`includeFamily`, `missingEmail`, `kind`, `groupId`, `sort`, `descending`, `page`,
+`pageSize`. Archived clients are excluded unless `includeArchived` is true.
+`search` runs against the FTS5 index over name, email, phone, client code and
+PAN, falling back to a `LIKE` scan when the term has no searchable tokens. Sort
+keys: `name` (default), `code`, `city`, `created`, `updated`, `policies`,
+`nextExpiry`, `group`.
+
+`kind` narrows to `individual` or `company`, and a word outside that vocabulary
+is dropped rather than passed to SQL, so an out-of-date screen shows the book
+rather than nothing at all. **`groupId` is how a group's roster is read** — the
+client list narrowed to one folder, with every filter and sort it already has,
+rather than a second paged command that would drift from it.
 
 **Dependents are excluded from browse but never from search.** A client with no
 policy of their own who is named as somebody's relative is a dependent; the list
@@ -194,10 +201,22 @@ non-empty regardless. The dashboard's people counts apply the same rule, so
 `ClientInput` requires `fullName`; everything else is optional. `clientCode` is
 allocated as the next `CL-000NN` when omitted. Names are title-cased without
 mangling initials, phones are reduced to digits with an optional leading `+`,
-PAN and GSTIN are upper-cased, and email is rejected if malformed.
+PAN, GSTIN and `registrationNo` are upper-cased, and email is rejected if
+malformed.
+
+`kind` is `individual` or `company`, and an omitted or unrecognised one is
+`individual` — a payload that says nothing is describing a person, which is what
+every client entered before companies existed was. A company carries
+`contactPerson`, `contactDesignation` and `registrationNo` instead of a date of
+birth and a gender.
+
+**`groupId` on `ClientInput` is coalesced, not assigned.** Omitting it leaves a
+client in whatever group they are in, so a client form that draws no group cannot
+empty one by saving a name change. Moving a client between groups, or out of one,
+goes through `set_client_group`.
 
 `Client` responses add `activePolicies`, `totalPolicies`, `nextExpiry`,
-`relatives` (edges in either direction) and `isDependent`.
+`relatives` (edges in either direction), `isDependent` and `groupName`.
 
 **`delete_client`** takes `scope`, which is `linksOnly` (the default) or
 `immediateFamily`, and answers with every id it removed. `linksOnly` cascades to
@@ -254,6 +273,55 @@ at 12 steps.
 **`unlink_clients`** removes the edge whichever way round it is stored, and
 `not_found` when there is none. The people stay; one of them holding cover of
 their own is the ordinary case.
+
+## Groups
+
+| Command | Arguments | Returns |
+| --- | --- | --- |
+| `list_groups` | `filter: GroupFilter` | `Page<Group>` |
+| `get_group` | `id: number` | `Group` |
+| `create_group` | `input: GroupInput` | `number` |
+| `update_group` | `id: number`, `input: GroupInput` | `void` |
+| `set_group_archived` | `id: number`, `archived: boolean` | `number` |
+| `delete_group` | `id: number` | `number` |
+| `set_client_group` | `clientId: number`, `groupId?: number` | `void` |
+| `next_group_code` | — | `string` |
+
+A group is a named set of clients the agency works as one book, and the client who
+referred them. Unlike a family it is a row, because it has the boundary a family
+lacks — see [DATA-MODEL](DATA-MODEL.md) for why the two are stored differently.
+The roster is not a command here: it is `list_clients` with `groupId` set.
+
+`GroupInput` is `name` (required), `headClientId` (required), `groupCode` and
+`notes`. `groupCode` is allocated as the next `GR-000NN` when omitted, and
+coalesced on update the way `clientCode` is. **A group needs a group head**: one
+opened without a referrer is not a group with a blank field but a referral nobody
+recorded, so a missing or unknown `headClientId` is `validation`. The column is
+still nullable, because deleting the referrer leaves the group standing; editing
+such a group asks for the new referrer by name.
+
+`GroupFilter`: `search`, `includeArchived`, `sort`, `descending`, `page`,
+`pageSize`. `search` is a `LIKE` scan over the group name, the group code and the
+referrer's name — an operator looking for "the firms Mehta brought us" knows the
+introducer, not the folder. Sort keys: `name` (default), `code`, `members`,
+`policies`, `premium`, `nextExpiry`, `created`, `updated`.
+
+`Group` responses carry `headName` and `headClientCode` alongside `headClientId`,
+and the group's book summed across its members: `members`, `activePolicies`,
+`totalPolicies`, `premiumUnderManagement` and `nextExpiry`. **The referrer
+contributes none of it unless they are also a member**, which is why headship and
+membership are answered separately.
+
+**`delete_group`** removes the group and answers with how many clients it let go.
+They stay in the book with no group. **`set_group_archived`** archives or restores
+the group and every client in it, answering with how many clients moved, and
+leaves the referrer alone unless they are a member.
+
+**`set_client_group`** is the only place membership is said out loud. Passing no
+`groupId` takes the client out of whatever group they are in.
+
+Errors: `validation` (missing name, missing or unknown group head), `conflict`
+(group code or name in use), `not_found`.
 
 ## Documents
 
@@ -463,12 +531,32 @@ off — the issue also carries the `column` it was read from and the `value` it
 held, both null otherwise, and `value` null for a cell that was empty. A failed
 row is rolled back whole; nothing half-created survives it.
 
+**Corporate fields.** `import_fields` also offers `clientKind`, `groupName`,
+`contactPerson`, `contactDesignation`, `registrationNo` and `gstin`, all
+optional, all in the `Client` group. `clientKind` is read loosely — a cell
+containing `compan`, `corp`, `firm`, `llp`, `ltd`, `pvt`, `private limited`,
+`partnership`, `enterprise` or `business` is a company, anything else a person —
+and the client's name is never read for it. On an existing client the type fills
+upwards only: `company` overwrites `individual`, and nothing overwrites
+`company`. `groupName` finds a group by name, case-insensitively, or opens one
+with a NULL `headClientId`, then files the client through the same path
+`set_client_group` uses; a blank leaves membership alone.
+
+These six are matched last, so headings an older book already spends keep their
+meanings: `Type` stays `category`, `GST` stays `gstAmount`, `Registration No`
+stays `vehicleNumber`. The spelled-out `Client type`, `GSTIN` and
+`Registration number` reach the corporate fields.
+
 **`write_import_template`** writes an `.xlsx` with every recognised column and
 one example row, and returns the path.
 
 **Export** commands take the same filters as the matching list command, ignore
 pagination, and write `.xlsx` or `.csv` chosen by the file extension. Anything
 else returns `validation`. The return value is the number of rows written.
+`export_clients` writes `Type` and `Group` after the name, and `GSTIN`,
+`Registration number`, `Contact person` and `Designation` after the PAN, so the
+sheet it produces is one the importer reads back whole. `Type` is written as
+`Individual` or `Company`, the words the screens use.
 
 ## Message templates
 
@@ -652,6 +740,7 @@ through `set_smtp_password`.
 | Policy status | `active`, `expired`, `renewed`, `lapsed`, `cancelled` |
 | Relationship | `spouse`, `son`, `daughter`, `father`, `mother`, `brother`, `sister`, `other` |
 | Delete scope | `linksOnly`, `immediateFamily` |
+| Client kind | `individual`, `company` |
 | Premium frequency | `annual`, `half_yearly`, `quarterly`, `monthly`, `single` |
 | Gender | `male`, `female`, `other` |
 | Template trigger | `expiry_reminder`, `post_expiry`, `welcome`, `renewal_confirmation`, `annual_summary`, `provider_digest`, `custom` |

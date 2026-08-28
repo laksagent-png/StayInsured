@@ -76,6 +76,7 @@ export default defineConfig({
           items: [
             { text: "Clients", link: "/guide/clients" },
             { text: "Families", link: "/guide/families" },
+            { text: "Groups", link: "/guide/groups" },
             { text: "Documents", link: "/guide/documents" },
             { text: "Policies", link: "/guide/policies" },
             { text: "Insurers and plans", link: "/guide/insurers-and-plans" },

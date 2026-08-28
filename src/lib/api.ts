@@ -10,6 +10,9 @@ import type {
   EmailTemplate,
   EmailTemplateInput,
   Family,
+  Group,
+  GroupFilter,
+  GroupInput,
   ImportFieldInfo,
   ImportOptions,
   ImportPreview,
@@ -116,6 +119,21 @@ export const api = {
   linkClients: (input: RelationInput) => call<void>("link_clients", { input }),
   unlinkClients: (clientId: number, relatedClientId: number) =>
     call<void>("unlink_clients", { clientId, relatedClientId }),
+
+  // groups
+  listGroups: (filter: GroupFilter) => call<Page<Group>>("list_groups", { filter }),
+  getGroup: (id: number) => call<Group>("get_group", { id }),
+  createGroup: (input: GroupInput) => call<number>("create_group", { input }),
+  updateGroup: (id: number, input: GroupInput) => call<void>("update_group", { id, input }),
+  /** Answers with how many clients moved with the group. */
+  setGroupArchived: (id: number, archived: boolean) =>
+    call<number>("set_group_archived", { id, archived }),
+  /** Answers with how many clients the group let go. They stay in the book. */
+  deleteGroup: (id: number) => call<number>("delete_group", { id }),
+  /** No `groupId` takes the client out of whatever group they are in. */
+  setClientGroup: (clientId: number, groupId: number | null) =>
+    call<void>("set_client_group", { clientId, groupId }),
+  nextGroupCode: () => call<string>("next_group_code"),
 
   // documents
   listDocuments: (clientId: number) => call<Document[]>("list_documents", { clientId }),

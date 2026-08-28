@@ -129,6 +129,18 @@ the words is used. Anything it cannot place is left for you to map by hand.
 | **Pincode** | | pincode, pin code, postal code, zip, zipcode, pin |
 | **Occupation** | | occupation, profession, job |
 | **PAN** | | pan, pan no, pan number |
+| **Client type** | | client type, type, entity type, customer type, individual or company |
+| **Group** | | group, group name, client group, corporate group |
+| **Contact person** | | contact person, contact name, spoc, key contact, hr contact |
+| **Designation** | | designation, contact designation, title, role |
+| **Registration number** | | registration number, cin, llpin, company registration |
+| **GSTIN** | | gstin, gst no, gst number |
+
+The last six are for [companies and groups](./groups.md), and they are read last.
+Where a heading could be either — **Type**, **GST**, **Registration No** — the
+older field keeps it, so a motor sheet still reads its category, its tax and its
+vehicle the way it always has. Spell the heading out as **Client type**, **GSTIN**
+or **Registration number** when you mean the company's.
 
 ### Policy fields
 
@@ -169,6 +181,11 @@ the words is used. Anything it cannot place is left for you to map by hand.
 | A relationship written beside a name is read | "Priya Sharma (Wife)", "Wife - Priya Sharma" and "Priya Sharma - wife" all record her as a spouse. So does writing nothing, if she is also the **Nominee** and you filled in **Nominee relation** |
 | "Self", "Proposer" and "Insured" mean the policyholder | The row covers the client themselves rather than opening a second client of the same name |
 | A covered name already in your book is linked, not copied | Your client count rises by the number of people genuinely new to it. Check a common name afterwards: one spelling can only mean one person |
+| **Client type** is read loosely | "Pvt Ltd", "Corporate", "Partnership firm" and "LLP" all mean a company. Anything else, including a blank, means a person. The name is never read for this — a firm called "Sharma & Sons" is a company only because the column says so |
+| A type can promote a client but never demote one | The corporate sheet that says a client is a company settles it. A retail sheet listing the same firm's director will not turn the firm back into a person |
+| A **Group** that does not exist yet is opened | The second row naming it joins it rather than opening a second one, and `Patel Group` and `patel group` are one group |
+| A group opened by import has nobody down as its head | A spreadsheet carries the grouping but not who introduced it. The [group's page](groups.md#the-group-head) asks you to name a head, and you can leave it unanswered |
+| A file with no **Group** column leaves your groups alone | A blank means the file is silent about groups, not that the client belongs to none |
 
 ## When a row fails
 

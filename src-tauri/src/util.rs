@@ -306,6 +306,21 @@ pub fn normalise_gender(raw: &str) -> Option<String> {
     }
 }
 
+/// The words `clients.kind` accepts, matching its `CHECK`.
+pub const CLIENT_KINDS: &[&str] = &["individual", "company"];
+
+/// What a spreadsheet or a form means by the entity it is describing. Anything
+/// unrecognised is a person, because that is what the book held before companies
+/// were in it and a file that says nothing is describing the old kind.
+pub fn normalise_client_kind(raw: &str) -> String {
+    match raw.trim().to_lowercase().as_str() {
+        "company" | "corporate" | "corporation" | "business" | "firm" | "entity"
+        | "organisation" | "organization" | "employer" | "pvt ltd" | "private limited" | "ltd"
+        | "llp" => "company".into(),
+        _ => "individual".into(),
+    }
+}
+
 /// The words `client_relations.relationship` accepts, matching its `CHECK`.
 pub const RELATIONSHIPS: &[&str] = &[
     "spouse", "son", "daughter", "father", "mother", "brother", "sister", "other",

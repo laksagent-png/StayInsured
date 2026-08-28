@@ -45,11 +45,23 @@ export interface Client {
   isArchived: boolean;
   createdAt: string;
   updatedAt: string;
+  /**
+   * `individual` or `company`. A company holds policies like anybody else but has
+   * no date of birth and no gender, so the screens read this rather than
+   * inferring an entity from which fields happen to be filled in.
+   */
+  kind: string;
+  /** The group this client sits in. Cleared, not cascaded, when the group goes. */
+  groupId: number | null;
+  contactPerson: string | null;
+  contactDesignation: string | null;
+  registrationNo: string | null;
   activePolicies: number;
   totalPolicies: number;
   nextExpiry: string | null;
   relatives: number;
   isDependent: boolean;
+  groupName: string | null;
 }
 
 export interface ClientInput {
@@ -71,6 +83,16 @@ export interface ClientInput {
   preferredLanguage?: string | null;
   remindersOptedOut?: boolean | null;
   notes?: string | null;
+  kind?: string | null;
+  /**
+   * Coalesced rather than assigned: leaving it out keeps a client in the group
+   * they are in, so a form that draws no group cannot empty one. Moving between
+   * groups goes through `setClientGroup`.
+   */
+  groupId?: number | null;
+  contactPerson?: string | null;
+  contactDesignation?: string | null;
+  registrationNo?: string | null;
 }
 
 export interface ClientFilter {
@@ -81,6 +103,55 @@ export interface ClientFilter {
   includeArchived?: boolean | null;
   includeFamily?: boolean | null;
   missingEmail?: boolean | null;
+  kind?: string | null;
+  /** The group roster: this list narrowed to one folder. */
+  groupId?: number | null;
+  sort?: string | null;
+  descending?: boolean | null;
+  page?: number | null;
+  pageSize?: number | null;
+}
+
+/**
+ * A named set of clients the agency works as one book, and the client who
+ * referred them.
+ *
+ * Unlike a family this is a row, because it has the boundary a family lacks: it
+ * is named, entered deliberately, holds a client at a time, and the operator can
+ * say where it ends.
+ */
+export interface Group {
+  id: number;
+  groupCode: string;
+  name: string;
+  /** The referrer, who need not be a member of the group they brought in. */
+  headClientId: number | null;
+  headName: string | null;
+  headClientCode: string | null;
+  notes: string | null;
+  isArchived: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** The group's book, summed across its members and not its referrer. */
+  members: number;
+  activePolicies: number;
+  totalPolicies: number;
+  premiumUnderManagement: number;
+  nextExpiry: string | null;
+}
+
+export interface GroupInput {
+  groupCode?: string | null;
+  name: string;
+  headClientId?: number | null;
+  notes?: string | null;
+}
+
+export interface GroupFilter {
+  search?: string | null;
+  includeArchived?: boolean | null;
+  /** Groups this client referred: headship read from the referrer's end. */
+  headClientId?: number | null;
   sort?: string | null;
   descending?: boolean | null;
   page?: number | null;

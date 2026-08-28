@@ -5,7 +5,7 @@ import { AppError, describe } from "../errors";
 import { Conditions, likePattern, orderBy, paginate, type Bind } from "../query";
 import { blankToNull, boolToInt, toModel, toModels } from "../rows";
 import type { Client, ClientFilter, ClientInput, Page } from "../types";
-import { looksLikeEmail, normalisePhone, parseDate, tidyName } from "../util";
+import { CLIENT_KINDS, looksLikeEmail, normaliseClientKind, normalisePhone, parseDate, tidyName } from "../util";
 import { immediateIds } from "./relations";
 import { count, ftsQuery, isConstraintViolation } from "./shared";
 
@@ -17,13 +17,15 @@ const SORTABLE: Record<string, string> = {
   updated: "c.updated_at",
   policies: "total_policies",
   nextExpiry: "next_expiry",
+  group: "group_name",
 };
 
 const COLUMNS =
   "c.id, c.client_code, c.full_name, c.email, c.phone, c.alt_phone, " +
   "c.date_of_birth, c.gender, c.address_line1, c.address_line2, c.city, c.state, c.pincode, " +
   "c.occupation, c.pan, c.gstin, c.preferred_language, c.reminders_opted_out, c.notes, " +
-  "c.is_archived, c.created_at, c.updated_at";
+  "c.is_archived, c.created_at, c.updated_at, c.kind, c.group_id, c.contact_person, " +
+  "c.contact_designation, c.registration_no";
 
 const DERIVED =
   "(SELECT COUNT(*) FROM policies p WHERE p.client_id = c.id AND p.status = 'active') AS active_policies, " +
@@ -34,7 +36,8 @@ const DERIVED =
   "   WHERE r.client_id = c.id OR r.related_client_id = c.id) AS relatives, " +
   "(SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM policies p WHERE p.client_id = c.id) " +
   "              AND EXISTS (SELECT 1 FROM client_relations r WHERE r.related_client_id = c.id) " +
-  "             THEN 1 ELSE 0 END) AS is_dependent";
+  "             THEN 1 ELSE 0 END) AS is_dependent, " +
+  "(SELECT g.name FROM client_groups g WHERE g.id = c.group_id) AS group_name";
 
 /**
  * A client with no policy of their own who is listed under somebody else — a
@@ -44,6 +47,12 @@ const DERIVED =
  *
  * The dashboard counts through this too: a child with no email address is not a
  * client the agency is failing to reach.
+ *
+ * Group membership is deliberately no part of this. A subsidiary that holds no
+ * cover of its own yet is a client the agency browses to and chases, not
+ * somebody's dependent — which is why groups are a column on this table and
+ * never an edge in `client_relations`, where they would land inside this test
+ * and empty half a corporate book out of the list.
  */
 export const IS_DEPENDENT =
   "NOT EXISTS (SELECT 1 FROM policies p WHERE p.client_id = c.id) " +
@@ -80,6 +89,16 @@ function buildConditions(filter: ClientFilter): Conditions {
     c.add("EXISTS (SELECT 1 FROM policies p WHERE p.client_id = c.id AND p.category = ?)", category);
   }
   if (filter.missingEmail) c.addRaw("(c.email IS NULL OR c.email = '')");
+
+  // A word outside the vocabulary is dropped rather than passed to SQL, so an
+  // out-of-date screen asking for a kind the book does not have shows the book
+  // rather than nothing at all.
+  const kind = blankToNull(filter.kind)?.toLowerCase();
+  if (kind && CLIENT_KINDS.includes(kind)) c.add("c.kind = ?", kind);
+
+  // What the group roster is: this list, narrowed to one folder, with every
+  // filter and sort it already has.
+  if (filter.groupId != null) c.add("c.group_id = ?", filter.groupId);
 
   return c;
 }
@@ -132,11 +151,23 @@ function validate(input: ClientInput): void {
   }
 }
 
+/**
+ * What kind of entity the payload describes. A form that says nothing is
+ * describing a person: that is what the book held before companies were in it,
+ * and every client already on file was entered by one of those forms.
+ */
+function kindOf(input: ClientInput): string {
+  const kind = blankToNull(input.kind);
+  return kind === null ? "individual" : normaliseClientKind(kind);
+}
+
 /** The column values shared by create and update, in the order both statements bind them. */
 function fields(input: ClientInput): Bind[] {
   const dob = blankToNull(input.dateOfBirth);
   const pan = blankToNull(input.pan);
   const gstin = blankToNull(input.gstin);
+  const contact = blankToNull(input.contactPerson);
+  const registration = blankToNull(input.registrationNo);
   return [
     tidyName(input.fullName),
     blankToNull(input.email),
@@ -155,6 +186,11 @@ function fields(input: ClientInput): Bind[] {
     input.preferredLanguage ?? "en",
     boolToInt(input.remindersOptedOut),
     blankToNull(input.notes),
+    kindOf(input),
+    input.groupId ?? null,
+    contact === null ? null : tidyName(contact),
+    blankToNull(input.contactDesignation),
+    registration === null ? null : registration.toUpperCase(),
   ];
 }
 
@@ -167,8 +203,9 @@ export function create(conn: Conn, input: ClientInput): number {
       .prepare(
         "INSERT INTO clients (client_code, full_name, email, phone, alt_phone, date_of_birth, " +
           "gender, address_line1, address_line2, city, state, pincode, occupation, pan, gstin, " +
-          "preferred_language, reminders_opted_out, notes) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "preferred_language, reminders_opted_out, notes, kind, group_id, contact_person, " +
+          "contact_designation, registration_no) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(code, ...fields(input));
     return Number(result.lastInsertRowid);
@@ -187,7 +224,9 @@ export function update(conn: Conn, id: number, input: ClientInput): void {
         "UPDATE clients SET full_name = ?, email = ?, phone = ?, alt_phone = ?, " +
           "date_of_birth = ?, gender = ?, address_line1 = ?, address_line2 = ?, " +
           "city = ?, state = ?, pincode = ?, occupation = ?, pan = ?, gstin = ?, " +
-          "preferred_language = ?, reminders_opted_out = ?, notes = ?, " +
+          "preferred_language = ?, reminders_opted_out = ?, notes = ?, kind = ?, " +
+          "group_id = COALESCE(?, group_id), contact_person = ?, " +
+          "contact_designation = ?, registration_no = ?, " +
           "client_code = COALESCE(?, client_code) WHERE id = ?",
       )
       .run(...fields(input), blankToNull(input.clientCode), id);

@@ -1,5 +1,14 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, MailWarning, Pencil, Plus, Trash2, Unlink, UserPlus } from "lucide-react";
+import {
+  ArrowLeft,
+  Building2,
+  MailWarning,
+  Pencil,
+  Plus,
+  Trash2,
+  Unlink,
+  UserPlus,
+} from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -57,6 +66,7 @@ export function ClientDetailPage() {
   const [renewing, setRenewing] = useState<Policy | undefined>();
   const [linking, setLinking] = useState<Relative | "new" | undefined>();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [groupPickerOpen, setGroupPickerOpen] = useState(false);
 
   const [filter, setFilter] = useState<PolicyFilter>({
     clientId,
@@ -134,6 +144,7 @@ export function ClientDetailPage() {
     );
   }
   const data = client.data;
+  const company = data.kind === "company";
 
   return (
     <div className="space-y-4">
@@ -148,7 +159,7 @@ export function ClientDetailPage() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-3.5">
           <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-brand-100 text-base font-semibold text-brand-800">
-            {initials(data.fullName)}
+            {company ? <Building2 className="size-6" /> : initials(data.fullName)}
           </span>
           <div>
             <h1 className="text-xl font-semibold text-slate-800">{data.fullName}</h1>
@@ -156,8 +167,19 @@ export function ClientDetailPage() {
               {data.clientCode}
               {data.city ? ` · ${data.city}` : ""}
               {data.occupation ? ` · ${data.occupation}` : ""}
+              {/* On a firm this is the person the agency actually rings, and it
+                  belongs where the name is rather than three cards down. */}
+              {company && data.contactPerson
+                ? ` · ${data.contactPerson}${data.contactDesignation ? ` (${data.contactDesignation})` : ""}`
+                : ""}
             </p>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {company && <Badge tone="info">Company</Badge>}
+              {data.groupName && (
+                <Link to={`/groups/${data.groupId}`}>
+                  <Badge tone="brand">{data.groupName}</Badge>
+                </Link>
+              )}
               <Badge tone={data.activePolicies > 0 ? "ok" : "muted"}>
                 {data.activePolicies} active
               </Badge>
@@ -205,8 +227,23 @@ export function ClientDetailPage() {
             <Detail label="Email" value={data.email} />
             <Detail label="Mobile" value={data.phone} />
             <Detail label="Alternate" value={data.altPhone} />
-            <Detail label="Date of birth" value={data.dateOfBirth ? date(data.dateOfBirth) : null} />
-            <Detail label="Gender" value={data.gender ? titleCase(data.gender) : null} />
+            {/* A company's details are a different set, not the same set left
+                blank: asking a firm for its gender reads as a bug, and its
+                registration number has nowhere to sit on a person. */}
+            {company ? (
+              <>
+                <Detail label="Contact" value={data.contactPerson} />
+                <Detail label="Designation" value={data.contactDesignation} />
+              </>
+            ) : (
+              <>
+                <Detail
+                  label="Date of birth"
+                  value={data.dateOfBirth ? date(data.dateOfBirth) : null}
+                />
+                <Detail label="Gender" value={data.gender ? titleCase(data.gender) : null} />
+              </>
+            )}
             <Detail
               label="Address"
               value={
@@ -216,6 +253,8 @@ export function ClientDetailPage() {
               }
             />
             <Detail label="PAN" value={data.pan} />
+            {company && <Detail label="GSTIN" value={data.gstin} />}
+            {company && <Detail label="Registration" value={data.registrationNo} />}
             <Detail label="Next expiry" value={data.nextExpiry ? date(data.nextExpiry) : null} />
           </dl>
           {data.notes && (
@@ -225,6 +264,10 @@ export function ClientDetailPage() {
           )}
         </Card>
 
+        {/* A firm has no spouse and no children. The card is still drawn if the
+            book somehow holds relatives for one, because hiding a card is not a
+            reason to hide what is in it. */}
+        {(!company || data.relatives > 0) && (
         <Card
           title="Family"
           action={
@@ -299,6 +342,9 @@ export function ClientDetailPage() {
             )}
           </AsyncPanel>
         </Card>
+        )}
+
+        <GroupsCard client={data} onJoin={() => setGroupPickerOpen(true)} />
 
         <Card title="Book value">
           <dl className="space-y-2.5 text-sm">
@@ -366,6 +412,9 @@ export function ClientDetailPage() {
       {linking && (
         <RelativeModal draft={linking} client={data} onClose={() => setLinking(undefined)} />
       )}
+      {groupPickerOpen && (
+        <GroupPickerModal client={data} onClose={() => setGroupPickerOpen(false)} />
+      )}
       {deleteOpen && (
         <DeleteClientModal
           client={data}
@@ -376,6 +425,206 @@ export function ClientDetailPage() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Where this client sits among the groups, from both ends.
+ *
+ * A client meets a group in two unrelated ways and the card says both, because
+ * one of them is easy to forget: they can be filed in one, and they can be the
+ * referrer of any number of others without being in a single one. The broker who
+ * placed ten firms is nobody's subsidiary, and their page would otherwise show
+ * no sign of the ten.
+ */
+function GroupsCard({ client, onJoin }: { client: Client; onJoin: () => void }) {
+  const toast = useToast();
+
+  const referred = useQuery({
+    queryKey: ["groupsHeadedBy", client.id],
+    queryFn: () =>
+      api.listGroups({
+        headClientId: client.id,
+        includeArchived: true,
+        page: 1,
+        pageSize: 25,
+        sort: "name",
+      }),
+  });
+
+  const leave = useMutation({
+    mutationFn: () => api.setClientGroup(client.id, null),
+    onSuccess: () => toast.success("Taken out of the group. They stay in the book."),
+    onError: (err: ApiError) => toast.error(err.message),
+  });
+
+  const heads = referred.data?.rows ?? [];
+
+  return (
+    <Card
+      title="Groups"
+      action={
+        client.groupId ? (
+          <Button size="sm" variant="ghost" onClick={onJoin}>
+            Move
+          </Button>
+        ) : (
+          <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={onJoin}>
+            Add to group
+          </Button>
+        )
+      }
+    >
+      {client.groupId ? (
+        <div className="flex items-center gap-2">
+          <Link
+            to={`/groups/${client.groupId}`}
+            className="group min-w-0 flex-1 rounded-lg bg-slate-50 px-3 py-2.5 hover:bg-slate-100"
+          >
+            <p className="truncate text-sm font-medium text-slate-700 group-hover:underline">
+              {client.groupName}
+            </p>
+            <p className="text-xs text-slate-400">Filed in this group</p>
+          </Link>
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={`Take ${client.fullName} out of ${client.groupName}`}
+            title={`Take ${client.fullName} out of ${client.groupName}`}
+            onClick={() => {
+              if (
+                window.confirm(
+                  `Take ${client.fullName} out of ${client.groupName}? They stay in the book with their policies.`,
+                )
+              ) {
+                leave.mutate();
+              }
+            }}
+          >
+            <Unlink className="size-3.5 text-slate-400" />
+          </Button>
+        </div>
+      ) : (
+        <p className="text-sm text-slate-400">
+          Not in a group. Groups hold clients who are worked as one book — a company's firms, or
+          everyone one introducer brought in.
+        </p>
+      )}
+
+      {heads.length > 0 && (
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-xs tracking-wide text-slate-400 uppercase">
+            Group head of {plural(heads.length, "group")}
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {heads.map((group) => (
+              <li key={group.id}>
+                <Link
+                  to={`/groups/${group.id}`}
+                  className="flex items-center gap-2 text-sm text-slate-700 hover:underline"
+                >
+                  <span className="min-w-0 truncate">{group.name}</span>
+                  <span className="shrink-0 text-xs text-slate-400">
+                    {plural(group.members, "member")}
+                  </span>
+                  {group.isArchived && <Badge tone="warning">Archived</Badge>}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-slate-400">
+            They referred these groups. Archiving a group leaves its referrer alone.
+          </p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Files a client into a group, or moves them from the one they are in.
+ *
+ * A client sits in one group at a time, so picking a new one is also how they
+ * leave the old — there is no unfiling step to forget.
+ */
+function GroupPickerModal({ client, onClose }: { client: Client; onClose: () => void }) {
+  const toast = useToast();
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const groups = useQuery({
+    queryKey: ["groups", { search, picker: true }],
+    queryFn: () => api.listGroups({ search, page: 1, pageSize: 8, sort: "name" }),
+  });
+
+  const join = useMutation({
+    mutationFn: (groupId: number) => api.setClientGroup(client.id, groupId),
+    onSuccess: () => {
+      toast.success("Added to the group");
+      onClose();
+    },
+    onError: (err: ApiError) => setError(err.message),
+  });
+
+  const rows = (groups.data?.rows ?? []).filter((group) => group.id !== client.groupId);
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      width="sm"
+      title={client.groupName ? `Move ${client.fullName}` : `Add ${client.fullName} to a group`}
+      description={
+        client.groupName
+          ? `They are in ${client.groupName} now. Picking another moves them across.`
+          : undefined
+      }
+      footer={<Button onClick={onClose}>Cancel</Button>}
+    >
+      <div className="space-y-4">
+        <Field label="Group">
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by name, code or referrer"
+            autoFocus
+          />
+        </Field>
+
+        {rows.length > 0 ? (
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+            {rows.map((group) => (
+              <li key={group.id}>
+                <button
+                  type="button"
+                  disabled={join.isPending}
+                  className="w-full cursor-pointer px-3 py-2 text-left hover:bg-slate-50"
+                  onClick={() => {
+                    setError(null);
+                    join.mutate(group.id);
+                  }}
+                >
+                  <p className="text-sm text-slate-700">{group.name}</p>
+                  <p className="text-xs text-slate-400">
+                    {group.groupCode}
+                    {` · ${plural(group.members, "member")}`}
+                    {group.headName ? ` · ${group.headName}` : ""}
+                  </p>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          !groups.isFetching && (
+            <p className="text-xs text-slate-400">
+              No groups match. Open one from the groups screen first.
+            </p>
+          )
+        )}
+
+        {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+      </div>
+    </Modal>
   );
 }
 

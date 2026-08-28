@@ -11,8 +11,8 @@ use crate::mail::{Mailer, SmtpConfig};
 use crate::models::*;
 use crate::reminders::SweepOptions;
 use crate::repo::{
-    clients, dashboard, documents, insurers, notifications, policies, products, relations, rules,
-    settings, templates,
+    clients, dashboard, documents, groups, insurers, notifications, policies, products, relations,
+    rules, settings, templates,
 };
 use crate::state::AppState;
 use crate::{exporter, mail, reminders, templating, util, vault};
@@ -310,6 +310,60 @@ pub fn unlink_clients(
     state
         .db()?
         .with_tx(|tx| relations::unlink(tx, client_id, related_client_id))
+}
+
+// ------------------------------------------------------------------ groups
+
+#[tauri::command]
+pub fn list_groups(state: State<AppState>, filter: GroupFilter) -> AppResult<Page<Group>> {
+    state.db()?.with(|conn| groups::list(conn, &filter))
+}
+
+#[tauri::command]
+pub fn get_group(state: State<AppState>, id: i64) -> AppResult<Group> {
+    state.db()?.with(|conn| groups::get(conn, id))
+}
+
+#[tauri::command]
+pub fn next_group_code(state: State<AppState>) -> AppResult<String> {
+    state.db()?.with(groups::next_group_code)
+}
+
+#[tauri::command]
+pub fn create_group(state: State<AppState>, input: GroupInput) -> AppResult<i64> {
+    state.db()?.with_tx(|tx| groups::create(tx, &input))
+}
+
+#[tauri::command]
+pub fn update_group(state: State<AppState>, id: i64, input: GroupInput) -> AppResult<()> {
+    state.db()?.with_tx(|tx| groups::update(tx, id, &input))
+}
+
+/// Answers with how many clients moved with the group, so the interface can say
+/// what it did rather than claim one thing happened.
+#[tauri::command]
+pub fn set_group_archived(state: State<AppState>, id: i64, archived: bool) -> AppResult<usize> {
+    state
+        .db()?
+        .with_tx(|tx| groups::set_archived(tx, id, archived))
+}
+
+/// Answers with how many clients the group let go. They stay in the book.
+#[tauri::command]
+pub fn delete_group(state: State<AppState>, id: i64) -> AppResult<usize> {
+    state.db()?.with_tx(|tx| groups::delete(tx, id))
+}
+
+/// `group_id` of `None` takes the client out of whatever group they are in.
+#[tauri::command]
+pub fn set_client_group(
+    state: State<AppState>,
+    client_id: i64,
+    group_id: Option<i64>,
+) -> AppResult<()> {
+    state
+        .db()?
+        .with_tx(|tx| groups::set_client_group(tx, client_id, group_id))
 }
 
 // ------------------------------------------------------------------ documents

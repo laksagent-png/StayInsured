@@ -14,6 +14,7 @@ import type {
   Document,
   EmailTemplate,
   FamilyEdge,
+  Group,
   ImportFieldInfo,
   ImportPreview,
   ImportReport,
@@ -75,6 +76,8 @@ export function showDate(iso: string): string {
 export interface Book {
   session: SessionState;
   clients: Client[];
+  /** The groups clients are filed in. A group is a row; a family is not. */
+  groups: Group[];
   /** How clients are related. A family is what these edges reach, nothing more. */
   relations: FamilyEdge[];
   /** Which clients each policy year covers, as `policy_members` holds it. */
@@ -138,6 +141,31 @@ const rawClients: RawClient[] = [
   { id: 9, clientCode: "CL-00009", fullName: "Sneha Sharma", phone: "98765 43211", city: "Pune", state: "Maharashtra", pincode: "411045", dateOfBirth: "1988-09-03", gender: "female", addressLine1: "Flat 402, Green Meadows", addressLine2: "Baner Road" },
   { id: 10, clientCode: "CL-00010", fullName: "Aarav Sharma", city: "Pune", state: "Maharashtra", pincode: "411045", dateOfBirth: "2016-01-19", gender: "male", addressLine1: "Flat 402, Green Meadows", addressLine2: "Baner Road" },
   { id: 11, clientCode: "CL-00011", fullName: "Lakshmi Iyer", city: "Bengaluru", state: "Karnataka", pincode: "560038", dateOfBirth: "1958-03-11", gender: "female", addressLine1: "301, Indiranagar Heights" },
+];
+
+/**
+ * The corporate half, which the plain book leaves out.
+ *
+ * A firm is a client with no birthday: what it has instead is somebody to ask
+ * for and a number the registrar issued. Both of these were introduced by Vikram
+ * Patel, which is what puts them in a group and makes him its head without being
+ * in it. Added by {@link withGroups} rather than sitting in every book, so a test
+ * about renewals is not also a test about companies.
+ */
+const rawCompanies: RawClient[] = [
+  { id: 12, clientCode: "CL-00012", fullName: "Patel Weaves Pvt Ltd", kind: "company", groupId: 1, email: "accounts@patelweaves.in", phone: "79 2630 4411", city: "Ahmedabad", state: "Gujarat", pincode: "380015", occupation: "Textile manufacturing", pan: "AABCP1429B", gstin: "24AABCP1429B1ZK", registrationNo: "U17111GJ2011PTC067421", contactPerson: "Nishita Patel", contactDesignation: "Finance Manager", addressLine1: "Unit 4, Pirana Industrial Estate" },
+  { id: 13, clientCode: "CL-00013", fullName: "Patel Logistics LLP", kind: "company", groupId: 1, email: "ops@patellogistics.in", phone: "79 2630 8890", city: "Ahmedabad", state: "Gujarat", pincode: "380023", occupation: "Freight and warehousing", pan: "AAEFP7712H", gstin: "24AAEFP7712H1Z9", registrationNo: "AAF-3391", contactPerson: "Devang Patel", contactDesignation: "Partner", addressLine1: "Warehouse 12, Naroda Road" },
+];
+
+/** A group is a row, unlike a family: named, entered deliberately, and endable. */
+const rawGroups: Array<Pick<Group, "id" | "groupCode" | "name" | "headClientId" | "notes">> = [
+  {
+    id: 1,
+    groupCode: "GR-00001",
+    name: "Patel Group",
+    headClientId: 3,
+    notes: "Both firms renew together each March; one invoice for the group.",
+  },
 ];
 
 /**
@@ -461,6 +489,40 @@ export function recountClients(
   }
 }
 
+/**
+ * Recomputes what a group row derives from its members, and the group name each
+ * client reads through the join.
+ *
+ * The rollups count the members and nobody else. A referrer who is not in the
+ * group they introduced brings none of their own policies to its total, which is
+ * the whole reason headship and membership are separate.
+ */
+export function recountGroups(groups: Group[], clients: Client[], policies: Policy[]): void {
+  for (const group of groups) {
+    const members = clients.filter((client) => client.groupId === group.id);
+    const held = policies.filter((policy) =>
+      members.some((member) => member.id === policy.clientId),
+    );
+    const active = held.filter((policy) => policy.status === "active");
+    const head = clients.find((client) => client.id === group.headClientId) ?? null;
+
+    group.members = members.length;
+    group.totalPolicies = held.length;
+    group.activePolicies = active.length;
+    group.premiumUnderManagement = active.reduce(
+      (total, policy) => total + (policy.premiumAmount ?? 0),
+      0,
+    );
+    group.nextExpiry = active.map((policy) => policy.expiryDate).sort()[0] ?? null;
+    group.headName = head?.fullName ?? null;
+    group.headClientCode = head?.clientCode ?? null;
+  }
+
+  for (const client of clients) {
+    client.groupName = groups.find((group) => group.id === client.groupId)?.name ?? null;
+  }
+}
+
 /** Recomputes the policy counts insurers and plans carry. */
 export function recountCatalogue(insurers: Insurer[], products: Product[], policies: Policy[]): void {
   for (const insurer of insurers) {
@@ -508,11 +570,17 @@ export function createBook(): Book {
     isArchived: false,
     createdAt: "2024-04-08T09:12:00Z",
     updatedAt: "2026-07-28T11:40:00Z",
+    kind: "individual",
+    groupId: null,
+    contactPerson: null,
+    contactDesignation: null,
+    registrationNo: null,
     activePolicies: 0,
     totalPolicies: 0,
     nextExpiry: null,
     relatives: 0,
     isDependent: false,
+    groupName: null,
     ...row,
   }));
 
@@ -562,6 +630,7 @@ export function createBook(): Book {
 
   const relations: FamilyEdge[] = rawRelations.map((row) => ({ ...row }));
 
+
   const templates: EmailTemplate[] = rawTemplates.map((row) => ({ ...row }));
 
   const rules: ReminderRule[] = rawRules.map((row) => ({
@@ -602,10 +671,11 @@ export function createBook(): Book {
       unlocked: true,
       canUseKeychain: true,
       encrypted: true,
-      schemaVersion: 5,
+      schemaVersion: 7,
       dataDir: "/Users/you/Library/Application Support/com.stayinsured.app",
     },
     clients,
+    groups: [],
     relations,
     cover: rawCover.map((row) => ({ ...row })),
     documents: rawDocuments.map((row) => ({ ...row })),
@@ -641,6 +711,124 @@ export function makePolicy(overrides: Partial<Policy> = {}): Policy {
       ? Math.round((policy.premiumAmount * policy.commissionRate) / 100)
       : null);
   return policy;
+}
+
+/**
+ * Adds the corporate side to a book: two firms, one group, and a referrer who is
+ * not in it.
+ *
+ * Kept out of every book on purpose. A company changes what the clients list
+ * counts, what the dashboard adds up and what the category mix shows, and a test
+ * about renewals should not have to know that. Ask for it where it is the point:
+ * `installBackend(withGroups(createBook()))`.
+ *
+ * The head is Vikram Patel, a client with a book of his own, so a test can tell
+ * apart what a group holds from what its referrer does.
+ */
+export function withGroups(book: Book): Book {
+  const template = book.clients[0];
+  for (const row of rawCompanies) {
+    book.clients.push({
+      ...template,
+      email: null,
+      phone: null,
+      altPhone: null,
+      dateOfBirth: null,
+      gender: null,
+      addressLine1: null,
+      addressLine2: null,
+      pan: null,
+      gstin: null,
+      notes: null,
+      remindersOptedOut: false,
+      isArchived: false,
+      relatives: 0,
+      isDependent: false,
+      ...row,
+    } as Client);
+  }
+
+  book.groups.push(
+    ...rawGroups.map((row) => ({
+      ...row,
+      headName: null,
+      headClientCode: null,
+      isArchived: false,
+      createdAt: "2025-02-19T10:05:00Z",
+      updatedAt: "2026-03-02T08:20:00Z",
+      members: 0,
+      activePolicies: 0,
+      totalPolicies: 0,
+      premiumUnderManagement: 0,
+      nextExpiry: null,
+    })),
+  );
+
+  // A policy each, so the rollups have something to add up and so the two firms
+  // can be shown holding cover that does not reach across the group.
+  book.policies.push(
+    makePolicy({
+      id: 14,
+      chainId: "chain-n",
+      policyYear: 1,
+      previousPolicyId: null,
+      policyNumber: "NB/GRP/220914",
+      clientId: 12,
+      clientCode: "CL-00012",
+      clientName: "Patel Weaves Pvt Ltd",
+      insurerId: 5,
+      insurerName: "Niva Bupa",
+      productId: 6,
+      productName: "ReAssure 2.0",
+      category: "health",
+      status: "active",
+      startDate: "2026-03-01",
+      expiryDate: "2027-02-28",
+      sumInsured: 5_000_000,
+      premiumAmount: 412_000,
+      gstAmount: 74_160,
+      commissionRate: 7.5,
+      commissionExpected: 30_900,
+      nomineeName: null,
+      nomineeRelation: null,
+      vehicleNumber: null,
+      notes: "Group health for 64 staff.",
+      isRenewed: false,
+    }),
+    makePolicy({
+      id: 15,
+      chainId: "chain-o",
+      policyYear: 1,
+      previousPolicyId: null,
+      policyNumber: "BA/MOT/771203",
+      clientId: 13,
+      clientCode: "CL-00013",
+      clientName: "Patel Logistics LLP",
+      insurerId: 7,
+      insurerName: "Bajaj Allianz",
+      productId: 5,
+      productName: null,
+      category: "motor",
+      status: "active",
+      startDate: "2026-03-01",
+      expiryDate: "2027-02-28",
+      sumInsured: 2_400_000,
+      premiumAmount: 86_500,
+      gstAmount: 15_570,
+      commissionRate: 10,
+      commissionExpected: 8_650,
+      nomineeName: null,
+      nomineeRelation: null,
+      vehicleNumber: "GJ01KL8842",
+      notes: null,
+      isRenewed: false,
+    }),
+  );
+
+  recountClients(book.clients, book.policies, book.relations);
+  recountCatalogue(book.insurers, book.products, book.policies);
+  recountGroups(book.groups, book.clients, book.policies);
+  return book;
 }
 
 /**
@@ -693,6 +881,7 @@ export function manyClients(book: Book, total: number): Book {
 export function createEmptyBook(): Book {
   const book = createBook();
   book.clients = [];
+  book.groups = [];
   book.policies = [];
   book.relations = [];
   book.cover = [];

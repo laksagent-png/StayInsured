@@ -1,6 +1,7 @@
 pub mod clients;
 pub mod dashboard;
 pub mod documents;
+pub mod groups;
 pub mod insurers;
 pub mod notifications;
 pub mod policies;

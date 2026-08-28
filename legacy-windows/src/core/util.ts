@@ -396,6 +396,35 @@ export function normaliseGender(raw: string): string | null {
   }
 }
 
+/** The words `clients.kind` accepts, matching its `CHECK`. */
+export const CLIENT_KINDS = ["individual", "company"];
+
+/**
+ * What a spreadsheet or a form means by the entity it is describing. Anything
+ * unrecognised is a person, because that is what the book held before companies
+ * were in it and a file that says nothing is describing the old kind.
+ */
+export function normaliseClientKind(raw: string): string {
+  switch (raw.trim().toLowerCase()) {
+    case "company":
+    case "corporate":
+    case "corporation":
+    case "business":
+    case "firm":
+    case "entity":
+    case "organisation":
+    case "organization":
+    case "employer":
+    case "pvt ltd":
+    case "private limited":
+    case "ltd":
+    case "llp":
+      return "company";
+    default:
+      return "individual";
+  }
+}
+
 /** The words `client_relations.relationship` accepts, matching its `CHECK`. */
 export const RELATIONSHIPS = [
   "spouse",

@@ -969,14 +969,14 @@ describe("settings, about", () => {
     await renderSettings();
 
     await waitFor(() => expect(about()).toHaveTextContent("StayInsured 1.2.3"));
-    expect(about()).toHaveTextContent("schema v5");
+    expect(about()).toHaveTextContent("schema v7");
   });
 
   it("still describes the app when the version cannot be read", async () => {
     tauriApp.getVersion.mockRejectedValue(new Error("No version here"));
     await renderSettings();
 
-    expect(about()).toHaveTextContent("schema v5");
+    expect(about()).toHaveTextContent("schema v7");
     expect(about()).toHaveTextContent("menu bar");
   });
 });

@@ -13,6 +13,7 @@ const SORTABLE: &[(&str, &str)] = &[
     ("updated", "c.updated_at"),
     ("policies", "total_policies"),
     ("nextExpiry", "next_expiry"),
+    ("group", "group_name"),
 ];
 
 const DERIVED: &str = "(SELECT COUNT(*) FROM policies p WHERE p.client_id = c.id AND p.status = 'active') AS active_policies, \
@@ -23,7 +24,8 @@ const DERIVED: &str = "(SELECT COUNT(*) FROM policies p WHERE p.client_id = c.id
         WHERE r.client_id = c.id OR r.related_client_id = c.id) AS relatives, \
      (SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM policies p WHERE p.client_id = c.id) \
                    AND EXISTS (SELECT 1 FROM client_relations r WHERE r.related_client_id = c.id) \
-                  THEN 1 ELSE 0 END) AS is_dependent";
+                  THEN 1 ELSE 0 END) AS is_dependent, \
+     (SELECT g.name FROM client_groups g WHERE g.id = c.group_id) AS group_name";
 
 /// A client with no policy of their own who is listed under somebody else — a
 /// spouse on a floater, a dependent child. They are clients like any other and
@@ -32,6 +34,12 @@ const DERIVED: &str = "(SELECT COUNT(*) FROM policies p WHERE p.client_id = c.id
 ///
 /// The dashboard counts through this too: a child with no email address is not a
 /// client the agency is failing to reach.
+///
+/// Group membership is deliberately no part of this. A subsidiary that holds no
+/// cover of its own yet is a client the agency browses to and chases, not
+/// somebody's dependent to be folded away — which is why groups are a column on
+/// this table and never an edge in `client_relations`, where they would land
+/// inside this test and empty half a corporate book out of the list.
 pub const IS_DEPENDENT: &str = "NOT EXISTS (SELECT 1 FROM policies p WHERE p.client_id = c.id) \
      AND EXISTS (SELECT 1 FROM client_relations r WHERE r.related_client_id = c.id)";
 
@@ -90,6 +98,20 @@ fn build_conditions(filter: &ClientFilter) -> Conditions {
     }
     if filter.missing_email.unwrap_or(false) {
         c.add_raw("(c.email IS NULL OR c.email = '')");
+    }
+    // A word outside the vocabulary is dropped rather than passed to SQL, so an
+    // out-of-date screen asking for a kind the book does not have shows the book
+    // rather than nothing at all.
+    if let Some(kind) = blank_to_none(filter.kind.clone())
+        .map(|k| k.to_lowercase())
+        .filter(|k| util::CLIENT_KINDS.contains(&k.as_str()))
+    {
+        c.add("c.kind = ?", Value::Text(kind));
+    }
+    // What the group roster is: this list, narrowed to one folder, with every
+    // filter and sort it already has.
+    if let Some(group_id) = filter.group_id {
+        c.add("c.group_id = ?", Value::Integer(group_id));
     }
 
     c
@@ -181,8 +203,10 @@ pub fn create(conn: &Connection, input: &ClientInput) -> AppResult<i64> {
     conn.execute(
         "INSERT INTO clients (client_code, full_name, email, phone, alt_phone, date_of_birth, \
              gender, address_line1, address_line2, city, state, pincode, occupation, pan, gstin, \
-             preferred_language, reminders_opted_out, notes) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+             preferred_language, reminders_opted_out, notes, kind, group_id, contact_person, \
+             contact_designation, registration_no) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, \
+             ?19, ?20, ?21, ?22, ?23)",
         params![
             code,
             util::tidy_name(&input.full_name),
@@ -205,6 +229,11 @@ pub fn create(conn: &Connection, input: &ClientInput) -> AppResult<i64> {
                 .unwrap_or_else(|| "en".into()),
             input.reminders_opted_out.unwrap_or(false) as i64,
             blank_to_none(input.notes.clone()),
+            kind_of(input),
+            input.group_id,
+            blank_to_none(input.contact_person.clone()).map(|p| util::tidy_name(&p)),
+            blank_to_none(input.contact_designation.clone()),
+            blank_to_none(input.registration_no.clone()).map(|r| r.to_uppercase()),
         ],
     )
     .map_err(map_unique_error)?;
@@ -221,7 +250,9 @@ pub fn update(conn: &Connection, id: i64, input: &ClientInput) -> AppResult<()> 
                  date_of_birth = ?6, gender = ?7, address_line1 = ?8, address_line2 = ?9, \
                  city = ?10, state = ?11, pincode = ?12, occupation = ?13, pan = ?14, gstin = ?15, \
                  preferred_language = ?16, reminders_opted_out = ?17, notes = ?18, \
-                 client_code = COALESCE(?19, client_code) \
+                 client_code = COALESCE(?19, client_code), kind = ?20, \
+                 group_id = COALESCE(?21, group_id), contact_person = ?22, \
+                 contact_designation = ?23, registration_no = ?24 \
              WHERE id = ?1",
             params![
                 id,
@@ -246,6 +277,11 @@ pub fn update(conn: &Connection, id: i64, input: &ClientInput) -> AppResult<()> 
                 input.reminders_opted_out.unwrap_or(false) as i64,
                 blank_to_none(input.notes.clone()),
                 blank_to_none(input.client_code.clone()),
+                kind_of(input),
+                input.group_id,
+                blank_to_none(input.contact_person.clone()).map(|p| util::tidy_name(&p)),
+                blank_to_none(input.contact_designation.clone()),
+                blank_to_none(input.registration_no.clone()).map(|r| r.to_uppercase()),
             ],
         )
         .map_err(map_unique_error)?;
@@ -254,6 +290,20 @@ pub fn update(conn: &Connection, id: i64, input: &ClientInput) -> AppResult<()> 
         return Err(AppError::NotFound("Client"));
     }
     Ok(())
+}
+
+/// What kind of entity the payload describes. A form that says nothing is
+/// describing a person: that is what the book held before companies were in it,
+/// and every client already on file was entered by one of those forms.
+///
+/// Membership is not settled the same way. `group_id` is coalesced on update, so
+/// silence leaves a client in the group they are in rather than tipping them out
+/// of it — moving between groups goes through `groups::set_client_group`, which
+/// is the operation that knows how to say "no group" out loud.
+fn kind_of(input: &ClientInput) -> String {
+    blank_to_none(input.kind.clone())
+        .map(|k| util::normalise_client_kind(&k))
+        .unwrap_or_else(|| "individual".into())
 }
 
 pub fn set_archived(conn: &Connection, id: i64, archived: bool) -> AppResult<()> {

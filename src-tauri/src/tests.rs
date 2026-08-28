@@ -9,14 +9,15 @@ use crate::exporter;
 use crate::importer::{self, ImportOptions};
 use crate::mail::{self, Outgoing};
 use crate::models::{
-    ClientFilter, ClientInput, DocumentInput, EmailTemplateInput, InsurerInput, NotificationFilter,
-    PolicyFilter, PolicyInput, ProductInput, RelationInput, ReminderRuleInput, RenewalInput,
+    ClientFilter, ClientInput, DocumentInput, EmailTemplateInput, GroupFilter, GroupInput,
+    InsurerInput, NotificationFilter, PolicyFilter, PolicyInput, ProductInput, RelationInput,
+    ReminderRuleInput, RenewalInput,
 };
 use crate::query;
 use crate::reminders::{self, NoAlerts, SweepOptions};
 use crate::repo::{
-    clients, dashboard, documents, insurers, notifications, policies, products, relations, rules,
-    settings, templates,
+    clients, dashboard, documents, groups, insurers, notifications, policies, products, relations,
+    rules, settings, templates,
 };
 use crate::templating;
 use crate::util;
@@ -147,12 +148,26 @@ fn a_book_edited_before_the_fix_has_its_search_index_put_right() {
             // Wind the book back to what 0.0.3 wrote: the update trigger without
             // the WHEN clause, the version stamp that went with it, an index left
             // disagreeing with the client list the way an edit under that trigger
-            // could leave it, and the member tables 005 has since replaced —
-            // including a daughter, so that re-applying has a family to move.
+            // could leave it, the member tables 005 has since replaced —
+            // including a daughter, so that re-applying has a family to move —
+            // the health questions 006 has since added, and the groups 007 has.
+            //
+            // Every step after 3 has to replay, so the fixture has to be a book
+            // that has genuinely had none of them. A migration left in place
+            // here would be re-applied onto its own result and fail on that
+            // rather than on anything this test is about.
             conn.execute_batch(&format!(
                 "DROP TRIGGER clients_fts_au; \
                  UPDATE clients SET full_name = 'Rohit Kumar Sharma' WHERE id = {id}; \
                  {OLD_TRIGGER} \
+                 DROP INDEX idx_clients_group; \
+                 DROP INDEX idx_clients_kind; \
+                 ALTER TABLE clients DROP COLUMN group_id; \
+                 ALTER TABLE clients DROP COLUMN kind; \
+                 ALTER TABLE clients DROP COLUMN contact_person; \
+                 ALTER TABLE clients DROP COLUMN contact_designation; \
+                 ALTER TABLE clients DROP COLUMN registration_no; \
+                 DROP TABLE client_groups; \
                  DROP VIEW policy_overview; \
                  ALTER TABLE policies DROP COLUMN variant; \
                  ALTER TABLE policies DROP COLUMN riders; \
@@ -1146,6 +1161,490 @@ fn archiving_a_family_moves_the_household_and_stops() {
             let back = clients::set_family_archived(conn, holder, false)?;
             assert_eq!(back, 2, "and it reverses");
             assert!(!clients::get(conn, holder)?.is_archived);
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// A company client, and a group of them under the referrer who brought them in.
+/// Returns the group and its two members, with the referrer left outside it.
+fn a_group_of_two(conn: &rusqlite::Connection) -> crate::error::AppResult<(i64, i64, i64, i64)> {
+    let referrer = clients::create(conn, &sample_client("Anil Mehta"))?;
+    let group = groups::create(
+        conn,
+        &GroupInput {
+            name: "Sundaram Group".into(),
+            head_client_id: Some(referrer),
+            ..Default::default()
+        },
+    )?;
+    let first = clients::create(
+        conn,
+        &ClientInput {
+            kind: Some("company".into()),
+            group_id: Some(group),
+            ..sample_client("Sundaram Textiles")
+        },
+    )?;
+    let second = clients::create(
+        conn,
+        &ClientInput {
+            kind: Some("company".into()),
+            group_id: Some(group),
+            ..sample_client("Sundaram Logistics")
+        },
+    )?;
+    Ok((group, referrer, first, second))
+}
+
+#[test]
+fn a_group_is_a_folder_and_a_family_is_not() {
+    let temp = TempDb::new("group-shape");
+    temp.db
+        .with(|conn| {
+            let (group, referrer, first, _second) = a_group_of_two(conn)?;
+
+            let saved = groups::get(conn, group)?;
+            assert_eq!(saved.group_code, "GR-00001");
+            assert_eq!(saved.members, 2, "the two companies, not the referrer");
+            assert_eq!(saved.head_client_id, Some(referrer));
+            assert_eq!(saved.head_name.as_deref(), Some("Anil Mehta"));
+
+            // The whole point of the separation: being in a group is not being
+            // related to anybody. Nothing the family code walks has changed.
+            let company = clients::get(conn, first)?;
+            assert_eq!(company.relatives, 0);
+            assert_eq!(company.group_name.as_deref(), Some("Sundaram Group"));
+            assert_eq!(company.kind, "company");
+            assert!(relations::list_for_client(conn, first)?.is_empty());
+            assert_eq!(
+                relations::family(conn, first)?.members.len(),
+                1,
+                "a company's family is itself, however many firms share its folder"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// The failure the column shape exists to prevent. Held as a relationship edge,
+/// a subsidiary with no cover of its own would satisfy every part of the
+/// dependent test and drop out of the list the agent browses.
+#[test]
+fn a_company_in_a_group_is_not_a_dependent() {
+    let temp = TempDb::new("group-dependents");
+    temp.db
+        .with(|conn| {
+            let (_group, _referrer, first, _second) = a_group_of_two(conn)?;
+
+            assert!(
+                !clients::get(conn, first)?.is_dependent,
+                "a subsidiary yet to place cover is still a client in its own right"
+            );
+
+            // Browsing hides dependents. It must not hide these.
+            let browsed = clients::list(conn, &ClientFilter::default())?;
+            assert!(
+                browsed.rows.iter().any(|c| c.id == first),
+                "a company holding no policy yet is still browsed to"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn deleting_a_group_leaves_its_companies_standing() {
+    let temp = TempDb::new("group-delete");
+    temp.db
+        .with(|conn| {
+            let (group, _referrer, first, second) = a_group_of_two(conn)?;
+
+            let released = groups::delete(conn, group)?;
+            assert_eq!(released, 2, "and it says how many it let go");
+
+            for company in [first, second] {
+                let saved = clients::get(conn, company)?;
+                assert_eq!(saved.group_id, None, "out of the folder");
+                assert_eq!(saved.group_name, None);
+            }
+            assert!(matches!(
+                groups::get(conn, group),
+                Err(crate::error::AppError::NotFound(_))
+            ));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn deleting_the_referrer_leaves_the_group_standing() {
+    let temp = TempDb::new("group-referrer-delete");
+    temp.db
+        .with(|conn| {
+            let (group, referrer, first, _second) = a_group_of_two(conn)?;
+
+            clients::delete(conn, referrer)?;
+
+            let saved = groups::get(conn, group)?;
+            assert_eq!(
+                saved.head_client_id, None,
+                "the introducer is gone and the group is not"
+            );
+            assert_eq!(saved.members, 2);
+            assert_eq!(clients::get(conn, first)?.group_id, Some(group));
+
+            // Naming a new referrer is how such a group is put right, and it is
+            // asked for rather than left blank.
+            let nobody = groups::update(
+                conn,
+                group,
+                &GroupInput {
+                    name: "Sundaram Group".into(),
+                    head_client_id: None,
+                    ..Default::default()
+                },
+            );
+            assert!(matches!(nobody, Err(crate::error::AppError::Validation(_))));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn archiving_a_group_moves_its_members_and_not_its_referrer() {
+    let temp = TempDb::new("group-archive");
+    temp.db
+        .with(|conn| {
+            let (group, referrer, first, second) = a_group_of_two(conn)?;
+
+            let moved = groups::set_archived(conn, group, true)?;
+            assert_eq!(moved, 2);
+            assert!(clients::get(conn, first)?.is_archived);
+            assert!(clients::get(conn, second)?.is_archived);
+            assert!(groups::get(conn, group)?.is_archived);
+            assert!(
+                !clients::get(conn, referrer)?.is_archived,
+                "the introducer is not part of the book he introduced"
+            );
+
+            let back = groups::set_archived(conn, group, false)?;
+            assert_eq!(back, 2, "and it reverses");
+            assert!(!clients::get(conn, first)?.is_archived);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_group_needs_the_client_who_referred_it() {
+    let temp = TempDb::new("group-head-required");
+    temp.db
+        .with(|conn| {
+            let headless = groups::create(
+                conn,
+                &GroupInput {
+                    name: "Nobody's Group".into(),
+                    head_client_id: None,
+                    ..Default::default()
+                },
+            );
+            assert!(matches!(
+                headless,
+                Err(crate::error::AppError::Validation(_))
+            ));
+
+            let stranger = groups::create(
+                conn,
+                &GroupInput {
+                    name: "Ghost Group".into(),
+                    head_client_id: Some(9_999),
+                    ..Default::default()
+                },
+            );
+            assert!(
+                matches!(stranger, Err(crate::error::AppError::Validation(_))),
+                "a referrer who is not in the book is refused in words, not by a foreign key"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_group_code_and_name_belong_to_one_group() {
+    let temp = TempDb::new("group-codes");
+    temp.db
+        .with(|conn| {
+            let (_group, referrer, _first, _second) = a_group_of_two(conn)?;
+
+            let same_name = groups::create(
+                conn,
+                &GroupInput {
+                    name: "Sundaram Group".into(),
+                    head_client_id: Some(referrer),
+                    ..Default::default()
+                },
+            );
+            assert!(matches!(
+                same_name,
+                Err(crate::error::AppError::Conflict(_))
+            ));
+
+            let same_code = groups::create(
+                conn,
+                &GroupInput {
+                    group_code: Some("GR-00001".into()),
+                    name: "Another Group".into(),
+                    head_client_id: Some(referrer),
+                    ..Default::default()
+                },
+            );
+            assert!(matches!(
+                same_code,
+                Err(crate::error::AppError::Conflict(_))
+            ));
+
+            // The counter reads the highest code, so one typed by hand moves the
+            // automatic ones past it rather than colliding.
+            let next = groups::create(
+                conn,
+                &GroupInput {
+                    name: "Third Group".into(),
+                    head_client_id: Some(referrer),
+                    ..Default::default()
+                },
+            )?;
+            assert_eq!(groups::get(conn, next)?.group_code, "GR-00002");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_client_belongs_to_one_group_at_a_time() {
+    let temp = TempDb::new("group-membership");
+    temp.db
+        .with(|conn| {
+            let (group, referrer, first, _second) = a_group_of_two(conn)?;
+            let other = groups::create(
+                conn,
+                &GroupInput {
+                    name: "Coromandel Group".into(),
+                    head_client_id: Some(referrer),
+                    ..Default::default()
+                },
+            )?;
+
+            groups::set_client_group(conn, first, Some(other))?;
+            assert_eq!(clients::get(conn, first)?.group_id, Some(other));
+            assert_eq!(groups::get(conn, group)?.members, 1, "moved, not copied");
+            assert_eq!(groups::get(conn, other)?.members, 1);
+
+            groups::set_client_group(conn, first, None)?;
+            assert_eq!(clients::get(conn, first)?.group_id, None);
+            assert_eq!(groups::get(conn, other)?.members, 0);
+
+            let nowhere = groups::set_client_group(conn, first, Some(9_999));
+            assert!(matches!(nowhere, Err(crate::error::AppError::NotFound(_))));
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// The client form sends every column it draws. It draws no group, so saving a
+/// changed phone number must not empty the folder the client sits in.
+#[test]
+fn editing_a_client_leaves_the_group_they_are_in_alone() {
+    let temp = TempDb::new("group-untouched");
+    temp.db
+        .with(|conn| {
+            let (group, _referrer, first, _second) = a_group_of_two(conn)?;
+
+            clients::update(
+                conn,
+                first,
+                &ClientInput {
+                    kind: Some("company".into()),
+                    group_id: None,
+                    phone: Some("99887 76655".into()),
+                    ..sample_client("Sundaram Textiles")
+                },
+            )?;
+
+            let saved = clients::get(conn, first)?;
+            assert_eq!(saved.group_id, Some(group), "still in the folder");
+            assert_eq!(saved.phone.as_deref(), Some("9988776655"));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_group_sums_the_book_of_its_members_and_not_its_referrer() {
+    let temp = TempDb::new("group-rollup");
+    temp.db
+        .with(|conn| {
+            let (group, referrer, first, second) = a_group_of_two(conn)?;
+            let insurer = insurers::find_or_create(conn, "Niva Bupa")?;
+
+            policies::create(conn, &sample_policy(first, insurer, "G-1", "2027-06-30"))?;
+            policies::create(conn, &sample_policy(second, insurer, "G-2", "2027-03-31"))?;
+            // The referrer's own cover is his, not the group's.
+            policies::create(conn, &sample_policy(referrer, insurer, "G-3", "2026-12-31"))?;
+            policies::sync_statuses(conn)?;
+
+            let saved = groups::get(conn, group)?;
+            assert_eq!(saved.total_policies, 2);
+            assert_eq!(saved.active_policies, 2);
+            assert_eq!(saved.premium_under_management, 49_000.0);
+            assert_eq!(
+                saved.next_expiry.as_deref(),
+                Some("2027-03-31"),
+                "the nearest renewal among the members"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// Group membership is a filing arrangement, not a relationship. It must not
+/// make one company an insurable life on another's policy.
+#[test]
+fn a_policy_does_not_cover_another_company_in_the_group() {
+    let temp = TempDb::new("group-cover");
+    temp.db
+        .with(|conn| {
+            let (_group, _referrer, first, second) = a_group_of_two(conn)?;
+            let insurer = insurers::find_or_create(conn, "Niva Bupa")?;
+            let policy =
+                policies::create(conn, &sample_policy(first, insurer, "G-1", "2027-06-30"))?;
+
+            policies::set_members(conn, policy, &[first, second])?;
+            assert_eq!(
+                policies::insured_of(conn, policy)?,
+                vec![first],
+                "the holder, and not the firm that merely shares its folder"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_company_is_a_client_without_a_date_of_birth() {
+    let temp = TempDb::new("company-kind");
+    temp.db
+        .with(|conn| {
+            let company = clients::create(
+                conn,
+                &ClientInput {
+                    kind: Some("Pvt Ltd".into()),
+                    contact_person: Some("meera  raghavan".into()),
+                    contact_designation: Some("HR Manager".into()),
+                    registration_no: Some("u72900tn2011ptc079... ".into()),
+                    gstin: Some("33aabcs1429b1zn".into()),
+                    ..sample_client("Sundaram Textiles")
+                },
+            )?;
+
+            let saved = clients::get(conn, company)?;
+            assert_eq!(saved.kind, "company", "however the register spells it");
+            assert_eq!(saved.contact_person.as_deref(), Some("Meera Raghavan"));
+            assert_eq!(saved.contact_designation.as_deref(), Some("HR Manager"));
+            assert_eq!(saved.gstin.as_deref(), Some("33AABCS1429B1ZN"));
+            assert!(saved.date_of_birth.is_none() && saved.gender.is_none());
+
+            // A payload that says nothing is describing a person, which is what
+            // every client entered before companies existed was.
+            let person = clients::create(conn, &sample_client("Rajesh Kumar"))?;
+            assert_eq!(clients::get(conn, person)?.kind, "individual");
+
+            let only_firms = clients::list(
+                conn,
+                &ClientFilter {
+                    kind: Some("company".into()),
+                    ..Default::default()
+                },
+            )?;
+            assert_eq!(only_firms.total, 1);
+            assert_eq!(only_firms.rows[0].id, company);
+
+            // A word the book does not know is dropped, so an out-of-date screen
+            // shows the book rather than nothing at all.
+            let unknown = clients::list(
+                conn,
+                &ClientFilter {
+                    kind: Some("charity".into()),
+                    ..Default::default()
+                },
+            )?;
+            assert_eq!(unknown.total, 2);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_group_list_is_searched_by_its_name_its_code_or_its_referrer() {
+    let temp = TempDb::new("group-search");
+    temp.db
+        .with(|conn| {
+            let (group, referrer, _first, _second) = a_group_of_two(conn)?;
+
+            // Headship read from the referrer's end, which is what makes a group
+            // head's page possible without a command of its own.
+            let referred = groups::list(
+                conn,
+                &GroupFilter {
+                    head_client_id: Some(referrer),
+                    ..Default::default()
+                },
+            )?;
+            assert_eq!(referred.total, 1);
+            assert_eq!(referred.rows[0].id, group);
+            assert_eq!(
+                groups::list(
+                    conn,
+                    &GroupFilter {
+                        head_client_id: Some(9_999),
+                        ..Default::default()
+                    }
+                )?
+                .total,
+                0,
+                "a client who introduced nobody heads nothing"
+            );
+
+            for term in ["Sundaram", "GR-00001", "Mehta"] {
+                let found = groups::list(
+                    conn,
+                    &GroupFilter {
+                        search: Some(term.into()),
+                        ..Default::default()
+                    },
+                )?;
+                assert_eq!(found.total, 1, "searching for {term}");
+                assert_eq!(found.rows[0].id, group);
+            }
+
+            groups::set_archived(conn, group, true)?;
+            assert_eq!(
+                groups::list(conn, &GroupFilter::default())?.total,
+                0,
+                "an archived group is out of the way until it is asked for"
+            );
+            assert_eq!(
+                groups::list(
+                    conn,
+                    &GroupFilter {
+                        include_archived: Some(true),
+                        ..Default::default()
+                    }
+                )?
+                .total,
+                1
+            );
             Ok(())
         })
         .unwrap();
@@ -2621,6 +3120,246 @@ Broken Row,,,,,,,,,,,,\n",
         .unwrap();
 }
 
+/// Imports a file with the mapping the previewer suggests, which is the path the
+/// screen takes and so puts the sheet's own headers through the matcher on the
+/// way in rather than handing the importer a mapping written by the test.
+fn import_sheet(temp: &TempDb, path: &std::path::Path) -> importer::ImportReport {
+    let mapping = importer::preview(path, None).unwrap().suggested_mapping;
+    temp.db
+        .with(|conn| {
+            importer::run(
+                conn,
+                &ImportOptions {
+                    path: path.to_string_lossy().to_string(),
+                    sheet: None,
+                    mapping,
+                    default_category: None,
+                    update_existing: Some(true),
+                    dry_run: Some(false),
+                },
+            )
+        })
+        .unwrap()
+}
+
+/// The client a sheet called this, read back the way a screen reads it.
+fn client_named(
+    conn: &rusqlite::Connection,
+    name: &str,
+) -> crate::error::AppResult<crate::models::Client> {
+    let id: i64 = conn.query_row(
+        "SELECT id FROM clients WHERE lower(full_name) = lower(?1)",
+        rusqlite::params![name],
+        |row| row.get(0),
+    )?;
+    clients::get(conn, id)
+}
+
+#[test]
+fn a_sheet_that_says_company_stores_one_and_a_sheet_that_says_nothing_stores_a_person() {
+    let temp = TempDb::new("import-kind");
+    let path = temp.dir.join("mixed.csv");
+    std::fs::write(
+        &path,
+        "Customer Name,Entity Type,Policy No,Insurance Company,Valid Till\n\
+Sundaram Textiles Pvt Ltd,Pvt Ltd,GRP/2026/1,Star Health,31/03/2027\n\
+Rohit Sharma,,HS/2026/2,Star Health,31/03/2027\n\
+Anita Sharma,Individual,HS/2026/3,Star Health,31/03/2027\n",
+    )
+    .unwrap();
+
+    assert_eq!(import_sheet(&temp, &path).clients_created, 3);
+
+    temp.db
+        .with(|conn| {
+            assert_eq!(
+                client_named(conn, "Sundaram Textiles Pvt Ltd")?.kind,
+                "company",
+                "\"Pvt Ltd\" is not one of the two stored words, and still names a firm"
+            );
+            assert_eq!(
+                client_named(conn, "Rohit Sharma")?.kind,
+                "individual",
+                "a blank column describes the kind of client the book held first"
+            );
+            assert_eq!(client_named(conn, "Anita Sharma")?.kind, "individual");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_group_named_in_a_sheet_is_opened_once_however_the_rows_spell_it() {
+    let temp = TempDb::new("import-group");
+    let path = temp.dir.join("corporate.csv");
+    std::fs::write(&path, CORPORATE_SHEET).unwrap();
+
+    assert_eq!(import_sheet(&temp, &path).clients_created, 2);
+
+    temp.db
+        .with(|conn| {
+            let listed = groups::list(conn, &GroupFilter::default())?;
+            assert_eq!(
+                listed.total, 1,
+                "two spellings of one name are one folder, not two"
+            );
+
+            let folder = &listed.rows[0];
+            assert_eq!(
+                folder.name, "Patel Group",
+                "spelt as the first row spelt it"
+            );
+            assert_eq!(folder.group_code, "GR-00001");
+            assert_eq!(folder.members, 2);
+
+            for company in ["Patel Textiles", "Patel Logistics"] {
+                assert_eq!(
+                    client_named(conn, company)?.group_name.as_deref(),
+                    Some("Patel Group")
+                );
+            }
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_group_opened_by_import_has_no_referrer_until_somebody_names_one() {
+    let temp = TempDb::new("import-group-head");
+    let path = temp.dir.join("corporate.csv");
+    std::fs::write(&path, CORPORATE_SHEET).unwrap();
+    import_sheet(&temp, &path);
+
+    temp.db
+        .with(|conn| {
+            let listed = groups::list(conn, &GroupFilter::default())?;
+            let folder = &listed.rows[0];
+            assert_eq!(
+                folder.head_client_id, None,
+                "the sheet carried the grouping and nothing about the introduction"
+            );
+
+            // Which is the state deleting a referrer already leaves behind, and
+            // it is put right the same way: by naming somebody, with the folder
+            // keeping everyone in it.
+            let referrer = clients::create(conn, &sample_client("Anil Mehta"))?;
+            groups::update(
+                conn,
+                folder.id,
+                &GroupInput {
+                    name: folder.name.clone(),
+                    head_client_id: Some(referrer),
+                    ..Default::default()
+                },
+            )?;
+
+            let named = groups::get(conn, folder.id)?;
+            assert_eq!(named.head_client_id, Some(referrer));
+            assert_eq!(named.head_name.as_deref(), Some("Anil Mehta"));
+            assert_eq!(named.members, 2, "naming the referrer moved nobody");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_second_import_that_says_nothing_about_groups_leaves_the_filing_alone() {
+    let temp = TempDb::new("import-group-quiet");
+    let corporate = temp.dir.join("corporate.csv");
+    std::fs::write(&corporate, CORPORATE_SHEET).unwrap();
+    import_sheet(&temp, &corporate);
+
+    // The same two companies from a system that has never heard of groups.
+    let plain = temp.dir.join("plain.csv");
+    std::fs::write(
+        &plain,
+        "Customer Name,Policy No,Insurance Company,Valid Till\n\
+Patel Textiles,GRP/2026/1,Star Health,31/03/2027\n\
+Patel Logistics,GRP/2026/2,Star Health,31/03/2027\n",
+    )
+    .unwrap();
+    let second = import_sheet(&temp, &plain);
+    assert_eq!(second.clients_created, 0, "the same two clients were found");
+
+    temp.db
+        .with(|conn| {
+            let listed = groups::list(conn, &GroupFilter::default())?;
+            assert_eq!(listed.total, 1);
+            assert_eq!(
+                listed.rows[0].members, 2,
+                "a sheet with no group column empties no folders"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn an_import_can_promote_a_client_to_a_company_but_never_demote_one() {
+    let temp = TempDb::new("import-kind-promote");
+    temp.db
+        .with(|conn| {
+            clients::create(
+                conn,
+                &ClientInput {
+                    kind: Some("company".into()),
+                    ..sample_client("Sharma & Sons")
+                },
+            )?;
+            clients::create(conn, &sample_client("Deepak Shah"))?;
+            Ok(())
+        })
+        .unwrap();
+
+    // A retail sheet listing the firm under the name its director trades by, and
+    // a corporate sheet that knows what Deepak Shah's consultancy actually is.
+    let path = temp.dir.join("retail.csv");
+    std::fs::write(
+        &path,
+        "Customer Name,Client Type,Policy No,Insurance Company,Valid Till\n\
+Sharma & Sons,Individual,HS/2026/1,Star Health,31/03/2027\n\
+Deepak Shah,Corporate,HS/2026/2,Star Health,31/03/2027\n",
+    )
+    .unwrap();
+    import_sheet(&temp, &path);
+
+    temp.db
+        .with(|conn| {
+            assert_eq!(
+                client_named(conn, "Sharma & Sons")?.kind,
+                "company",
+                "one sheet's opinion does not turn a firm back into a person"
+            );
+            assert_eq!(client_named(conn, "Deepak Shah")?.kind, "company");
+            Ok(())
+        })
+        .unwrap();
+
+    // And a sheet that offers no opinion at all leaves both of them alone.
+    let quiet = temp.dir.join("quiet.csv");
+    std::fs::write(
+        &quiet,
+        "Customer Name,Policy No,Insurance Company,Valid Till\n\
+Sharma & Sons,HS/2026/1,Star Health,31/03/2027\n\
+Deepak Shah,HS/2026/2,Star Health,31/03/2027\n",
+    )
+    .unwrap();
+    import_sheet(&temp, &quiet);
+
+    temp.db
+        .with(|conn| {
+            assert_eq!(client_named(conn, "Sharma & Sons")?.kind, "company");
+            assert_eq!(client_named(conn, "Deepak Shah")?.kind, "company");
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// Two companies filed together, spelt the way two rows of one sheet get spelt.
+const CORPORATE_SHEET: &str = "Customer Name,Client Group,Policy No,Insurance Company,Valid Till\n\
+Patel Textiles,Patel Group,GRP/2026/1,Star Health,31/03/2027\n\
+Patel Logistics,patel group,GRP/2026/2,Star Health,31/03/2027\n";
+
 #[test]
 fn import_refuses_an_unmapped_required_field() {
     let temp = TempDb::new("import-guard");
@@ -3320,7 +4059,7 @@ fn an_export_carries_every_column_and_reads_like_the_screen() {
             assert_eq!(headers.last(), Some(&"Notes"));
             assert_eq!(
                 headers.len(),
-                18,
+                24,
                 "a column added to the export needs a line in the guide too"
             );
 
@@ -3333,6 +4072,76 @@ fn an_export_carries_every_column_and_reads_like_the_screen() {
                 "an opt-out reads as words, not as 0 or 1"
             );
             assert!(lines.next().is_none(), "one client, one row");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_client_export_carries_the_type_the_group_and_the_corporate_columns() {
+    let temp = TempDb::new("export-corporate");
+    temp.db
+        .with(|conn| {
+            let referrer = clients::create(conn, &sample_client("Anil Mehta"))?;
+            let group = groups::create(
+                conn,
+                &GroupInput {
+                    name: "Sundaram Group".into(),
+                    head_client_id: Some(referrer),
+                    ..Default::default()
+                },
+            )?;
+            clients::create(
+                conn,
+                &ClientInput {
+                    kind: Some("company".into()),
+                    group_id: Some(group),
+                    contact_person: Some("Meera Rao".into()),
+                    contact_designation: Some("HR Head".into()),
+                    registration_no: Some("U17110MH1995PLC012345".into()),
+                    gstin: Some("27AABCS1429B1ZX".into()),
+                    ..sample_client("Sundaram Textiles")
+                },
+            )?;
+
+            let rows = clients::list(conn, &ClientFilter::default())?.rows;
+            let path = temp.dir.join("clients.csv");
+            assert_eq!(exporter::export_clients(&rows, &path)?, 2);
+
+            let text = std::fs::read_to_string(&path).unwrap();
+            let mut lines = text.lines();
+            let headers: Vec<&str> = lines.next().unwrap().split(',').collect();
+            let column = |name: &str| headers.iter().position(|h| *h == name).unwrap();
+            let cells: Vec<Vec<&str>> = lines.map(|line| line.split(',').collect()).collect();
+            let row = |name: &str| {
+                cells
+                    .iter()
+                    .find(|cells| cells[column("Name")] == name)
+                    .unwrap()
+                    .clone()
+            };
+
+            let company = row("Sundaram Textiles");
+            assert_eq!(
+                company[column("Type")],
+                "Company",
+                "the word the screen shows, not the word the column stores"
+            );
+            assert_eq!(company[column("Group")], "Sundaram Group");
+            assert_eq!(company[column("Contact person")], "Meera Rao");
+            assert_eq!(company[column("Designation")], "HR Head");
+            assert_eq!(company[column("Registration number")], "U17110MH1995PLC012345");
+            assert_eq!(company[column("GSTIN")], "27AABCS1429B1ZX");
+
+            let person = row("Anil Mehta");
+            assert_eq!(person[column("Type")], "Individual");
+            for empty in ["Group", "Contact person", "Registration number", "GSTIN"] {
+                assert_eq!(
+                    person[column(empty)],
+                    "",
+                    "{empty} is blank for a person, and blank is an empty cell rather than the word null"
+                );
+            }
             Ok(())
         })
         .unwrap();
@@ -3408,6 +4217,84 @@ fn a_header_finds_its_field_by_name_and_then_by_resemblance() {
     let before = claimed.len();
     claimed.dedup();
     assert_eq!(claimed.len(), before);
+}
+
+#[test]
+fn the_corporate_columns_do_not_take_headings_that_already_meant_something() {
+    // Three words a book written before companies existed already spends: "Type"
+    // on the policy category, "GST" on the tax charged, "Registration No" on the
+    // vehicle. The corporate fields answer to all three in longer forms, so the
+    // agent who never asked for companies is the one to protect here.
+    let headers: Vec<String> = [
+        "Client Name",
+        "Policy No",
+        "Expiry",
+        "Type",
+        "GST",
+        "Registration No",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
+    let mapping = importer::suggest_mapping(&headers);
+
+    assert_eq!(mapping.get("category").map(String::as_str), Some("Type"));
+    assert_eq!(mapping.get("gstAmount").map(String::as_str), Some("GST"));
+    assert_eq!(
+        mapping.get("vehicleNumber").map(String::as_str),
+        Some("Registration No")
+    );
+    for field in ["clientKind", "gstin", "registrationNo"] {
+        assert!(
+            !mapping.contains_key(field),
+            "{field} took a column an older field had already answered to"
+        );
+    }
+
+    // Spelled out, the same sheet means the corporate fields and nothing else,
+    // which is what makes the export worth re-importing.
+    let spelled: Vec<String> = [
+        "Client Name",
+        "Policy No",
+        "Expiry",
+        "Client Type",
+        "GSTIN",
+        "Registration Number",
+        "Group",
+        "Contact Person",
+        "Designation",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
+    let mapping = importer::suggest_mapping(&spelled);
+
+    assert_eq!(
+        mapping.get("clientKind").map(String::as_str),
+        Some("Client Type")
+    );
+    assert_eq!(mapping.get("gstin").map(String::as_str), Some("GSTIN"));
+    assert_eq!(
+        mapping.get("registrationNo").map(String::as_str),
+        Some("Registration Number")
+    );
+    assert_eq!(mapping.get("groupName").map(String::as_str), Some("Group"));
+    assert_eq!(
+        mapping.get("contactPerson").map(String::as_str),
+        Some("Contact Person")
+    );
+    assert_eq!(
+        mapping.get("contactDesignation").map(String::as_str),
+        Some("Designation")
+    );
+    for field in ["category", "gstAmount", "vehicleNumber"] {
+        assert!(
+            !mapping.contains_key(field),
+            "{field} answered to a heading that spells out a company's details"
+        );
+    }
 }
 
 #[test]

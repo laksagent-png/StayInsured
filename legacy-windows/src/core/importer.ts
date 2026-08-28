@@ -23,6 +23,7 @@ import * as XLSX from "xlsx";
 import type { Conn } from "./db";
 import { AppError, describe } from "./errors";
 import * as clients from "./repo/clients";
+import * as groups from "./repo/groups";
 import * as insurers from "./repo/insurers";
 import * as policies from "./repo/policies";
 import * as products from "./repo/products";
@@ -321,6 +322,56 @@ export const FIELDS: FieldSpec[] = [
     group: "Policy",
     required: false,
     synonyms: ["notes", "remarks", "comments", "description"],
+  },
+  // The corporate fields come last because this list is a queue, not a layout:
+  // `suggestMapping` walks it in order and the first field to recognise a heading
+  // keeps it. Books written before companies existed use "Type" for the policy
+  // category, "GST" for the tax on the premium and "Registration No" for the
+  // vehicle, and those readings must not change under an operator who never asked
+  // for companies. Putting these fields at the back leaves the older claims first
+  // and gives the newcomers only what nobody else answered to. (The mapping screen
+  // groups by `group`, so they still appear with the rest of the client fields.)
+  {
+    key: "clientKind",
+    label: "Client type",
+    group: "Client",
+    required: false,
+    synonyms: ["client type", "type", "entity type", "customer type", "individual or company"],
+  },
+  {
+    key: "groupName",
+    label: "Group",
+    group: "Client",
+    required: false,
+    synonyms: ["group", "group name", "client group", "corporate group"],
+  },
+  {
+    key: "contactPerson",
+    label: "Contact person",
+    group: "Client",
+    required: false,
+    synonyms: ["contact person", "contact name", "spoc", "key contact", "hr contact"],
+  },
+  {
+    key: "contactDesignation",
+    label: "Designation",
+    group: "Client",
+    required: false,
+    synonyms: ["designation", "contact designation", "title", "role"],
+  },
+  {
+    key: "registrationNo",
+    label: "Registration number",
+    group: "Client",
+    required: false,
+    synonyms: ["registration number", "cin", "llpin", "company registration"],
+  },
+  {
+    key: "gstin",
+    label: "GSTIN",
+    group: "Client",
+    required: false,
+    synonyms: ["gstin", "gst no", "gst number"],
   },
 ];
 
@@ -777,6 +828,8 @@ function importRow(
   let clientId = clients.findMatch(conn, code, email, phone, name);
   if (clientId === null) {
     const rawGender = reader.get("gender");
+    const registrationNo = reader.get("registrationNo");
+    const gstin = reader.get("gstin");
     clientId = clients.create(conn, {
       clientCode: code,
       fullName: name,
@@ -792,10 +845,28 @@ function importRow(
       pincode: reader.get("pincode"),
       occupation: reader.get("occupation"),
       pan: reader.get("pan"),
+      kind: readClientKind(reader.get("clientKind") ?? ""),
+      contactPerson: reader.get("contactPerson"),
+      contactDesignation: reader.get("contactDesignation"),
+      registrationNo: registrationNo === null ? null : registrationNo.toUpperCase(),
+      gstin: gstin === null ? null : gstin.toUpperCase(),
+      // Membership is deliberately not settled here. It is set below, once the id
+      // is known, so that a client the sheet created and a client the sheet
+      // matched are filed by the same line of code.
     });
     report.clientsCreated += 1;
   } else if (updateExisting && fillClientGaps(conn, clientId, reader)) {
     report.clientsUpdated += 1;
+  }
+
+  // A sheet with no group column says nothing about groups; it does not say "no
+  // group". Reading a blank cell as an instruction would let one retail export
+  // empty every folder in the book, so a blank leaves membership where it is.
+  // This is the rule `clients.update` follows by coalescing `groupId`, for the
+  // same reason.
+  const groupName = reader.get("groupName");
+  if (groupName !== null) {
+    groups.setClientGroup(conn, clientId, groups.findOrCreateByName(conn, groupName));
   }
 
   const policyNumber = reader.get("policyNumber");
@@ -934,6 +1005,13 @@ function numberFrom(reader: RowReader, field: string): number | null {
 /**
  * Fills blank client fields from the spreadsheet without overwriting anything
  * already recorded, so a partial import cannot erase better data.
+ *
+ * The type is filled the same way but only upwards, because it has no blank to
+ * fill: every client already carries `individual` whether anyone said so or not.
+ * An import is one sheet's view of a client, and a retail sheet listing a firm's
+ * director under his own name is not evidence the firm is a person — so a row
+ * saying "Company" settles it, while a row saying "Individual", or saying
+ * nothing, leaves whatever the book already decided.
  */
 function fillClientGaps(conn: Conn, id: number, reader: RowReader): boolean {
   const email = reader.get("email");
@@ -942,6 +1020,9 @@ function fillClientGaps(conn: Conn, id: number, reader: RowReader): boolean {
   const gender = reader.get("gender");
   const phone = reader.get("phone");
   const pan = reader.get("pan");
+  const registrationNo = reader.get("registrationNo");
+  const gstin = reader.get("gstin");
+  const clientKind = reader.get("clientKind");
 
   try {
     const result = conn
@@ -957,7 +1038,12 @@ function fillClientGaps(conn: Conn, id: number, reader: RowReader): boolean {
           "state = COALESCE(NULLIF(state, ''), ?), " +
           "pincode = COALESCE(NULLIF(pincode, ''), ?), " +
           "occupation = COALESCE(NULLIF(occupation, ''), ?), " +
-          "pan = COALESCE(NULLIF(pan, ''), ?) " +
+          "pan = COALESCE(NULLIF(pan, ''), ?), " +
+          "contact_person = COALESCE(NULLIF(contact_person, ''), ?), " +
+          "contact_designation = COALESCE(NULLIF(contact_designation, ''), ?), " +
+          "registration_no = COALESCE(NULLIF(registration_no, ''), ?), " +
+          "gstin = COALESCE(NULLIF(gstin, ''), ?), " +
+          "kind = CASE WHEN ? = 'company' THEN 'company' ELSE kind END " +
           "WHERE id = ?",
       )
       .run(
@@ -972,6 +1058,11 @@ function fillClientGaps(conn: Conn, id: number, reader: RowReader): boolean {
         reader.get("pincode"),
         reader.get("occupation"),
         pan === null ? null : pan.toUpperCase(),
+        reader.get("contactPerson"),
+        reader.get("contactDesignation"),
+        registrationNo === null ? null : registrationNo.toUpperCase(),
+        gstin === null ? null : gstin.toUpperCase(),
+        clientKind === null ? null : readClientKind(clientKind),
         id,
       );
     return result.changes > 0;
@@ -980,6 +1071,38 @@ function fillClientGaps(conn: Conn, id: number, reader: RowReader): boolean {
     // core's does rather than as a bare SQLite string.
     throw AppError.database(error);
   }
+}
+
+/**
+ * What a spreadsheet means by the entity in a row.
+ *
+ * `normaliseClientKind` reads whole words off a form, where the field is a picker
+ * and the answer is one of two. A column typed by hand is nothing of the sort: it
+ * says "Pvt Ltd", "Corporate client", "Partnership firm", "Individual (retail)".
+ * So the word is looked for inside the text rather than matched against the whole
+ * of it, and anything the list does not recognise is a person — that is what the
+ * column defaults to, and most of a book is people.
+ *
+ * Nothing here reads the client's name, deliberately. "Sharma & Sons" is a firm
+ * and "Sharma" is a person only because the sheet says so; inferring it from the
+ * name would retype half a book on a hunch, and do it silently.
+ */
+function readClientKind(raw: string): string {
+  const COMPANY_WORDS = [
+    "compan",
+    "corp",
+    "firm",
+    "llp",
+    "ltd",
+    "pvt",
+    "private limited",
+    "partnership",
+    "enterprise",
+    "business",
+  ];
+
+  const text = raw.trim().toLowerCase();
+  return COMPANY_WORDS.some((word) => text.includes(word)) ? "company" : "individual";
 }
 
 function normaliseFrequency(raw: string): string {
@@ -1049,6 +1172,10 @@ const TEMPLATE_EXAMPLE: Record<string, string> = {
   city: "Pune",
   state: "Maharashtra",
   pincode: "411001",
+  // The sample row is a person, so the corporate columns are left empty: a blank
+  // cell is what the operator will send back for most of a book, and the header
+  // alone teaches the ones that only a company fills in.
+  clientKind: "Individual",
   policyNumber: "HS/2026/00918273",
   insurerName: "Star Health and Allied Insurance",
   productName: "Family Health Optima",

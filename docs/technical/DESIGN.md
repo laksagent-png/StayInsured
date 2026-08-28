@@ -372,6 +372,59 @@ Consequences worth knowing, all of them enforced in `repo::relations`:
   a word, which is what makes re-importing a corrected column a repair for a whole
   book, and leaves the recorded word alone when the row carries none.
 
+### A group is a folder, and a family is not
+
+**A client is not always a person.** `clients.kind` is `individual` or `company`,
+defaulting to `individual` so that every client entered before companies existed
+is one. A company holds policies, renews and gets chased like anybody else; what
+it has instead of a date of birth and a gender is a `contact_person`, their
+designation, and a registration number.
+
+Companies arrive in bunches — a holding company's subsidiaries, or ten unrelated
+firms that all came through the same introducer — and the agency works the bunch
+as one book. `client_groups` is that bunch, `clients.group_id` says who is in it,
+and `head_client_id` is the **group head**: the client who referred them.
+
+The obvious implementation is a relationship word, since `client_relations` is
+already there and a group head reads like a relation. It is the wrong one, and
+the reason is worth stating because the code would have compiled and the tests
+would have passed. A family has no boundary — it is whoever the edges reach, a
+person is in several at once, nothing may choose between them — and every piece
+of family behaviour is written to that shape. Put a group in that table and the
+shape absorbs it: forty subsidiaries become one family walked from any of them,
+`set_family_archived` on a head reaches forty companies instead of a household,
+`IS_DEPENDENT` matches every subsidiary that has not placed cover yet and empties
+the corporate book out of the browse list, and `set_members` starts offering a
+sister company as an insurable life on a floater. None of those raise an error.
+
+A group has exactly the boundary a family lacks. It is named, entered
+deliberately, holds a client at a time, and the operator can say where it ends,
+so it is a row — and being a row is what lets it be listed, summed, archived and
+deleted as itself. Consequences, enforced in `repo::groups`:
+
+- **The referrer is held apart from the membership.** Whoever introduced the
+  group need not be in it; an introducer who placed ten firms is nobody's
+  subsidiary. So the rollups sum the members, the group archive moves the
+  members, and the referrer is left alone in both cases.
+- **A group names its referrer.** A group opened without one is not a group with
+  a blank field but a referral nobody recorded, so `create` and `update` refuse
+  it. The column is nullable only so that deleting the referrer leaves the group
+  standing; editing such a group asks for the new one.
+- **Both links let go rather than cascade**, which is the opposite of
+  `client_relations`, where the edge dies with either person. A group is a filing
+  arrangement: deleting the folder releases the companies, and `delete` answers
+  with how many so the interface can say so.
+- **The archive needs no depth limit.** The family one stops at one step because
+  a family has no edge of its own to stop at. The group row says exactly who is
+  in it, which is the whole reason for keeping one.
+- **Membership moves through one operation.** `clients::update` coalesces
+  `group_id`, so a client form that draws no group cannot empty one by saving a
+  name change, and `set_client_group` is the only place membership is said out
+  loud.
+- **The roster is the client list.** `list_clients` with `groupId` set, rather
+  than a second paged command that would drift from the filters and sorts the
+  clients screen already has.
+
 ### Stored documents
 
 Scans live in the database as blobs, not as files beside it. The alternative —
@@ -428,6 +481,13 @@ flowchart LR
   then containment, and each column is claimed once — so
   "Policy Expiry Date (DD/MM/YYYY)" lands on `expiryDate` without stealing the
   column that `startDate` needs.
+- **`FIELDS` order is precedence.** Both passes walk the list in order and the
+  first field to recognise a heading keeps it, so the corporate fields sit at the
+  end of the list: "Type", "GST" and "Registration No" were the policy category,
+  the tax and the vehicle before companies existed, and adding a feature must not
+  retype an existing book. `clientKind`, `gstin` and `registrationNo` answer only
+  to the spelled-out forms. (The mapping screen groups by `FieldSpec::group`, so
+  the display order is unaffected.)
 - **Real-world values are normalised, not rejected.** Day-first dates, Excel
   serials, `₹10,00,000`, `Rs. 24,500.50`, "Mediclaim" → health, "two wheeler" →
   motor, `+91 98765-43210` → `+919876543210`. A malformed email is dropped and
@@ -435,6 +495,19 @@ flowchart LR
 - **Insurers and plans are resolved, not duplicated.** `find_or_create` matches
   on name or short code, then on a contained name, before creating anything, so
   "HDFC Ergo" does not become a third spelling of an insurer already on file.
+- **Groups are found or opened by name.** `groups::find_or_create_by_name` is the
+  importer's own door into a table whose `create` insists on a head, because a
+  sheet carries the grouping and nothing about who introduced it. A group it
+  opens has `head_client_id` NULL — the same state a group reaches when its
+  referrer is deleted, which the group page already asks about. Membership is set
+  after the client id is known, so a created and a matched client are filed by
+  one path, and a blank group column leaves membership alone.
+- **The client type fills upwards only.** `read_client_kind` reads a hand-typed
+  column loosely ("Pvt Ltd", "Corporate", "Partnership firm") and never reads the
+  name. In `fill_client_gaps` it is written as
+  `kind = CASE WHEN ? = 'company' THEN 'company' ELSE kind END`, because `kind`
+  has no blank to fill: a retail sheet listing a firm's director must not demote
+  the firm to a person.
 - **The issue list is capped at 300.** A broken file produces a readable report,
   not fifty thousand lines. Every real run is recorded in `import_batches` with
   its mapping and its errors in `import_errors`.
@@ -646,6 +719,24 @@ database in a temporary directory, with no window:
   toggle, and stops being one by holding a policy
 - the dashboard counts policyholders rather than people, so a child with no
   email address is not something to chase
+- a group is a folder and a family is not: sharing one relates nobody to anybody
+- a company in a group is not a dependent, and is still browsed to before it
+  places any cover
+- deleting a group leaves its companies standing, and deleting the referrer
+  leaves the group standing
+- archiving a group moves its members, leaves the referrer alone, and reverses
+- a group needs the client who referred it, and a referrer who is not in the book
+  is refused in words rather than by a foreign key
+- a group code and a group name each belong to one group, and a code typed by
+  hand moves the counter past it
+- a client belongs to one group at a time, and editing a client leaves the group
+  they are in alone
+- a group sums the book of its members and not its referrer
+- a policy does not cover another company that merely shares its group
+- a company is a client without a date of birth, however the register spells the
+  word, and a payload that says nothing describes a person
+- a group is searched by its name, its code or its referrer, and an archived one
+  is out of the way until it is asked for
 - a blank field is stored as nothing rather than as empty text
 - renewal builds a chain, carries values forward and preserves last year's
   premium
@@ -678,6 +769,16 @@ database in a temporary directory, with no window:
 - a messy spreadsheet maps correctly, a dry run writes nothing, and re-importing
   updates in place instead of duplicating
 - an unmapped required field refuses the import
+- a sheet that says a client is a company stores one, and a sheet that says
+  nothing stores a person
+- a group named in a sheet is opened once however the rows spell it, and is left
+  without a referrer until somebody names one
+- a second import that says nothing about groups leaves the filing alone
+- an import can promote a client to a company but never demote one
+- the corporate columns do not take a heading that already meant the policy
+  category, the tax or the vehicle
+- a client export carries the type, the group and the corporate columns, and
+  writes an empty cell for a person who has none of them
 - export writes both formats and refuses a third
 - a backup reopens with the same key
 - Indian date and money formats parse
@@ -859,17 +960,23 @@ installs have to be replaced by hand once.
 
 ## Built, and deliberately not built yet
 
-Working today: clients and the families between them, policies with renewal chains, the
+Working today: clients — people and companies — the families between them and the
+groups they file into, policies with renewal chains, the
 renewals desk, the dashboard, insurers and plans, spreadsheet import with a dry
 run, export, reminders — rules, templates, the outbox and the daily sweep over
 the agent's own SMTP server — stored documents, settings, encrypted backups, lock
 and unlock, and signed self-updating from the GitHub release.
+
+A book opened before this work holds every client as an `individual` in no group,
+which is what it held before: nothing about the feature asks an existing book to
+change, and an agent who files nobody never meets it.
 
 The schema still carries tables that no screen writes to: `premium_payments`,
 `commissions`, `claims`, `audit_log` and `saved_views`. They exist because their
 shape affects the design of what is built.
 
 Unbuilt, in the order they are worth building: the reporting pack, premium and
-commission tracking, claims, and multi-user logins. Claims come after documents
+commission tracking, claims, and multi-user
+logins. Claims come after documents
 on purpose — an intimation without the letter attached to it is half a record.
 The [README](../README.md) is the running list.

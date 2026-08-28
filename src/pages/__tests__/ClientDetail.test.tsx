@@ -11,10 +11,13 @@ import { api } from "@/lib/api";
 import { ClientDetailPage } from "@/pages/ClientDetail";
 import {
   backend,
+  createBook,
   currentRoute,
+  installBackend,
   renderWithProviders,
   screen,
   waitFor,
+  withGroups,
   within,
   type Rendered,
 } from "@/test";
@@ -723,5 +726,80 @@ describe("archiving and deleting from the client's page", () => {
       await screen.findByText("This client still has policies, so they cannot be deleted"),
     ).toBeInTheDocument();
     expect(currentRoute()).toBe("/clients/1");
+  });
+});
+
+describe("a company, and the groups a client meets", () => {
+  it("shows a firm's contact and registration in place of a birthday", async () => {
+    installBackend(withGroups(createBook()));
+    renderWithProviders(<ClientDetailPage />, { route: "/clients/12", path: "/clients/:id" });
+    await screen.findByRole("heading", { name: "Patel Weaves Pvt Ltd" });
+
+    expect(screen.getByText("Company")).toBeInTheDocument();
+    expect(detailValue("Contact")).toBe("Nishita Patel");
+    expect(detailValue("Designation")).toBe("Finance Manager");
+    expect(detailValue("GSTIN")).toBe("24AABCP1429B1ZK");
+    expect(detailValue("Registration")).toBe("U17111GJ2011PTC067421");
+    expect(screen.queryByText("Date of birth", { selector: "dt" })).toBeNull();
+    expect(screen.queryByText("Gender", { selector: "dt" })).toBeNull();
+    // A firm has no spouse and no children, so the card that would ask about
+    // them is not drawn.
+    expect(screen.queryByText("Family")).toBeNull();
+  });
+
+  it("shows the group a client is filed in, and leads to it", async () => {
+    installBackend(withGroups(createBook()));
+    renderWithProviders(<ClientDetailPage />, { route: "/clients/12", path: "/clients/:id" });
+    await screen.findByRole("heading", { name: "Patel Weaves Pvt Ltd" });
+
+    expect(await screen.findByText("Filed in this group")).toBeInTheDocument();
+    const links = screen.getAllByRole("link", { name: /Patel Group/ });
+    expect(links.some((link) => link.getAttribute("href") === "/groups/1")).toBe(true);
+  });
+
+  it("takes a client out of their group without taking them out of the book", async () => {
+    const confirm = confirms(true);
+    installBackend(withGroups(createBook()));
+    const { user } = renderWithProviders(<ClientDetailPage />, {
+      route: "/clients/12",
+      path: "/clients/:id",
+    });
+    await screen.findByText("Filed in this group");
+
+    await user.click(screen.getByRole("button", { name: /Take Patel Weaves Pvt Ltd out of/ }));
+
+    expect(confirm.mock.calls[0][0]).toContain("They stay in the book");
+    await waitFor(() =>
+      expect(backend().book.clients.find((row) => row.id === 12)?.groupId).toBeNull(),
+    );
+  });
+
+  it("gives the referrer their groups, which is what a group head's page is for", async () => {
+    installBackend(withGroups(createBook()));
+    renderWithProviders(<ClientDetailPage />, { route: "/clients/3", path: "/clients/:id" });
+    await screen.findByRole("heading", { name: "Vikram Patel" });
+
+    // He introduced the group without joining it, so his page says both: not in
+    // a group, and head of one.
+    expect(await screen.findByText("Group head of 1 group")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Patel Group/ })).toHaveAttribute("href", "/groups/1");
+    expect(screen.getByText(/Not in a group/)).toBeInTheDocument();
+  });
+
+  it("files a client into a group from their own page", async () => {
+    installBackend(withGroups(createBook()));
+    const { user } = renderWithProviders(<ClientDetailPage />, {
+      route: "/clients/1",
+      path: "/clients/:id",
+    });
+    await screen.findByRole("heading", { name: "Rohit Sharma" });
+
+    await user.click(screen.getByRole("button", { name: /Add to group/ }));
+    await user.click(await screen.findByText("Patel Group"));
+
+    await waitFor(() =>
+      expect(backend().book.clients.find((row) => row.id === 1)?.groupId).toBe(1),
+    );
+    expect(await screen.findByText("Added to the group")).toBeInTheDocument();
   });
 });

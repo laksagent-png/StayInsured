@@ -5,6 +5,52 @@ settings survive every version below.
 
 ## Upcoming
 
+### Added
+
+- **A company can be a client, and companies can be filed into a group.** The
+  client form now asks whether you are entering a person or a firm. Choose
+  **Company** and the date of birth and gender give way to the things you
+  actually hold for a firm: the person you deal with, their designation, the
+  GSTIN and the registration number. Everything else is unchanged — a company
+  holds policies, turns up in renewals, gets reminders and exports like anybody
+  else.
+
+  A **Groups** screen sits beside Clients. A group is one employer's book kept
+  together — the parent company, its subsidiaries, the sister concern — and it
+  records the client who introduced them as its **group head**. The group's page
+  totals the members' policies and premium, shows the next expiry across all of
+  them, and lists who is in it; the head sits at the top with a link to their own
+  page, and their page lists the groups they brought in.
+
+  This is not a family, and it does not behave like one. Sharing a group relates
+  nobody to anybody: a policy still only covers the client who holds it or one of
+  their relatives, so nothing about filing two firms together lets one insure the
+  other's staff. Archiving a group puts its members away and leaves the head
+  alone; deleting one keeps every company standing and merely unfiles them.
+
+  Nothing changes for a book that has no companies in it. Every client you
+  already have is a person in no group, which is exactly what they were before.
+
+- **Import and export carry the type, the group and the corporate details.** A
+  spreadsheet with a **Client type** column brings your firms in as firms —
+  "Pvt Ltd", "Corporate", "Partnership firm" and "LLP" are all read as one — and
+  a **Group** column files the rows into groups, opening one the first time it
+  sees the name and putting the rest in the same one. A group that arrives this
+  way has nobody down as its head, because a spreadsheet knows who is grouped
+  together and not who introduced them; the group's page asks you for the name
+  when you have it.
+
+  Two things it will not do. It never guesses a firm from its name, so
+  "Sharma & Sons" is a company only if the column says so. And a later file can
+  promote a client to a company but never demote one, so the retail sheet listing
+  a firm's director does not turn the firm back into a person.
+
+  Headings you already use keep their old meanings: **Type** is still the policy
+  category, **GST** still the tax, **Registration No** still the vehicle. Spell
+  them out — **Client type**, **GSTIN**, **Registration number** — when you mean
+  the company's. The client export gained the same columns, so a book exported
+  and re-imported comes back whole.
+
 ## 0.5.0 — 28 August 2026
 
 ### Added

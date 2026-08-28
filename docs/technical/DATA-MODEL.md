@@ -4,11 +4,12 @@ The schema lives in `src-tauri/src/db/schema/`, applied by
 `src-tauri/src/db/migrations.rs`. Everything below is one encrypted SQLite
 database, `stayinsured.db`, opened through SQLCipher.
 
-Current schema version: **6** — `001_init.sql` (structure), `002_seed.sql`
+Current schema version: **7** — `001_init.sql` (structure), `002_seed.sql`
 (defaults), `003_documents.sql` (stored files), `004_search_index.sql` (the
 client search triggers, and a rebuild of the index behind them),
-`005_client_relations.sql` (family members as clients) and
-`006_health_details.sql` (what a health proposal asks for).
+`005_client_relations.sql` (family members as clients),
+`006_health_details.sql` (what a health proposal asks for) and
+`007_client_groups.sql` (corporate clients, and the groups they sit in).
 `session_state.schemaVersion` reports it at runtime.
 
 ## Migration policy
@@ -26,6 +27,8 @@ schema fresh installs get. Any change is a new numbered file added to the list.
 ```mermaid
 erDiagram
     clients ||--o{ client_relations : "related to"
+    client_groups ||--o{ clients : contains
+    clients ||--o| client_groups : "referred as head"
     clients ||--o{ policies : holds
     clients ||--o{ documents : keeps
     policies ||--o{ documents : "evidenced by"
@@ -43,9 +46,10 @@ erDiagram
 
 ### `clients`
 
-The client book, and the only table that holds a person. A spouse on a floater, a
-dependent child and a policyholder are all rows here; what separates them is
-whether a policy is written against the row, not which table they live in.
+The client book, and the only table that holds a client of any sort. A spouse on
+a floater, a dependent child, a policyholder and a company buying group health
+for its staff are all rows here; what separates them is whether a policy is
+written against the row, not which table they live in.
 
 `client_code` is unique and allocated as `CL-00001` upward from the highest
 numeric suffix matching `CL-[0-9]*`.
@@ -55,9 +59,50 @@ Contact and identity: `full_name` (required), `email`, `phone`, `alt_phone`,
 `pincode`, `occupation`, `pan`, `gstin`. Behaviour: `preferred_language`
 (default `en`), `reminders_opted_out`, `notes`, `is_archived`.
 
-Names are title-cased, phones reduced to digits with an optional leading `+`, PAN
-and GSTIN upper-cased, and blank text stored as `NULL`. Indexed on name, email,
-phone, city and archived state.
+`kind` is `individual` or `company`, defaulting to `individual` so that every
+client entered before companies existed is one. A company has no `date_of_birth`
+and no `gender`; what it has instead is `contact_person` and
+`contact_designation` — the human who answers the phone, who is not the entity on
+the policy — and `registration_no` for the CIN or LLPIN. `pan` and `gstin` were
+already here and mean the same thing for a company as for a person, and
+`occupation` carries the industry.
+
+`group_id` is the group this client sits in, `ON DELETE SET NULL`. It is written
+only by `set_client_group`; `clients::update` coalesces it, so a client form that
+draws no group cannot empty one by saving a name change.
+
+Names are title-cased, phones reduced to digits with an optional leading `+`, PAN,
+GSTIN and the registration number upper-cased, and blank text stored as `NULL`.
+Indexed on name, email, phone, city, archived state, kind and group.
+
+### `client_groups`
+
+A named set of clients the agency works as one book, and the client who referred
+them. `group_code` is unique and allocated as `GR-00001` upward the way client
+codes are; `name` is unique; `head_client_id` is the referrer, `ON DELETE SET
+NULL`; plus `notes`, `is_archived` and timestamps maintained by
+`client_groups_touch`.
+
+**A group is a row and a family is not, and that is not an inconsistency.** A
+family has no boundary — it is whoever the relationship edges reach, a person is
+in several at once, and nothing may choose between them, which is why
+`client_relations` has no container and why the family archive stops one step out.
+A group has exactly the boundary a family lacks: it is named, entered
+deliberately, holds a client at a time, and the operator can say where it ends.
+Having that boundary is what lets a group be listed, summed, archived and deleted
+as itself.
+
+**Headship and membership are separate columns.** The referrer is whoever
+introduced the group, and they need not be in the group they brought in — an
+introducer who placed ten firms is nobody's subsidiary. So the rollups sum the
+members, the group archive moves the members, and the referrer is left where they
+are in both cases.
+
+Both links let go rather than cascade, which is the opposite of
+`client_relations`, where the edge dies with either person because an edge between
+two people is nothing once one of them is gone. A group is a filing arrangement:
+deleting the folder must not delete the companies, and losing the referrer must
+not lose the group.
 
 ### `client_relations`
 
@@ -175,6 +220,7 @@ megabytes of scan to read a column of titles.
 | Policy type | `fresh`, `portability`, `renewal` | `CHECK` on `policies`, and `util::POLICY_TYPES` |
 | Term | 1 to 5 years | `CHECK` on `policies`, and `util::MAX_TERM` |
 | Relationship | `spouse`, `son`, `daughter`, `father`, `mother`, `brother`, `sister`, `other` | `CHECK` on `client_relations` |
+| Client kind | `individual`, `company` | `CHECK` on `clients` |
 | Gender | `male`, `female`, `other` | `CHECK` on `clients` |
 | User role | `owner`, `staff`, `readonly` | `CHECK` on `users` |
 
@@ -212,14 +258,30 @@ These hold across the whole database and the code depends on them.
    right, and one of them holding a policy is the ordinary case. Removing a
    family outright is a separate and explicitly chosen operation, and archiving
    is the reversible alternative the interface offers first.
-7. **An insurer carrying policies cannot be deleted.** Deactivation is the way to
-   retire one.
-8. **Blank means `NULL`.** Optional text is trimmed and empty values stored as
-   `NULL`, so unique indexes and the "missing email" filter behave predictably.
-9. **One rule sends to one policy year once.** `UNIQUE (rule_id, policy_id,
-   policy_period)` on `notification_log`, written before the send is attempted,
-   is what makes that true across restarts and repeated sweeps.
-10. **Everything the agent stores lives in this one file.** A backup is a single
+7. **Deleting a group releases its clients rather than removing them.**
+   `clients.group_id` is `ON DELETE SET NULL`, so emptying the filing cabinet of
+   one folder does not empty it of the papers. `groups::delete` answers with how
+   many it let go so the interface can say so. Deleting the referrer is the same
+   shape from the other side: `head_client_id` goes to `NULL` and the group
+   stands.
+8. **A group archive moves its members and stops.** It needs no depth limit the
+   way the family archive does, because the group row says exactly who is in it —
+   which is the whole reason for keeping one. The referrer is not moved unless
+   they are also a member: putting away a book somebody introduced is no reason
+   to put away the person who introduced it.
+9. **Group membership is not a relationship.** A group is a column on `clients`
+   and never an edge in `client_relations`, so it reaches none of the family
+   behaviour. A subsidiary holding no cover of its own is not a dependent and
+   stays in the browse list; a company is not an insurable life on the policy of
+   another company that merely shares its folder.
+10. **An insurer carrying policies cannot be deleted.** Deactivation is the way to
+    retire one.
+11. **Blank means `NULL`.** Optional text is trimmed and empty values stored as
+    `NULL`, so unique indexes and the "missing email" filter behave predictably.
+12. **One rule sends to one policy year once.** `UNIQUE (rule_id, policy_id,
+    policy_period)` on `notification_log`, written before the send is attempted,
+    is what makes that true across restarts and repeated sweeps.
+13. **Everything the agent stores lives in this one file.** A backup is a single
     `VACUUM INTO` of the database, so a scan kept beside it would be both the one
     unencrypted part of a client's record and the one part a backup leaves
     behind. This is why document bytes are a blob and not a path.
@@ -355,3 +417,9 @@ their shape constrains the design of what is built.
 | `claims` | Claim intimation through settlement | Empty; documents will hang off a claim the way they hang off a policy |
 | `audit_log` | Before and after JSON per change | Empty |
 | `saved_views` | Named filter sets per entity | Empty |
+
+`client_groups` was on this list and has come off it: the table, the repository,
+the commands, the screens and the import and export columns are all built. A book
+opened before that work still reads `clients.kind` as `individual` and
+`clients.group_id` as `NULL` throughout, because nothing files a client into a
+group without being asked to.

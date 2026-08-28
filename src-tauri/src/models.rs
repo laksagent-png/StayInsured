@@ -38,6 +38,18 @@ pub struct Client {
     pub is_archived: bool,
     pub created_at: String,
     pub updated_at: String,
+    /// `individual` or `company`. A company holds policies like anybody else but
+    /// has no date of birth and no gender, so the screens read this rather than
+    /// inferring an entity from which fields happen to be filled in.
+    pub kind: String,
+    /// The group this client belongs to. Cleared rather than cascaded when the
+    /// group goes: a group is a folder, not an owner.
+    pub group_id: Option<i64>,
+    /// Who to ask for at a company, and what they do there.
+    pub contact_person: Option<String>,
+    pub contact_designation: Option<String>,
+    /// CIN, LLPIN or whatever the registrar issued.
+    pub registration_no: Option<String>,
     /// Populated by list queries; zero when a single client is fetched.
     pub active_policies: i64,
     pub total_policies: i64,
@@ -47,18 +59,26 @@ pub struct Client {
     /// No policy of their own and listed under somebody else. Derived on every
     /// read rather than stored, so it stops being true the moment they hold
     /// cover.
+    ///
+    /// Group membership is not part of this. A company with no cover of its own
+    /// sitting in a group is a client the agency browses to, not a dependent to
+    /// be folded away behind somebody else's name.
     pub is_dependent: bool,
+    /// Name of the group this client belongs to, so a list can show it without
+    /// a query per row.
+    pub group_name: Option<String>,
 }
 
 pub const CLIENT_COLUMNS: &str =
     "c.id, c.client_code, c.full_name, c.email, c.phone, c.alt_phone, \
      c.date_of_birth, c.gender, c.address_line1, c.address_line2, c.city, c.state, c.pincode, \
      c.occupation, c.pan, c.gstin, c.preferred_language, c.reminders_opted_out, c.notes, \
-     c.is_archived, c.created_at, c.updated_at";
+     c.is_archived, c.created_at, c.updated_at, c.kind, c.group_id, c.contact_person, \
+     c.contact_designation, c.registration_no";
 
 impl Client {
     /// Expects `CLIENT_COLUMNS` followed by active_policies, total_policies,
-    /// next_expiry, relatives, is_dependent.
+    /// next_expiry, relatives, is_dependent, group_name.
     pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
         Ok(Self {
             id: row.get(0)?,
@@ -83,11 +103,17 @@ impl Client {
             is_archived: row.get::<_, i64>(19)? != 0,
             created_at: row.get(20)?,
             updated_at: row.get(21)?,
-            active_policies: row.get(22).unwrap_or(0),
-            total_policies: row.get(23).unwrap_or(0),
-            next_expiry: row.get(24).unwrap_or(None),
-            relatives: row.get(25).unwrap_or(0),
-            is_dependent: row.get::<_, i64>(26).unwrap_or(0) != 0,
+            kind: row.get(22)?,
+            group_id: row.get(23)?,
+            contact_person: row.get(24)?,
+            contact_designation: row.get(25)?,
+            registration_no: row.get(26)?,
+            active_policies: row.get(27).unwrap_or(0),
+            total_policies: row.get(28).unwrap_or(0),
+            next_expiry: row.get(29).unwrap_or(None),
+            relatives: row.get(30).unwrap_or(0),
+            is_dependent: row.get::<_, i64>(31).unwrap_or(0) != 0,
+            group_name: row.get(32).unwrap_or(None),
         })
     }
 }
@@ -113,6 +139,16 @@ pub struct ClientInput {
     pub preferred_language: Option<String>,
     pub reminders_opted_out: Option<bool>,
     pub notes: Option<String>,
+    /// Left unset means `individual`, so a form written before companies existed
+    /// still describes the client it thinks it is describing.
+    pub kind: Option<String>,
+    /// `None` leaves membership alone on an update and means no group on a
+    /// create. Moving a client between groups goes through `set_client_group`,
+    /// which is the operation the group screens call.
+    pub group_id: Option<i64>,
+    pub contact_person: Option<String>,
+    pub contact_designation: Option<String>,
+    pub registration_no: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -127,6 +163,12 @@ pub struct ClientFilter {
     /// about whether browsing shows them.
     pub include_family: Option<bool>,
     pub missing_email: Option<bool>,
+    /// `individual` or `company`.
+    pub kind: Option<String>,
+    /// Members of one group. This is what the group roster is: the client list
+    /// with every filter and sort it already has, narrowed to one folder,
+    /// rather than a second paged query that would drift from it.
+    pub group_id: Option<i64>,
     pub sort: Option<String>,
     pub descending: Option<bool>,
     pub page: Option<u32>,
@@ -256,6 +298,93 @@ pub enum DeleteScope {
     LinksOnly,
     /// The client and the people directly related to them.
     ImmediateFamily,
+}
+
+// ---------------------------------------------------------------- groups
+
+/// A named set of clients the agency works as one book, and the referrer who
+/// introduced them.
+///
+/// Unlike a family, this is a row. A family is whoever the relationship edges
+/// reach and has no boundary of its own; a group is entered deliberately, has a
+/// name and a code, and a client sits in one of them. Having the boundary is
+/// what lets a group be listed, reported on, archived and deleted as itself.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Group {
+    pub id: i64,
+    pub group_code: String,
+    pub name: String,
+    /// The referrer, and a client in their own right. They need not be a member
+    /// of the group they brought in — an introducer who placed ten firms is
+    /// nobody's subsidiary — so headship and membership are answered separately.
+    pub head_client_id: Option<i64>,
+    pub head_name: Option<String>,
+    pub head_client_code: Option<String>,
+    pub notes: Option<String>,
+    pub is_archived: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    /// Everything below is the group's book, summed across its members. The
+    /// referrer's own policies are not in it unless they are also a member.
+    pub members: i64,
+    pub active_policies: i64,
+    pub total_policies: i64,
+    pub premium_under_management: f64,
+    pub next_expiry: Option<String>,
+}
+
+pub const GROUP_COLUMNS: &str = "g.id, g.group_code, g.name, g.head_client_id, \
+     (SELECT h.full_name FROM clients h WHERE h.id = g.head_client_id) AS head_name, \
+     (SELECT h.client_code FROM clients h WHERE h.id = g.head_client_id) AS head_client_code, \
+     g.notes, g.is_archived, g.created_at, g.updated_at";
+
+impl Group {
+    /// Expects `GROUP_COLUMNS` followed by members, active_policies,
+    /// total_policies, premium_under_management, next_expiry.
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            group_code: row.get(1)?,
+            name: row.get(2)?,
+            head_client_id: row.get(3)?,
+            head_name: row.get(4)?,
+            head_client_code: row.get(5)?,
+            notes: row.get(6)?,
+            is_archived: row.get::<_, i64>(7)? != 0,
+            created_at: row.get(8)?,
+            updated_at: row.get(9)?,
+            members: row.get(10).unwrap_or(0),
+            active_policies: row.get(11).unwrap_or(0),
+            total_policies: row.get(12).unwrap_or(0),
+            premium_under_management: row.get(13).unwrap_or(0.0),
+            next_expiry: row.get(14).unwrap_or(None),
+        })
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupInput {
+    pub group_code: Option<String>,
+    pub name: String,
+    pub head_client_id: Option<i64>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupFilter {
+    pub search: Option<String>,
+    pub include_archived: Option<bool>,
+    /// Groups this client referred. What a group head's page is: the same list,
+    /// narrowed to the introductions one person made, so headship can be read
+    /// from either end without a second command.
+    pub head_client_id: Option<i64>,
+    pub sort: Option<String>,
+    pub descending: Option<bool>,
+    pub page: Option<u32>,
+    pub page_size: Option<u32>,
 }
 
 // ---------------------------------------------------------------- documents

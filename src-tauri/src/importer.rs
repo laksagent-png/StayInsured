@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 use crate::models::{ClientInput, PolicyInput};
-use crate::repo::{clients, insurers, policies, products, relations};
+use crate::repo::{clients, groups, insurers, policies, products, relations};
 use crate::util;
 
 /// A field the importer can fill, with the header names it recognises.
@@ -367,6 +367,74 @@ pub const FIELDS: &[FieldSpec] = &[
         group: "Policy",
         required: false,
         synonyms: &["notes", "remarks", "comments", "description"],
+    },
+    // The corporate fields come last because this list is a queue, not a layout:
+    // `suggest_mapping` walks it in order and the first field to recognise a
+    // heading keeps it. Books written before companies existed use "Type" for the
+    // policy category, "GST" for the tax on the premium and "Registration No" for
+    // the vehicle, and those readings must not change under an operator who never
+    // asked for companies. Putting these fields at the back leaves the older
+    // claims first and gives the newcomers only what nobody else answered to.
+    // (The mapping screen groups by `group`, so they still appear with the rest
+    // of the client fields.)
+    FieldSpec {
+        key: "clientKind",
+        label: "Client type",
+        group: "Client",
+        required: false,
+        synonyms: &[
+            "client type",
+            "type",
+            "entity type",
+            "customer type",
+            "individual or company",
+        ],
+    },
+    FieldSpec {
+        key: "groupName",
+        label: "Group",
+        group: "Client",
+        required: false,
+        synonyms: &["group", "group name", "client group", "corporate group"],
+    },
+    FieldSpec {
+        key: "contactPerson",
+        label: "Contact person",
+        group: "Client",
+        required: false,
+        synonyms: &[
+            "contact person",
+            "contact name",
+            "spoc",
+            "key contact",
+            "hr contact",
+        ],
+    },
+    FieldSpec {
+        key: "contactDesignation",
+        label: "Designation",
+        group: "Client",
+        required: false,
+        synonyms: &["designation", "contact designation", "title", "role"],
+    },
+    FieldSpec {
+        key: "registrationNo",
+        label: "Registration number",
+        group: "Client",
+        required: false,
+        synonyms: &[
+            "registration number",
+            "cin",
+            "llpin",
+            "company registration",
+        ],
+    },
+    FieldSpec {
+        key: "gstin",
+        label: "GSTIN",
+        group: "Client",
+        required: false,
+        synonyms: &["gstin", "gst no", "gst number"],
     },
 ];
 
@@ -896,6 +964,16 @@ fn import_row(
                     pincode: reader.get("pincode"),
                     occupation: reader.get("occupation"),
                     pan: reader.get("pan"),
+                    kind: Some(read_client_kind(
+                        reader.get("clientKind").as_deref().unwrap_or_default(),
+                    )),
+                    contact_person: reader.get("contactPerson"),
+                    contact_designation: reader.get("contactDesignation"),
+                    registration_no: reader.get("registrationNo").map(|r| r.to_uppercase()),
+                    gstin: reader.get("gstin").map(|g| g.to_uppercase()),
+                    // Membership is deliberately not settled here. It is set below,
+                    // once the id is known, so that a client the sheet created and a
+                    // client the sheet matched are filed by the same line of code.
                     ..Default::default()
                 },
             )?;
@@ -903,6 +981,16 @@ fn import_row(
             id
         }
     };
+
+    // A sheet with no group column says nothing about groups; it does not say
+    // "no group". Reading a blank cell as an instruction would let one retail
+    // export empty every folder in the book, so a blank leaves membership where
+    // it is. This is the rule `clients::update` follows by coalescing `group_id`,
+    // for the same reason.
+    if let Some(group_name) = reader.get("groupName") {
+        let group_id = groups::find_or_create_by_name(conn, &group_name)?;
+        groups::set_client_group(conn, client_id, Some(group_id))?;
+    }
 
     let policy_number = reader.get("policyNumber").ok_or_else(|| {
         *blamed = Some("policyNumber");
@@ -1079,6 +1167,13 @@ fn import_row(
 
 /// Fills blank client fields from the spreadsheet without overwriting anything
 /// already recorded, so a partial import cannot erase better data.
+///
+/// The type is filled the same way but only upwards, because it has no blank to
+/// fill: every client already carries `individual` whether anyone said so or not.
+/// An import is one sheet's view of a client, and a retail sheet listing a firm's
+/// director under his own name is not evidence the firm is a person — so a row
+/// saying "Company" settles it, while a row saying "Individual", or saying
+/// nothing, leaves whatever the book already decided.
 fn fill_client_gaps(conn: &Connection, id: i64, reader: &RowReader) -> AppResult<bool> {
     let changed = conn.execute(
         "UPDATE clients SET \
@@ -1092,7 +1187,12 @@ fn fill_client_gaps(conn: &Connection, id: i64, reader: &RowReader) -> AppResult
              state = COALESCE(NULLIF(state, ''), ?9), \
              pincode = COALESCE(NULLIF(pincode, ''), ?10), \
              occupation = COALESCE(NULLIF(occupation, ''), ?11), \
-             pan = COALESCE(NULLIF(pan, ''), ?12) \
+             pan = COALESCE(NULLIF(pan, ''), ?12), \
+             contact_person = COALESCE(NULLIF(contact_person, ''), ?13), \
+             contact_designation = COALESCE(NULLIF(contact_designation, ''), ?14), \
+             registration_no = COALESCE(NULLIF(registration_no, ''), ?15), \
+             gstin = COALESCE(NULLIF(gstin, ''), ?16), \
+             kind = CASE WHEN ?17 = 'company' THEN 'company' ELSE kind END \
          WHERE id = ?1",
         params![
             id,
@@ -1119,9 +1219,48 @@ fn fill_client_gaps(conn: &Connection, id: i64, reader: &RowReader) -> AppResult
             reader.get("pincode"),
             reader.get("occupation"),
             reader.get("pan").map(|p| p.to_uppercase()),
+            reader.get("contactPerson"),
+            reader.get("contactDesignation"),
+            reader.get("registrationNo").map(|r| r.to_uppercase()),
+            reader.get("gstin").map(|g| g.to_uppercase()),
+            reader.get("clientKind").map(|k| read_client_kind(&k)),
         ],
     )?;
     Ok(changed > 0)
+}
+
+/// What a spreadsheet means by the entity in a row.
+///
+/// `util::normalise_client_kind` reads whole words off a form, where the field is
+/// a picker and the answer is one of two. A column typed by hand is nothing of
+/// the sort: it says "Pvt Ltd", "Corporate client", "Partnership firm",
+/// "Individual (retail)". So the word is looked for inside the text rather than
+/// matched against the whole of it, and anything the list does not recognise is a
+/// person — that is what the column defaults to, and most of a book is people.
+///
+/// Nothing here reads the client's name, deliberately. "Sharma & Sons" is a firm
+/// and "Sharma" is a person only because the sheet says so; inferring it from the
+/// name would retype half a book on a hunch, and do it silently.
+fn read_client_kind(raw: &str) -> String {
+    const COMPANY_WORDS: &[&str] = &[
+        "compan",
+        "corp",
+        "firm",
+        "llp",
+        "ltd",
+        "pvt",
+        "private limited",
+        "partnership",
+        "enterprise",
+        "business",
+    ];
+
+    let text = raw.trim().to_lowercase();
+    if COMPANY_WORDS.iter().any(|word| text.contains(word)) {
+        "company".into()
+    } else {
+        "individual".into()
+    }
 }
 
 fn normalise_frequency(raw: String) -> String {
@@ -1204,6 +1343,10 @@ pub fn write_template(path: &Path) -> AppResult<()> {
         ("city", "Pune"),
         ("state", "Maharashtra"),
         ("pincode", "411001"),
+        // The sample row is a person, so the corporate columns are left empty:
+        // a blank cell is what the operator will send back for most of a book,
+        // and the header alone teaches the ones that only a company fills in.
+        ("clientKind", "Individual"),
         ("policyNumber", "HS/2026/00918273"),
         ("insurerName", "Star Health and Allied Insurance"),
         ("productName", "Family Health Optima"),

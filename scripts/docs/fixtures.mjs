@@ -76,6 +76,13 @@ const clients = [
   { id: 9, clientCode: "CL-00009", fullName: "Sneha Sharma", phone: "98765 43211", city: "Pune", state: "Maharashtra", pincode: "411045", dateOfBirth: "1988-09-03", gender: "female", addressLine1: "Flat 402, Green Meadows", addressLine2: "Baner Road" },
   { id: 10, clientCode: "CL-00010", fullName: "Aarav Sharma", city: "Pune", state: "Maharashtra", pincode: "411045", dateOfBirth: "2016-01-19", gender: "male", addressLine1: "Flat 402, Green Meadows", addressLine2: "Baner Road" },
   { id: 11, clientCode: "CL-00011", fullName: "Lakshmi Iyer", city: "Bengaluru", state: "Karnataka", pincode: "560038", dateOfBirth: "1958-03-11", gender: "female", addressLine1: "301, Indiranagar Heights" },
+
+  // The corporate side. A firm is a client with no birthday: what it has
+  // instead is somebody to ask for and a number the registrar issued. Both were
+  // introduced by Vikram Patel, which is what makes him the head of their group
+  // without being in it.
+  { id: 12, clientCode: "CL-00012", fullName: "Patel Weaves Pvt Ltd", kind: "company", groupId: 1, groupName: "Patel Group", email: "accounts@patelweaves.in", phone: "79 2630 4411", city: "Ahmedabad", state: "Gujarat", pincode: "380015", occupation: "Textile manufacturing", pan: "AABCP1429B", gstin: "24AABCP1429B1ZK", registrationNo: "U17111GJ2011PTC067421", contactPerson: "Nishita Patel", contactDesignation: "Finance Manager", addressLine1: "Unit 4, Pirana Industrial Estate", notes: "Headcount reviewed each April, before the March renewal." },
+  { id: 13, clientCode: "CL-00013", fullName: "Patel Logistics LLP", kind: "company", groupId: 1, groupName: "Patel Group", email: "ops@patellogistics.in", phone: "79 2630 8890", city: "Ahmedabad", state: "Gujarat", pincode: "380023", occupation: "Freight and warehousing", pan: "AAEFP7712H", gstin: "24AAEFP7712H1Z9", registrationNo: "AAF-3391", contactPerson: "Devang Patel", contactDesignation: "Partner", addressLine1: "Warehouse 12, Naroda Road" },
 ].map((row) => ({
   altPhone: null,
   gstin: null,
@@ -86,8 +93,39 @@ const clients = [
   createdAt: "2024-04-08T09:12:00Z",
   updatedAt: "2026-07-28T11:40:00Z",
   addressLine2: null,
+  kind: "individual",
+  groupId: null,
+  groupName: null,
+  contactPerson: null,
+  contactDesignation: null,
+  registrationNo: null,
   ...row,
 }));
+
+/**
+ * The groups on the desk. A group is a row where a family is not: it is named,
+ * entered deliberately, and its referrer is a client who need not be in it.
+ * The rollups below count the two member firms and not the referrer.
+ */
+const groups = [
+  {
+    id: 1,
+    groupCode: "GR-00001",
+    name: "Patel Group",
+    headClientId: 3,
+    headName: "Vikram Patel",
+    headClientCode: "CL-00003",
+    notes: "Both firms renew together each March; one invoice for the group.",
+    isArchived: false,
+    createdAt: "2025-02-19T10:05:00Z",
+    updatedAt: "2026-03-02T08:20:00Z",
+    members: 2,
+    activePolicies: 2,
+    totalPolicies: 2,
+    premiumUnderManagement: 498500,
+    nextExpiry: "2027-02-28",
+  },
+];
 
 /**
  * How the clients are related, in the direction it was recorded: the related
@@ -130,6 +168,11 @@ const rawPolicies = [
   { id: 11, chainId: "chain-k", policyYear: 1, policyNumber: "LIC/915/661074", clientId: 4, insurerId: 4, productId: 3, category: "life", status: "active", startDate: "2021-06-15", expiryDate: "2041-06-14", sumInsured: 7500000, premiumAmount: 36000, gstAmount: 1620, commissionRate: 7.5 },
   { id: 12, chainId: "chain-l", policyYear: 1, policyNumber: "SH/2024/0088410", clientId: 3, insurerId: 1, productId: 1, category: "health", status: "expired", startDate: "2025-07-30", expiryDate: "2026-07-29", sumInsured: 500000, premiumAmount: 21500, gstAmount: 3870, commissionRate: 12.5 },
   { id: 13, chainId: "chain-m", policyYear: 1, policyNumber: "IL/MOT/815540", clientId: 6, insurerId: 3, productId: 4, category: "motor", status: "active", startDate: "2025-11-02", expiryDate: "2026-11-01", sumInsured: 980000, premiumAmount: 11200, gstAmount: 2016, commissionRate: 10, vehicleNumber: "TN07GH3456" },
+
+  // The group's own cover: two firms, a policy each, and nothing linking them
+  // but the group. A policy held by one company covers nobody in the other.
+  { id: 14, chainId: "chain-n", policyYear: 1, policyNumber: "NB/GRP/220914", clientId: 12, insurerId: 5, productId: 6, category: "health", status: "active", startDate: "2026-03-01", expiryDate: "2027-02-28", sumInsured: 5000000, premiumAmount: 412000, gstAmount: 74160, commissionRate: 7.5, notes: "Group health for 64 staff." },
+  { id: 15, chainId: "chain-o", policyYear: 1, policyNumber: "BA/MOT/771203", clientId: 13, insurerId: 7, productId: null, category: "motor", status: "active", startDate: "2026-03-01", expiryDate: "2027-02-28", sumInsured: 2400000, premiumAmount: 86500, gstAmount: 15570, commissionRate: 10, vehicleNumber: "GJ01KL8842" },
 
   // Earlier years, kept so the history chains have something to show.
   { id: 101, chainId: "chain-a", policyYear: 1, policyNumber: "SH/2024/0091823", clientId: 1, insurerId: 1, productId: 1, category: "health", status: "renewed", startDate: "2024-08-20", expiryDate: "2025-08-19", sumInsured: 1000000, premiumAmount: 22100, gstAmount: 3978, commissionRate: 12.5, isRenewed: true },
@@ -570,10 +613,11 @@ export const fixtures = {
     unlocked: true,
     canUseKeychain: true,
     encrypted: true,
-    schemaVersion: 5,
+    schemaVersion: 7,
     dataDir: "/Users/you/Library/Application Support/com.stayinsured.app",
   },
   clients,
+  groups,
   relations,
   cover,
   documents,

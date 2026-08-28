@@ -12,6 +12,8 @@ import { LockScreen } from "./pages/LockScreen";
 import { DashboardPage } from "./pages/Dashboard";
 import { ClientsPage } from "./pages/Clients";
 import { ClientDetailPage } from "./pages/ClientDetail";
+import { GroupsPage } from "./pages/Groups";
+import { GroupDetailPage } from "./pages/GroupDetail";
 import { PoliciesPage } from "./pages/Policies";
 import { RenewalsPage } from "./pages/Renewals";
 import { RemindersPage } from "./pages/Reminders";
@@ -91,6 +93,8 @@ export default function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/clients" element={<ClientsPage />} />
         <Route path="/clients/:id" element={<ClientDetailPage />} />
+        <Route path="/groups" element={<GroupsPage />} />
+        <Route path="/groups/:id" element={<GroupDetailPage />} />
         <Route path="/policies" element={<PoliciesPage />} />
         <Route path="/renewals" element={<RenewalsPage />} />
         <Route path="/reminders" element={<RemindersPage />} />

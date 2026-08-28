@@ -1,5 +1,13 @@
 import { format, parseISO } from "date-fns";
-import type { Category, PlanType, PolicyStatus, PolicyType, Relationship, Rider } from "./types";
+import type {
+  Category,
+  ClientKind,
+  PlanType,
+  PolicyStatus,
+  PolicyType,
+  Relationship,
+  Rider,
+} from "./types";
 
 const currency = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -139,6 +147,20 @@ export function titleCase(value: string): string {
   return value
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+/**
+ * What a client is, in the words the screens use. "Company" covers the LLP and
+ * the partnership firm too: the book only needs to know that the client is not a
+ * person, because that is what changes the fields it asks for.
+ */
+export const clientKindLabels: Record<ClientKind, string> = {
+  individual: "Individual",
+  company: "Company",
+};
+
+export function clientKindLabel(kind: string): string {
+  return Object.hasOwn(clientKindLabels, kind) ? clientKindLabels[kind as ClientKind] : "Individual";
 }
 
 export const relationshipLabels: Record<Relationship, string> = {

@@ -5,7 +5,15 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { backend, renderWithProviders, screen, waitFor } from "@/test";
+import {
+  backend,
+  createBook,
+  installBackend,
+  renderWithProviders,
+  screen,
+  waitFor,
+  withGroups,
+} from "@/test";
 import type { Client, ClientInput } from "@/lib/types";
 import { ClientForm } from "@/components/ClientForm";
 
@@ -58,6 +66,7 @@ describe("the new client form", () => {
     ).toBeInTheDocument();
 
     for (const label of [
+      /^Client type/,
       /^Full name/,
       /^Client code/,
       /^Mobile/,
@@ -462,5 +471,122 @@ describe("while the save is in flight", () => {
     await waitFor(() => expect(screen.queryByText("Client added")).toBeInTheDocument());
     expect(backend().countOf("create_client")).toBe(1);
     expect(backend().book.clients.filter((row) => row.fullName === "Nikhil Rao")).toHaveLength(1);
+  });
+});
+
+describe("entering a company", () => {
+  it("asks a firm for a contact rather than a birthday", async () => {
+    const { user } = renderForm();
+    await codeReserved();
+
+    await user.selectOptions(field(/^Client type/), "company");
+
+    expect(screen.getByRole("dialog", { name: "New company" })).toBeInTheDocument();
+    for (const label of [
+      /^Company name/,
+      /^Contact person/,
+      /^Designation/,
+      /^GSTIN/,
+      /^Registration number/,
+    ]) {
+      expect(field(label)).toBeInTheDocument();
+    }
+    // A firm has neither, and a form that asked would be asking a question with
+    // no answer.
+    expect(screen.queryByLabelText(/^Date of birth/)).toBeNull();
+    expect(screen.queryByLabelText(/^Gender/)).toBeNull();
+    // What a person does for a living is what a firm does for a trade.
+    expect(field(/^Industry/)).toBeInTheDocument();
+  });
+
+  it("sends the corporate columns and no date of birth", async () => {
+    const { user } = renderForm();
+    await codeReserved();
+
+    await user.selectOptions(field(/^Client type/), "company");
+    await user.type(field(/^Company name/), "Patel Weaves Pvt Ltd");
+    await user.type(field(/^Contact person/), "Nishita Patel");
+    await user.type(field(/^Designation/), "Finance Manager");
+    await user.type(field(/^GSTIN/), "24aabcp1429b1zk");
+    await user.type(field(/^Registration number/), "u17111gj2011ptc067421");
+    await user.click(addButton());
+
+    await waitFor(() => expect(backend().countOf("create_client")).toBe(1));
+    expect(sentInput("create_client")).toMatchObject({
+      kind: "company",
+      fullName: "Patel Weaves Pvt Ltd",
+      contactPerson: "Nishita Patel",
+      contactDesignation: "Finance Manager",
+      // Typed in either case and stored in one, as the core stores them.
+      gstin: "24AABCP1429B1ZK",
+      registrationNo: "U17111GJ2011PTC067421",
+      dateOfBirth: null,
+      gender: null,
+    });
+  });
+
+  it("does not keep a birthday the operator can no longer see", async () => {
+    const { user } = renderForm();
+    await codeReserved();
+
+    // Entered as a person, then corrected to a firm. The boxes go, and what
+    // went with them must not be saved behind the operator's back.
+    await user.type(field(/^Full name/), "Patel Weaves Pvt Ltd");
+    await user.type(field(/^Date of birth/), "1986-04-12");
+    await user.selectOptions(field(/^Client type/), "company");
+    await user.click(addButton());
+
+    await waitFor(() => expect(backend().countOf("create_client")).toBe(1));
+    expect(sentInput("create_client").dateOfBirth).toBeNull();
+  });
+
+  it("drops the corporate columns when a firm turns out to be a person", async () => {
+    const { user } = renderForm();
+    await codeReserved();
+
+    await user.selectOptions(field(/^Client type/), "company");
+    await user.type(field(/^Company name/), "Nikhil Rao");
+    await user.type(field(/^Contact person/), "Somebody Else");
+    await user.selectOptions(field(/^Client type/), "individual");
+    await user.click(addButton());
+
+    await waitFor(() => expect(backend().countOf("create_client")).toBe(1));
+    expect(sentInput("create_client")).toMatchObject({
+      kind: "individual",
+      contactPerson: null,
+      contactDesignation: null,
+      registrationNo: null,
+    });
+  });
+
+  it("opens as a company when the screen asking for one opened it", async () => {
+    renderWithProviders(
+      <ClientForm open defaultKind="company" onClose={vi.fn()} />,
+    );
+
+    expect(screen.getByRole("dialog", { name: "New company" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Company name/)).toBeInTheDocument();
+  });
+
+  it("opens an existing company as one, and leaves its group alone on save", async () => {
+    const book = withGroups(createBook());
+    installBackend(book);
+    const company = book.clients.find((row) => row.id === 12)!;
+    const { user } = renderWithProviders(
+      <ClientForm open client={company} onClose={vi.fn()} />,
+    );
+
+    expect(screen.getByLabelText(/^Client type/)).toHaveValue("company");
+    expect(screen.getByLabelText(/^Contact person/)).toHaveValue("Nishita Patel");
+
+    await user.clear(screen.getByLabelText(/^Mobile/));
+    await user.type(screen.getByLabelText(/^Mobile/), "7926304412");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    // The form draws no group, so it sends none, and the core keeps the one the
+    // client is in. Editing a phone number is not a way out of a group.
+    await waitFor(() => expect(backend().countOf("update_client")).toBe(1));
+    expect(sentInput("update_client").groupId).toBeUndefined();
+    expect(backend().book.clients.find((row) => row.id === 12)?.groupId).toBe(1);
   });
 });

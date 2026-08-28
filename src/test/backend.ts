@@ -25,6 +25,9 @@ import type {
   Family,
   FamilyEdge,
   FamilyMember,
+  Group,
+  GroupFilter,
+  GroupInput,
   Insurer,
   InsurerInput,
   Notification,
@@ -54,6 +57,7 @@ import {
   daysUntil,
   recountCatalogue,
   recountClients,
+  recountGroups,
   showDate,
   type Book,
 } from "./fixtures";
@@ -358,6 +362,10 @@ export class FakeBackend {
       preferredLanguage: input.preferredLanguage ?? "en",
       remindersOptedOut: input.remindersOptedOut ?? false,
       notes: blankToNone(input.notes),
+      kind: input.kind ?? "individual",
+      contactPerson: blankToNone(input.contactPerson),
+      contactDesignation: blankToNone(input.contactDesignation),
+      registrationNo: blankToNone(input.registrationNo)?.toUpperCase() ?? null,
     };
   }
 
@@ -489,6 +497,8 @@ export class FakeBackend {
       rows = rows.filter((row) => !row.isDependent);
     }
     if (filter.missingEmail) rows = rows.filter((row) => !row.email);
+    if (filter.kind) rows = rows.filter((row) => row.kind === filter.kind);
+    if (filter.groupId != null) rows = rows.filter((row) => row.groupId === filter.groupId);
     if (filter.city) rows = rows.filter((row) => row.city === filter.city);
     if (filter.state) rows = rows.filter((row) => row.state === filter.state);
     if (filter.category) {
@@ -510,6 +520,81 @@ export class FakeBackend {
     const keys: Record<string, (row: Client) => string | number> = {
       name: (row) => lower(row.fullName),
       policies: (row) => row.activePolicies,
+      nextExpiry: (row) => row.nextExpiry ?? "9999-12-31",
+      created: (row) => row.createdAt,
+      // Ungrouped clients sort last rather than first, so the column reads as
+      // the groups it has rather than the blanks it does not.
+      group: (row) => lower(row.groupName ?? "zzzz"),
+    };
+    const key = keys[filter.sort ?? "name"] ?? keys.name;
+    rows.sort((a, b) => (key(a) > key(b) ? 1 : key(a) < key(b) ? -1 : 0));
+    if (filter.descending) rows.reverse();
+
+    return rows;
+  }
+
+  // ------------------------------------------------------------ groups
+  // A group is a row with members pointing at it, which is why it can be listed,
+  // archived and deleted as itself. These mirror `src-tauri/src/repo/groups.rs`.
+
+  private group(id: number): Group {
+    return this.book.groups.find((row) => row.id === id) ?? this.notFound("That group");
+  }
+
+  private nextGroupCode(): string {
+    const highest = this.book.groups
+      .map((row) => Number(/^GR-(\d+)$/.exec(row.groupCode)?.[1] ?? 0))
+      .reduce((best, value) => Math.max(best, value), 0);
+    return `GR-${String(highest + 1).padStart(5, "0")}`;
+  }
+
+  /** The rollups a group derives, and the group name each client reads. */
+  private regroup(): void {
+    recountGroups(this.book.groups, this.book.clients, this.book.policies);
+  }
+
+  private validateGroup(input: GroupInput, self?: number): void {
+    const name = blankToNone(input?.name);
+    if (!name) this.invalid("Group name is required");
+    // A referrer is asked for, though the column is nullable: a group whose head
+    // was deleted keeps standing, but one may not be opened without naming who
+    // brought it in.
+    if (input.headClientId == null) this.invalid("A group needs the client who referred it");
+    this.client(input.headClientId);
+
+    const code = blankToNone(input.groupCode);
+    const clash = this.book.groups.find(
+      (row) =>
+        row.id !== self && (lower(row.name) === lower(name) || (code && row.groupCode === code)),
+    );
+    if (clash) {
+      throw {
+        kind: "conflict",
+        message: "A group with that name or code already exists",
+      } satisfies BridgeError;
+    }
+  }
+
+  private filterGroups(filter: GroupFilter = {}): Group[] {
+    let rows = this.book.groups.map((row) => ({ ...row }));
+
+    if (!filter.includeArchived) rows = rows.filter((row) => !row.isArchived);
+    if (filter.headClientId != null) {
+      rows = rows.filter((row) => row.headClientId === filter.headClientId);
+    }
+    if (filter.search) {
+      const needle = lower(filter.search);
+      rows = rows.filter((row) =>
+        [row.name, row.groupCode, row.headName].some((value) => lower(value).includes(needle)),
+      );
+    }
+
+    const keys: Record<string, (row: Group) => string | number> = {
+      name: (row) => lower(row.name),
+      code: (row) => row.groupCode,
+      members: (row) => row.members,
+      policies: (row) => row.activePolicies,
+      premium: (row) => row.premiumUnderManagement,
       nextExpiry: (row) => row.nextExpiry ?? "9999-12-31",
       created: (row) => row.createdAt,
     };
@@ -686,6 +771,9 @@ export class FakeBackend {
   /** The derived client columns, after policies or relationships change. */
   private recount(): void {
     recountClients(this.book.clients, this.book.policies, this.book.relations);
+    // A group's totals are its members' policies added up, so anything that
+    // moves a policy moves them.
+    this.regroup();
   }
 
   private dashboard(): Dashboard {
@@ -892,6 +980,7 @@ export class FakeBackend {
         id,
         clientCode: blankToNone(input.clientCode) ?? this.nextClientCode(),
         ...this.clientColumns(input),
+        groupId: input.groupId ?? null,
         isArchived: false,
         createdAt: `${TODAY}T04:30:00Z`,
         updatedAt: `${TODAY}T04:30:00Z`,
@@ -900,7 +989,9 @@ export class FakeBackend {
         nextExpiry: null,
         relatives: 0,
         isDependent: false,
+        groupName: null,
       });
+      this.regroup();
       return id;
     },
     update_client: (args) => {
@@ -909,11 +1000,16 @@ export class FakeBackend {
       this.validateClient(input);
       // Every column is written from the payload, so a field the form does not
       // carry is emptied rather than left alone — as the UPDATE statement does.
+      // Group membership is the exception the core makes for the same reason:
+      // the client form draws no group, and saving a name change must not tip a
+      // client out of one.
       Object.assign(client, this.clientColumns(input), {
         clientCode: blankToNone(input.clientCode) ?? client.clientCode,
+        groupId: input.groupId ?? client.groupId,
         updatedAt: `${TODAY}T04:30:00Z`,
       });
       for (const policy of this.book.policies) this.decorate(policy);
+      this.regroup();
       return null;
     },
     set_client_archived: (args) => {
@@ -941,6 +1037,91 @@ export class FakeBackend {
       return going;
     },
     next_client_code: () => `CL-${String(this.book.clients.length + 1).padStart(5, "0")}`,
+
+    // ------------------------------------------------------------ groups
+    list_groups: (args) =>
+      paginate(this.filterGroups(args.filter as GroupFilter), (args.filter ?? {}) as GroupFilter),
+    get_group: (args) => ({ ...this.group(Number(args.id)) }),
+    next_group_code: () => this.nextGroupCode(),
+    create_group: (args) => {
+      const input = args.input as GroupInput;
+      this.validateGroup(input);
+      const id = this.id();
+      this.book.groups.push({
+        id,
+        groupCode: blankToNone(input.groupCode) ?? this.nextGroupCode(),
+        name: tidyName(input.name),
+        headClientId: input.headClientId ?? null,
+        headName: null,
+        headClientCode: null,
+        notes: blankToNone(input.notes),
+        isArchived: false,
+        createdAt: `${TODAY}T04:30:00Z`,
+        updatedAt: `${TODAY}T04:30:00Z`,
+        members: 0,
+        activePolicies: 0,
+        totalPolicies: 0,
+        premiumUnderManagement: 0,
+        nextExpiry: null,
+      });
+      this.regroup();
+      return id;
+    },
+    update_group: (args) => {
+      const group = this.group(Number(args.id));
+      const input = args.input as GroupInput;
+      this.validateGroup(input, group.id);
+      Object.assign(group, {
+        name: tidyName(input.name),
+        groupCode: blankToNone(input.groupCode) ?? group.groupCode,
+        headClientId: input.headClientId ?? null,
+        notes: blankToNone(input.notes),
+        updatedAt: `${TODAY}T04:30:00Z`,
+      });
+      this.regroup();
+      return null;
+    },
+    set_group_archived: (args) => {
+      // The members go with it and the referrer does not, because they were
+      // never in it: archiving a folder puts away what is filed in it.
+      const group = this.group(Number(args.id));
+      const archived = Boolean(args.archived);
+      group.isArchived = archived;
+      let moved = 0;
+      for (const client of this.book.clients) {
+        if (client.groupId === group.id && client.isArchived !== archived) {
+          client.isArchived = archived;
+          moved += 1;
+        }
+      }
+      return moved;
+    },
+    delete_group: (args) => {
+      // A group is a filing arrangement, not an owner. Deleting the folder
+      // releases the companies rather than taking them with it.
+      const group = this.group(Number(args.id));
+      let released = 0;
+      for (const client of this.book.clients) {
+        if (client.groupId === group.id) {
+          client.groupId = null;
+          released += 1;
+        }
+      }
+      this.book.groups = this.book.groups.filter((row) => row.id !== group.id);
+      this.regroup();
+      return released;
+    },
+    set_client_group: (args) => {
+      const client = this.client(Number(args.clientId));
+      const groupId = args.groupId == null ? null : Number(args.groupId);
+      // A client sits in one group at a time, so joining one is how they leave
+      // the last.
+      if (groupId != null) this.group(groupId);
+      client.groupId = groupId;
+      client.updatedAt = `${TODAY}T04:30:00Z`;
+      this.regroup();
+      return null;
+    },
 
     // ------------------------------------------------------------ family
     list_relatives: (args) => this.relativesOf(Number(args.clientId)),

@@ -71,6 +71,10 @@ type ClientColumn = (&'static str, fn(&Client) -> String);
 const CLIENT_COLUMNS: &[ClientColumn] = &[
     ("Client code", |c| c.client_code.clone()),
     ("Name", |c| c.full_name.clone()),
+    // The words the screens use rather than the words the column stores, so a
+    // sheet mailed to an accountant reads the way the app does.
+    ("Type", |c| title_case(&c.kind)),
+    ("Group", |c| c.group_name.clone().unwrap_or_default()),
     ("Email", |c| c.email.clone().unwrap_or_default()),
     ("Phone", |c| c.phone.clone().unwrap_or_default()),
     ("Alternate phone", |c| {
@@ -92,6 +96,16 @@ const CLIENT_COLUMNS: &[ClientColumn] = &[
     ("Pincode", |c| c.pincode.clone().unwrap_or_default()),
     ("Occupation", |c| c.occupation.clone().unwrap_or_default()),
     ("PAN", |c| c.pan.clone().unwrap_or_default()),
+    ("GSTIN", |c| c.gstin.clone().unwrap_or_default()),
+    ("Registration number", |c| {
+        c.registration_no.clone().unwrap_or_default()
+    }),
+    ("Contact person", |c| {
+        c.contact_person.clone().unwrap_or_default()
+    }),
+    ("Designation", |c| {
+        c.contact_designation.clone().unwrap_or_default()
+    }),
     ("Active policies", |c| c.active_policies.to_string()),
     ("Total policies", |c| c.total_policies.to_string()),
     ("Next expiry", |c| c.next_expiry.clone().unwrap_or_default()),

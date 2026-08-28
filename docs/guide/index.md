@@ -36,6 +36,7 @@ If the app is new to you, read these three in order and you are running.
 | --- | --- |
 | [Manage clients](clients.md) | Add, find, edit, archive, delete and export clients |
 | [Record a family](families.md) | Linking relatives, who a policy covers, and archiving a household |
+| [Companies and groups](groups.md) | Entering a firm, opening a group, the referrer who introduced it, and who is in it |
 | [Keep the paperwork](documents.md) | Attach scans and photographs to a client or a policy, and read them back |
 | [Manage policies](policies.md) | Record a policy, every field on the form, filters, statuses, deleting |
 | [Insurers and plans](insurers-and-plans.md) | Keep one company recorded one way, and its plans beneath it |

@@ -28,6 +28,7 @@ export function installTauriMock({ fixtures, scenario = {} }) {
   const policies = fixtures.policies.map((row) => ({ ...row }));
   const insurers = fixtures.insurers.map((row) => ({ ...row }));
   const products = fixtures.products.map((row) => ({ ...row }));
+  const groups = fixtures.groups.map((row) => ({ ...row }));
   const relations = fixtures.relations.map((row) => ({ ...row }));
   const cover = fixtures.cover.map((row) => ({ ...row }));
   const documents = fixtures.documents.map((row) => ({ ...row }));
@@ -40,6 +41,7 @@ export function installTauriMock({ fixtures, scenario = {} }) {
   const empty = scenario.empty === true;
   const visibleClients = empty ? [] : clients;
   const visiblePolicies = empty ? [] : policies;
+  const visibleGroups = empty ? [] : groups;
 
   const lower = (value) => String(value ?? "").toLowerCase();
   const page = (rows, filter) => {
@@ -110,6 +112,8 @@ export function installTauriMock({ fixtures, scenario = {} }) {
     // Browsing shows the policyholders; searching reaches the whole book.
     if (!filter.includeFamily && !filter.search) rows = rows.filter((row) => !row.isDependent);
     if (filter.missingEmail) rows = rows.filter((row) => !row.email);
+    if (filter.kind) rows = rows.filter((row) => row.kind === filter.kind);
+    if (filter.groupId != null) rows = rows.filter((row) => row.groupId === filter.groupId);
     if (filter.city) rows = rows.filter((row) => row.city === filter.city);
     if (filter.category) {
       rows = rows.filter((row) =>
@@ -128,6 +132,35 @@ export function installTauriMock({ fixtures, scenario = {} }) {
     const keys = {
       name: (row) => lower(row.fullName),
       policies: (row) => row.activePolicies,
+      nextExpiry: (row) => row.nextExpiry ?? "9999-12-31",
+      group: (row) => lower(row.groupName ?? "zzzz"),
+    };
+    const key = keys[filter.sort ?? "name"] ?? keys.name;
+    rows.sort((a, b) => (key(a) > key(b) ? 1 : key(a) < key(b) ? -1 : 0));
+    if (filter.descending) rows.reverse();
+
+    return page(rows, filter);
+  }
+
+  function filterGroups(filter = {}) {
+    let rows = visibleGroups.slice();
+
+    if (!filter.includeArchived) rows = rows.filter((row) => !row.isArchived);
+    if (filter.headClientId != null) {
+      rows = rows.filter((row) => row.headClientId === filter.headClientId);
+    }
+    if (filter.search) {
+      const needle = lower(filter.search);
+      rows = rows.filter((row) =>
+        [row.name, row.groupCode, row.headName].some((value) => lower(value).includes(needle)),
+      );
+    }
+
+    const keys = {
+      name: (row) => lower(row.name),
+      members: (row) => row.members,
+      policies: (row) => row.activePolicies,
+      premium: (row) => row.premiumUnderManagement,
       nextExpiry: (row) => row.nextExpiry ?? "9999-12-31",
     };
     const key = keys[filter.sort ?? "name"] ?? keys.name;
@@ -241,7 +274,18 @@ export function installTauriMock({ fixtures, scenario = {} }) {
     update_client: () => null,
     set_client_archived: () => null,
     delete_client: ({ id }) => [id],
-    next_client_code: () => "CL-00012",
+    next_client_code: () => "CL-00014",
+
+    // A group is a row, so it lists, opens, archives and deletes as itself.
+    // Deleting one releases the clients filed in it rather than taking them.
+    list_groups: ({ filter }) => filterGroups(filter),
+    get_group: ({ id }) => groups.find((row) => row.id === id) ?? groups[0],
+    next_group_code: () => "GR-00002",
+    create_group: () => 99,
+    update_group: () => null,
+    set_group_archived: () => 2,
+    delete_group: () => 2,
+    set_client_group: () => null,
 
     set_family_archived: () => 0,
 

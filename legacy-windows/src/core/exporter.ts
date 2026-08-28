@@ -71,6 +71,10 @@ const POLICY_COLUMNS: Column<Policy>[] = [
 const CLIENT_COLUMNS: Column<Client>[] = [
   ["Client code", (c) => c.clientCode],
   ["Name", (c) => c.fullName],
+  // The words the screens use rather than the words the column stores, so a sheet
+  // mailed to an accountant reads the way the app does.
+  ["Type", (c) => titleCase(c.kind)],
+  ["Group", (c) => c.groupName ?? ""],
   ["Email", (c) => c.email ?? ""],
   ["Phone", (c) => c.phone ?? ""],
   ["Alternate phone", (c) => c.altPhone ?? ""],
@@ -86,6 +90,10 @@ const CLIENT_COLUMNS: Column<Client>[] = [
   ["Pincode", (c) => c.pincode ?? ""],
   ["Occupation", (c) => c.occupation ?? ""],
   ["PAN", (c) => c.pan ?? ""],
+  ["GSTIN", (c) => c.gstin ?? ""],
+  ["Registration number", (c) => c.registrationNo ?? ""],
+  ["Contact person", (c) => c.contactPerson ?? ""],
+  ["Designation", (c) => c.contactDesignation ?? ""],
   ["Active policies", (c) => `${c.activePolicies}`],
   ["Total policies", (c) => `${c.totalPolicies}`],
   ["Next expiry", (c) => c.nextExpiry ?? ""],

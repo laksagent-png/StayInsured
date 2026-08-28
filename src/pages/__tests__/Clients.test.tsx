@@ -7,12 +7,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   backend,
+  createBook,
+  installBackend,
   currentRoute,
   renderWithProviders,
   screen,
   settle,
   tauriDialog,
   waitFor,
+  withGroups,
   within,
 } from "@/test";
 import type { Client, ClientFilter } from "@/lib/types";
@@ -96,13 +99,14 @@ describe("the clients list", () => {
     expect(within(row(/Kavita Joshi/)).getByText("No reminders")).toBeInTheDocument();
   });
 
-  it("shows an em dash where a client has no phone and no expiry", async () => {
+  it("shows an em dash where a client has no phone, no group and no expiry", async () => {
     backend().book.clients[2].phone = null;
     renderWithProviders(<ClientsPage />);
     await screen.findByText("Vikram Patel");
 
-    // Vikram holds nothing active, so both his phone and his next expiry are blank.
-    expect(within(row(/Vikram Patel/)).getAllByText("—")).toHaveLength(2);
+    // Vikram holds nothing active and is in no group, so his phone, his group
+    // and his next expiry are all blank.
+    expect(within(row(/Vikram Patel/)).getAllByText("—")).toHaveLength(3);
   });
 });
 
@@ -716,6 +720,51 @@ describe("while the list is busy or broken", () => {
 
     await user.click(screen.getByRole("checkbox", { name: /Include archived/ }));
 
+    expect(await screen.findByText("Rohit Sharma")).toBeInTheDocument();
+  });
+});
+describe("people and companies in one book", () => {
+  it("marks a company on the row and links to the group it is filed in", async () => {
+    installBackend(withGroups(createBook()));
+    renderWithProviders(<ClientsPage />);
+    await screen.findByText("Patel Weaves Pvt Ltd");
+
+    const weaves = within(row(/Patel Weaves/));
+    expect(weaves.getByRole("link", { name: "Patel Group" })).toHaveAttribute("href", "/groups/1");
+    expect(screen.getByRole("columnheader", { name: "Group" })).toBeInTheDocument();
+  });
+
+  it("narrows the book to companies, or to people", async () => {
+    installBackend(withGroups(createBook()));
+    const { user } = renderWithProviders(<ClientsPage />);
+    await screen.findByText("Rohit Sharma");
+
+    const kind = screen.getByRole("combobox", { name: "Client type" });
+    await user.selectOptions(kind, "company");
+
+    await waitFor(() => expect(lastFilter()).toMatchObject({ kind: "company" }));
+    await waitFor(() => expect(names()).toEqual(expect.arrayContaining(["Patel Weaves Pvt Ltd"])));
+    expect(screen.queryByText("Rohit Sharma")).toBeNull();
+
+    await user.selectOptions(kind, "individual");
+
+    await waitFor(() => expect(lastFilter()).toMatchObject({ kind: "individual" }));
+    expect(await screen.findByText("Rohit Sharma")).toBeInTheDocument();
+    expect(screen.queryByText("Patel Weaves Pvt Ltd")).toBeNull();
+  });
+
+  it("drops the type filter rather than asking for an empty one", async () => {
+    installBackend(withGroups(createBook()));
+    const { user } = renderWithProviders(<ClientsPage />);
+    await screen.findByText("Rohit Sharma");
+
+    const kind = screen.getByRole("combobox", { name: "Client type" });
+    await user.selectOptions(kind, "company");
+    await waitFor(() => expect(lastFilter()).toMatchObject({ kind: "company" }));
+
+    await user.selectOptions(kind, "");
+
+    await waitFor(() => expect(lastFilter()?.kind).toBeUndefined());
     expect(await screen.findByText("Rohit Sharma")).toBeInTheDocument();
   });
 });
