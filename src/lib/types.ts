@@ -10,6 +10,26 @@ export type Category =
 
 export type PolicyStatus = "active" | "expired" | "renewed" | "lapsed" | "cancelled";
 
+/** A rider sold on top of a health plan. */
+export type Rider =
+  | "safeguard"
+  | "safeguard_plus"
+  | "pa_main_member"
+  | "future_ready"
+  | "fast_forwarded";
+
+/** One life, or a family sharing a sum insured. */
+export type PlanType = "individual" | "family_floater";
+
+/**
+ * How a policy year was written. Not a status: a policy ported in from another
+ * insurer stays a `portability`, while `renewed` says a later year exists.
+ */
+export type PolicyType = "fresh" | "portability" | "renewal";
+
+/** The most years of health cover that can be bought in one go. */
+export const MAX_TERM = 5;
+
 /**
  * How one client is related to another. There is no `self`: a family member is a
  * client, so a client does not relate to themselves.
@@ -271,6 +291,16 @@ export interface Policy {
   nomineeName: string | null;
   nomineeRelation: string | null;
   vehicleNumber: string | null;
+  variant: string | null;
+  /** The riders bought on top, always in the core's own order. */
+  riders: Rider[];
+  planType: PlanType | null;
+  /** Years of cover bought in one go, 1 to `MAX_TERM`. */
+  term: number | null;
+  policyType: PolicyType | null;
+  broker: string | null;
+  /** A rider the plan comes with, as against one bought on top. */
+  inbuiltRider: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -298,6 +328,13 @@ export interface PolicyInput {
   nomineeName?: string | null;
   nomineeRelation?: string | null;
   vehicleNumber?: string | null;
+  variant?: string | null;
+  riders?: Rider[] | null;
+  planType?: PlanType | null;
+  term?: number | null;
+  policyType?: PolicyType | null;
+  broker?: string | null;
+  inbuiltRider?: string | null;
   notes?: string | null;
   /** The clients this policy year covers, which may include the holder. */
   insuredClientIds?: number[] | null;

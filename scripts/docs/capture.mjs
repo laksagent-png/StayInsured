@@ -152,9 +152,20 @@ const shots = [
   },
   {
     name: "policy-new",
-    caption: "New policy: client, insurer, dates and money in one form",
+    caption: "New policy: the form as health asks for it, in the order a proposal is written",
     route: "/policies",
     prepare: click("New policy"),
+  },
+  {
+    name: "policy-new-general",
+    caption: "The same form for every other category: client, insurer, dates and money",
+    route: "/policies",
+    prepare: async (page) => {
+      await click("New policy")(page);
+      // The list behind the dialog has a category filter of its own.
+      await page.getByRole("dialog").getByLabel("Category *").selectOption("motor");
+      await page.waitForTimeout(600);
+    },
   },
   {
     name: "policy-history",

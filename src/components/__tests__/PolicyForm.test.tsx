@@ -45,6 +45,25 @@ function Host({ policy }: { policy?: Policy }) {
 /** The client picker's box; it is the only control the Client label wraps. */
 const clientBox = () => screen.getByPlaceholderText("Search by name, phone or code");
 
+/*
+ * A label carries a star when the field is required and its hint when it has
+ * one, and health renames the dates to the risk period. So the boxes are reached
+ * by what their labels start with, which holds for whichever category the form
+ * is showing. Plan turns away Plan type, which reads as a longer Plan.
+ */
+const planBox = () => screen.getByLabelText(/^Plan(?! type)/);
+const startBox = () => screen.getByLabelText(/^(Risk )?start date/i);
+const expiryBox = () => screen.getByLabelText(/^(Expiry date|Risk end date)/i);
+const sumInsuredBox = () => screen.getByLabelText(/^Sum insured/);
+const premiumBox = () => screen.getByLabelText(/^Premium/);
+
+/** Every label the form is showing, in the order it shows them. */
+function fieldLabels(): string[] {
+  return Array.from(document.querySelectorAll<HTMLElement>("form .field-label")).map((node) =>
+    node.textContent!.replace("*", "").trim(),
+  );
+}
+
 /** The input the payload was built from. */
 function savedInput(command: "create_policy" | "update_policy"): PolicyInput {
   return backend().lastCall(command)?.input as PolicyInput;
@@ -65,14 +84,39 @@ async function chooseInsurer(user: User, id: number, name: string) {
 /** Picks a plan once the insurer's plans have arrived. */
 async function choosePlan(user: User, id: number, name: string) {
   await screen.findByRole("option", { name });
-  await user.selectOptions(screen.getByLabelText(/Plan/), String(id));
+  await user.selectOptions(planBox(), String(id));
 }
 
-/** The least a new policy needs: a client, an insurer and a number. */
+async function chooseCategory(user: User, category: string) {
+  await user.selectOptions(screen.getByLabelText(/Category/), category);
+}
+
+/**
+ * The least a new policy needs: a client, an insurer and a number. Health is
+ * the exception and has a helper of its own, so this moves off it first.
+ */
 async function fillMinimum(user: User, policyNumber = "SH/2026/0001") {
+  await chooseCategory(user, "other");
   await chooseClient(user, /Anita Desai/);
   await chooseInsurer(user, 2, "HDFC ERGO");
   await user.type(screen.getByLabelText(/Policy number/), policyNumber);
+}
+
+/** Everything a health proposal is required to answer. */
+async function fillHealth(user: User, policyNumber = "HE/2026/0001") {
+  await chooseClient(user, /Anita Desai/);
+  await user.type(screen.getByLabelText(/Policy number/), policyNumber);
+  await chooseInsurer(user, 2, "HDFC ERGO");
+  await choosePlan(user, 2, "Optima Restore");
+  await user.type(screen.getByLabelText(/Variant/), "Platinum");
+  await user.click(screen.getByRole("button", { name: "Safeguard +" }));
+  await user.selectOptions(screen.getByLabelText(/Plan type/), "family_floater");
+  await user.selectOptions(screen.getByLabelText(/Term/), "2");
+  await user.selectOptions(screen.getByLabelText(/Policy type/), "portability");
+  await user.type(sumInsuredBox(), "1500000");
+  await user.type(premiumBox(), "30000");
+  await user.type(screen.getByLabelText(/Broker/), "Deshmukh Insurance Services");
+  await user.type(screen.getByLabelText(/Inbuilt rider/), "Restore benefit");
 }
 
 const addPolicy = () => screen.getByRole("button", { name: "Add policy" });
@@ -86,14 +130,15 @@ describe("the policy form for a new policy", () => {
   });
 
   it("offers every field the guide lists", async () => {
-    openForm();
+    const { user } = openForm();
+    await chooseCategory(user, "other");
 
     expect(screen.getByRole("heading", { name: "New policy" })).toBeInTheDocument();
     expect(clientBox()).toBeInTheDocument();
     for (const label of [
       /Policy number/,
       /Insurer/,
-      /Plan/,
+      /^Plan(?! type)/,
       /Category/,
       /Start date/,
       /Expiry date/,
@@ -110,21 +155,23 @@ describe("the policy form for a new policy", () => {
     ]) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }
-    // Vehicle number belongs to motor policies only.
+    // Vehicle number belongs to motor policies only, and the health details to
+    // health.
     expect(screen.queryByLabelText("Vehicle number")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Variant/)).not.toBeInTheDocument();
   });
 
   it("starts today, with a year less a day of cover", () => {
     openForm();
 
-    expect(screen.getByLabelText(/Start date/)).toHaveValue("2026-08-14");
-    expect(screen.getByLabelText(/Expiry date/)).toHaveValue("2027-08-13");
+    expect(startBox()).toHaveValue("2026-08-14");
+    expect(expiryBox()).toHaveValue("2027-08-13");
   });
 
   it("cannot pick a plan until an insurer is chosen", () => {
     openForm();
 
-    expect(screen.getByLabelText(/Plan/)).toBeDisabled();
+    expect(planBox()).toBeDisabled();
     expect(screen.getByText("Pick an insurer first")).toBeInTheDocument();
   });
 
@@ -133,6 +180,200 @@ describe("the policy form for a new policy", () => {
 
     expect(await screen.findByDisplayValue("Rohit Sharma")).toBeDisabled();
     expect(screen.queryByPlaceholderText("Search by name, phone or code")).not.toBeInTheDocument();
+  });
+});
+
+describe("the order the policy form asks in", () => {
+  it("takes a health proposal the way the insurer's form is laid out", () => {
+    // Health opens the form, so no category has to be chosen to see this.
+    openForm();
+
+    expect(fieldLabels().slice(0, 16)).toEqual([
+      "Category",
+      "Client",
+      "Policy number",
+      "Insurer",
+      "Plan",
+      "Variant",
+      "Riders",
+      "Plan type",
+      "Term",
+      "Risk start date",
+      "Risk end date",
+      "Policy type",
+      "Sum insured",
+      "Premium",
+      "Broker",
+      "Inbuilt rider",
+    ]);
+  });
+
+  it("keeps the book's own bookkeeping below the proposal", () => {
+    openForm();
+
+    expect(fieldLabels().slice(16)).toEqual([
+      "GST",
+      "Frequency",
+      "Payment mode",
+      "Commission %",
+      "Commission amount",
+      "Nominee",
+      "Nominee relation",
+      "Notes",
+    ]);
+  });
+
+  it("leaves every other category on the general layout", async () => {
+    const { user } = openForm();
+
+    await chooseCategory(user, "motor");
+
+    expect(fieldLabels()).toEqual([
+      "Client",
+      "Policy number",
+      "Insurer",
+      "Plan",
+      "Category",
+      "Start date",
+      "Expiry date",
+      "Sum insured",
+      "Premium",
+      "GST",
+      "Frequency",
+      "Commission %",
+      "Commission amount",
+      "Payment mode",
+      "Nominee",
+      "Nominee relation",
+      "Vehicle number",
+      "Notes",
+    ]);
+  });
+});
+
+describe("what a health policy asks for", () => {
+  it("names the riders the plan is sold with", () => {
+    openForm();
+
+    for (const rider of [
+      "Safeguard",
+      "Safeguard +",
+      "PA to main member",
+      "Future Ready",
+      "Fast Forwarded",
+    ]) {
+      expect(screen.getByRole("button", { name: rider })).toBeInTheDocument();
+    }
+  });
+
+  it("takes riders on and off, and sends the set that is left", async () => {
+    const { user } = openForm();
+    await fillHealth(user);
+
+    await user.click(screen.getByRole("button", { name: "Future Ready" }));
+    await user.click(screen.getByRole("button", { name: "Safeguard" }));
+    // Safeguard was ticked and untocked, so it goes nowhere near the payload.
+    await user.click(screen.getByRole("button", { name: "Safeguard" }));
+
+    await user.click(addPolicy());
+
+    await waitFor(() =>
+      expect(savedInput("create_policy").riders).toEqual(["safeguard_plus", "future_ready"]),
+    );
+  });
+
+  it("works the risk end date out from the term", async () => {
+    const { user } = openForm();
+
+    await user.selectOptions(screen.getByLabelText(/Term/), "3");
+
+    expect(expiryBox()).toHaveValue("2029-08-13");
+
+    await user.selectOptions(screen.getByLabelText(/Term/), "1");
+
+    expect(expiryBox()).toHaveValue("2027-08-13");
+  });
+
+  it("asks for each missing answer in the order the form reads", async () => {
+    const { user } = openForm();
+    await chooseClient(user, /Anita Desai/);
+    await chooseInsurer(user, 2, "HDFC ERGO");
+    await user.type(screen.getByLabelText(/Policy number/), "HE/2026/0009");
+
+    for (const [complaint, put] of [
+      ["Choose the plan this health policy is written on", () => choosePlan(user, 2, "Optima Restore")],
+      ["Name the variant of the plan", () => user.type(screen.getByLabelText(/Variant/), "Platinum")],
+      [
+        "Choose the riders, or the plan cannot be priced",
+        () => user.click(screen.getByRole("button", { name: "Safeguard" })),
+      ],
+      [
+        "Say whether the cover is individual or a family floater",
+        () => user.selectOptions(screen.getByLabelText(/Plan type/), "individual"),
+      ],
+      [
+        "Choose how many years of cover were bought",
+        () => user.selectOptions(screen.getByLabelText(/Term/), "1"),
+      ],
+      [
+        "Say whether this is fresh, a portability or a renewal",
+        () => user.selectOptions(screen.getByLabelText(/Policy type/), "fresh"),
+      ],
+      ["A health policy needs its sum insured", () => user.type(sumInsuredBox(), "500000")],
+      ["A health policy needs its premium", () => user.type(premiumBox(), "18000")],
+      ["Name the broker this was placed through", () => user.type(screen.getByLabelText(/Broker/), "Deshmukh")],
+      [
+        "Name the rider the plan comes with",
+        () => user.type(screen.getByLabelText(/Inbuilt rider/), "Restore benefit"),
+      ],
+    ] as [string, () => Promise<void>][]) {
+      await user.click(addPolicy());
+      expect(await screen.findByText(complaint)).toBeInTheDocument();
+      expect(backend().countOf("create_policy")).toBe(0);
+      await put();
+    }
+
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(backend().countOf("create_policy")).toBe(1));
+  });
+
+  it("leaves the health answers behind when the policy stops being health", async () => {
+    const { user } = openForm();
+    await fillHealth(user);
+
+    await chooseCategory(user, "travel");
+    await user.click(addPolicy());
+
+    await waitFor(() => expect(backend().countOf("create_policy")).toBe(1));
+    expect(savedInput("create_policy")).toMatchObject({
+      category: "travel",
+      variant: "",
+      riders: [],
+      planType: null,
+      term: null,
+      policyType: null,
+      broker: "",
+      inbuiltRider: "",
+    });
+  });
+
+  it("shows what an existing health policy already answered", async () => {
+    openForm({ policy: fromBook(1) });
+
+    await waitFor(() => expect(screen.getByLabelText(/Variant/)).toHaveValue("Gold"));
+    expect(screen.getByLabelText(/Plan type/)).toHaveValue("family_floater");
+    expect(screen.getByLabelText(/Policy type/)).toHaveValue("renewal");
+    expect(screen.getByLabelText(/Broker/)).toHaveValue("Deshmukh Insurance Services");
+    expect(screen.getByLabelText(/Inbuilt rider/)).toHaveValue("Road ambulance cover");
+    expect(screen.getByRole("button", { name: "Safeguard" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Safeguard +" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 });
 
@@ -204,7 +445,7 @@ describe("the policy form's insurer and plan pickers", () => {
     await chooseInsurer(user, 1, "Star Health");
 
     await waitFor(() => expect(backend().lastCall("list_products")?.insurerId).toBe(1));
-    const plan = screen.getByLabelText(/Plan/);
+    const plan = planBox();
     expect(plan).toBeEnabled();
     await waitFor(() =>
       expect(within(plan).getAllByRole("option").map((option) => option.textContent)).toEqual([
@@ -230,11 +471,11 @@ describe("the policy form's insurer and plan pickers", () => {
 
     await chooseInsurer(user, 1, "Star Health");
     await choosePlan(user, 1, "Family Health Optima");
-    expect(screen.getByLabelText(/Plan/)).toHaveValue("1");
+    expect(planBox()).toHaveValue("1");
 
     await chooseInsurer(user, 2, "HDFC ERGO");
 
-    expect(screen.getByLabelText(/Plan/)).toHaveValue("");
+    expect(planBox()).toHaveValue("");
     await user.click(addPolicy());
     await waitFor(() => expect(savedInput("create_policy")).toMatchObject({ productId: null }));
   });
@@ -242,7 +483,7 @@ describe("the policy form's insurer and plan pickers", () => {
   it("keeps the plan an existing policy already has", async () => {
     openForm({ policy: fromBook(1) });
 
-    await waitFor(() => expect(screen.getByLabelText(/Plan/)).toHaveValue("1"));
+    await waitFor(() => expect(planBox()).toHaveValue("1"));
     expect(screen.getByLabelText(/Insurer/)).toHaveValue("1");
   });
 });
@@ -293,7 +534,7 @@ describe("what the policy form insists on", () => {
   it("asks for both dates", async () => {
     const { user } = openForm();
     await fillMinimum(user);
-    await user.clear(screen.getByLabelText(/Start date/));
+    await user.clear(startBox());
 
     await user.click(addPolicy());
 
@@ -321,24 +562,24 @@ describe("the policy form's dates", () => {
   it("moves the expiry with the start date until it is set by hand", async () => {
     const { user } = openForm();
 
-    const start = screen.getByLabelText(/Start date/);
+    const start = startBox();
     await user.clear(start);
     await user.type(start, "2026-09-01");
-    expect(screen.getByLabelText(/Expiry date/)).toHaveValue("2027-08-31");
+    expect(expiryBox()).toHaveValue("2027-08-31");
 
-    const expiry = screen.getByLabelText(/Expiry date/);
+    const expiry = expiryBox();
     await user.clear(expiry);
     await user.type(expiry, "2027-12-31");
 
     await user.clear(start);
     await user.type(start, "2026-10-01");
-    expect(screen.getByLabelText(/Expiry date/)).toHaveValue("2027-12-31");
+    expect(expiryBox()).toHaveValue("2027-12-31");
   });
 
   it("passes on the core's complaint when the expiry equals the start", async () => {
     const { user } = openForm();
     await fillMinimum(user);
-    const expiry = screen.getByLabelText(/Expiry date/);
+    const expiry = expiryBox();
     await user.clear(expiry);
     await user.type(expiry, "2026-08-14");
 
@@ -353,7 +594,7 @@ describe("the policy form's dates", () => {
   it("catches an expiry before the start without asking the core", async () => {
     const { user } = openForm();
     await fillMinimum(user);
-    const expiry = screen.getByLabelText(/Expiry date/);
+    const expiry = expiryBox();
     await user.clear(expiry);
     await user.type(expiry, "2026-01-01");
 
@@ -371,8 +612,8 @@ describe("the policy form's numbers", () => {
     const { user } = openForm();
     await fillMinimum(user);
 
-    await user.type(screen.getByLabelText("Premium"), "abc");
-    expect(screen.getByLabelText("Premium")).toHaveValue(null);
+    await user.type(premiumBox(), "abc");
+    expect(premiumBox()).toHaveValue(null);
 
     await user.click(addPolicy());
 
@@ -398,7 +639,7 @@ describe("the policy form's numbers", () => {
     const { user } = openForm();
     await fillMinimum(user);
 
-    await user.type(screen.getByLabelText("Premium"), "0");
+    await user.type(premiumBox(), "0");
 
     await user.click(addPolicy());
 
@@ -409,7 +650,7 @@ describe("the policy form's numbers", () => {
     const { user } = openForm();
     await fillMinimum(user);
 
-    await user.type(screen.getByLabelText("Premium"), "-500");
+    await user.type(premiumBox(), "-500");
 
     await user.click(addPolicy());
 
@@ -420,7 +661,7 @@ describe("the policy form's numbers", () => {
     const { user } = openForm();
     await fillMinimum(user);
 
-    await user.type(screen.getByLabelText("Sum insured"), "-100000");
+    await user.type(sumInsuredBox(), "-100000");
     await user.type(screen.getByLabelText("Commission %"), "500");
 
     await user.click(addPolicy());
@@ -432,7 +673,7 @@ describe("the policy form's numbers", () => {
     const { user } = openForm();
     await fillMinimum(user);
 
-    await user.type(screen.getByLabelText("Premium"), "24500");
+    await user.type(premiumBox(), "24500");
     await user.type(screen.getByLabelText("Commission %"), "12.5");
 
     expect(await screen.findByText("₹3,063 from the rate")).toBeInTheDocument();
@@ -447,7 +688,7 @@ describe("the policy form's numbers", () => {
     const { user } = openForm();
     await fillMinimum(user);
 
-    await user.type(screen.getByLabelText("Premium"), "24500");
+    await user.type(premiumBox(), "24500");
     await user.type(screen.getByLabelText("Commission %"), "12.5");
     await user.type(screen.getByLabelText(/Commission amount/), "2000");
 
@@ -460,10 +701,10 @@ describe("the policy form's numbers", () => {
 
   it("works the commission out again when an existing premium changes", async () => {
     const { user } = openForm({ policy: fromBook(1) });
-    await waitFor(() => expect(screen.getByLabelText("Premium")).toHaveValue(24500));
+    await waitFor(() => expect(premiumBox()).toHaveValue(24500));
 
-    await user.clear(screen.getByLabelText("Premium"));
-    await user.type(screen.getByLabelText("Premium"), "50000");
+    await user.clear(premiumBox());
+    await user.type(premiumBox(), "50000");
 
     await user.click(saveChanges());
 
@@ -507,6 +748,7 @@ describe("the policy form's covered members", () => {
 
   it("adds a life to a new policy", async () => {
     const { user } = openForm();
+    await chooseCategory(user, "other");
     await chooseClient(user, /Rohit Sharma/);
     await chooseInsurer(user, 2, "HDFC ERGO");
     await user.type(screen.getByLabelText(/Policy number/), "SH/2026/0001");
@@ -529,6 +771,7 @@ describe("the policy form's covered members", () => {
 
   it("forgets the lives when the client changes", async () => {
     const { user } = openForm();
+    await chooseCategory(user, "other");
     await chooseClient(user, /Rohit Sharma/);
     await user.click(await screen.findByRole("button", { name: /Sneha Sharma/ }));
 
@@ -574,7 +817,7 @@ describe("the policy form's vehicle number", () => {
 
     await user.selectOptions(screen.getByLabelText(/Category/), "motor");
     await user.type(screen.getByLabelText("Vehicle number"), "mh12ab1234");
-    await user.selectOptions(screen.getByLabelText(/Category/), "health");
+    await user.selectOptions(screen.getByLabelText(/Category/), "travel");
     expect(screen.queryByLabelText("Vehicle number")).not.toBeInTheDocument();
 
     await user.click(addPolicy());
@@ -587,16 +830,10 @@ describe("saving from the policy form", () => {
   it("sends exactly what was filled in", async () => {
     const { user, onClose } = openForm();
 
-    await chooseClient(user, /Anita Desai/);
-    await user.type(screen.getByLabelText(/Policy number/), "HE/2026/0001");
-    await chooseInsurer(user, 2, "HDFC ERGO");
-    await choosePlan(user, 2, "Optima Restore");
-    await user.selectOptions(screen.getByLabelText(/Category/), "health");
-    const start = screen.getByLabelText(/Start date/);
+    await fillHealth(user);
+    const start = startBox();
     await user.clear(start);
     await user.type(start, "2026-09-01");
-    await user.type(screen.getByLabelText("Sum insured"), "1500000");
-    await user.type(screen.getByLabelText("Premium"), "30000");
     await user.type(screen.getByLabelText("GST"), "5400");
     await user.selectOptions(screen.getByLabelText("Frequency"), "half_yearly");
     await user.type(screen.getByLabelText("Commission %"), "15");
@@ -615,7 +852,9 @@ describe("saving from the policy form", () => {
       productId: 2,
       category: "health",
       startDate: "2026-09-01",
-      expiryDate: "2027-08-31",
+      // Two years were bought, so the risk runs to the day before the second
+      // anniversary rather than the first.
+      expiryDate: "2028-08-31",
       sumInsured: 1500000,
       premiumAmount: 30000,
       gstAmount: 5400,
@@ -625,6 +864,13 @@ describe("saving from the policy form", () => {
       commissionExpected: 4500,
       nomineeName: "Rahul Desai",
       nomineeRelation: "Son",
+      variant: "Platinum",
+      riders: ["safeguard_plus"],
+      planType: "family_floater",
+      term: 2,
+      policyType: "portability",
+      broker: "Deshmukh Insurance Services",
+      inbuiltRider: "Restore benefit",
       // A new policy takes its status from the calendar, so none is sent. Text
       // fields that were never touched go as empty strings.
       vehicleNumber: "",
@@ -638,10 +884,10 @@ describe("saving from the policy form", () => {
 
   it("updates the policy year that was opened, and no other", async () => {
     const { user, onClose } = openForm({ policy: fromBook(1) });
-    await waitFor(() => expect(screen.getByLabelText("Premium")).toHaveValue(24500));
+    await waitFor(() => expect(premiumBox()).toHaveValue(24500));
 
-    await user.clear(screen.getByLabelText("Premium"));
-    await user.type(screen.getByLabelText("Premium"), "26000");
+    await user.clear(premiumBox());
+    await user.type(premiumBox(), "26000");
     await user.type(screen.getByLabelText("Notes"), " Premium revised.");
 
     await user.click(saveChanges());
@@ -700,6 +946,7 @@ describe("saving from the policy form", () => {
 
   it("saves when Enter is pressed in a field", async () => {
     const { user, onClose } = openForm();
+    await chooseCategory(user, "other");
     await chooseClient(user, /Anita Desai/);
     await chooseInsurer(user, 2, "HDFC ERGO");
 
@@ -781,26 +1028,26 @@ describe("leaving the policy form", () => {
 
     await user.click(screen.getByRole("button", { name: "Open the form" }));
     await user.type(screen.getByLabelText(/Policy number/), "SH/2026/0001");
-    await user.type(screen.getByLabelText("Premium"), "12345");
+    await user.type(premiumBox(), "12345");
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     await user.click(screen.getByRole("button", { name: "Open the form" }));
 
     expect(screen.getByLabelText(/Policy number/)).toHaveValue("");
-    expect(screen.getByLabelText("Premium")).toHaveValue(null);
-    expect(screen.getByLabelText(/Start date/)).toHaveValue("2026-08-14");
+    expect(premiumBox()).toHaveValue(null);
+    expect(startBox()).toHaveValue("2026-08-14");
   });
 
   it("loads the policy again when an edit is reopened", async () => {
     const { user } = renderWithProviders(<Host policy={fromBook(2)} />);
 
     await user.click(screen.getByRole("button", { name: "Open the form" }));
-    await user.clear(screen.getByLabelText("Premium"));
+    await user.clear(premiumBox());
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     await user.click(screen.getByRole("button", { name: "Open the form" }));
 
-    expect(screen.getByLabelText("Premium")).toHaveValue(12800);
+    expect(premiumBox()).toHaveValue(12800);
     expect(screen.getByLabelText(/Policy number/)).toHaveValue("IL/MOT/778211");
   });
 });

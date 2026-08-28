@@ -220,6 +220,15 @@ export interface Policy {
   nomineeName: string | null;
   nomineeRelation: string | null;
   vehicleNumber: string | null;
+  variant: string | null;
+  /** The riders bought on top, split out of the one column that stores them. */
+  riders: string[];
+  planType: string | null;
+  /** Years of cover bought in one go, 1 to `MAX_TERM`. */
+  term: number | null;
+  policyType: string | null;
+  broker: string | null;
+  inbuiltRider: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -247,6 +256,13 @@ export interface PolicyInput {
   nomineeName?: string | null;
   nomineeRelation?: string | null;
   vehicleNumber?: string | null;
+  variant?: string | null;
+  riders?: string[] | null;
+  planType?: string | null;
+  term?: number | null;
+  policyType?: string | null;
+  broker?: string | null;
+  inbuiltRider?: string | null;
   notes?: string | null;
   /** The clients this policy year covers, which may include the holder. */
   insuredClientIds?: number[] | null;

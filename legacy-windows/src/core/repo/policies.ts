@@ -13,9 +13,20 @@ import crypto from "node:crypto";
 import type { Conn } from "../db";
 import { AppError, describe } from "../errors";
 import { Conditions, inClause, likePattern, orderBy, paginate, type Bind } from "../query";
-import { blankToNull, numberOrNull, toModel, toModels } from "../rows";
+import { blankToNull, numberOrNull, toModel } from "../rows";
 import type { Page, Policy, PolicyFilter, PolicyInput, RenewalInput } from "../types";
-import { CATEGORIES, addDays, defaultExpiry, parseDate } from "../util";
+import {
+  CATEGORIES,
+  MAX_TERM,
+  PLAN_TYPES,
+  POLICY_TYPES,
+  RIDERS,
+  addDays,
+  canonicalRiders,
+  expiryAfter,
+  parseDate,
+  splitRiders,
+} from "../util";
 import * as notifications from "./notifications";
 import { count, isConstraintViolation } from "./shared";
 
@@ -36,13 +47,34 @@ const SORTABLE: Record<string, string> = {
 /** Days after expiry with no renewal before a policy is treated as lapsed. */
 const LAPSE_GRACE_DAYS = 30;
 
-const COLUMNS =
+/**
+ * Every column a `Policy` is read from. Exported because the dashboard reads the
+ * same view into the same model, and a second copy of this list is a column
+ * silently missing from half the app — `POLICY_COLUMNS` is shared in Rust for
+ * the same reason.
+ */
+export const COLUMNS =
   "id, chain_id, policy_year, previous_policy_id, policy_number, " +
   "client_id, client_code, client_name, client_email, client_phone, client_city, " +
   "reminders_opted_out, insurer_id, insurer_name, product_id, product_name, category, status, " +
   "start_date, expiry_date, sum_insured, premium_amount, gst_amount, premium_frequency, " +
   "payment_mode, next_due_date, commission_rate, commission_expected, nominee_name, " +
-  "nominee_relation, vehicle_number, notes, created_at, updated_at, days_to_expiry, is_renewed";
+  "nominee_relation, vehicle_number, variant, riders, plan_type, term, policy_type, broker, " +
+  "inbuilt_rider, notes, created_at, updated_at, days_to_expiry, is_renewed";
+
+/**
+ * `toModel` copies each column across as it stands, and `riders` is stored as
+ * one comma-separated string. Splitting it here is what keeps the two editions
+ * handing the screens the same shape, as `Policy::from_row` does in Rust.
+ */
+export function toPolicy(row: Record<string, unknown>): Policy {
+  const policy = toModel<Policy>(row);
+  return { ...policy, riders: splitRiders(row.riders) };
+}
+
+export function toPolicies(rows: Record<string, unknown>[]): Policy[] {
+  return rows.map(toPolicy);
+}
 
 function buildConditions(filter: PolicyFilter): Conditions {
   const c = new Conditions();
@@ -107,7 +139,7 @@ export function list(conn: Conn, filter: PolicyFilter): Page<Policy> {
     .prepare(`SELECT ${COLUMNS} FROM policy_overview${whereSql}${order} LIMIT ? OFFSET ?`)
     .all(...conditions.paramsWith([limit, offset])) as Record<string, unknown>[];
 
-  return { rows: toModels<Policy>(rows), total, page, pageSize };
+  return { rows: toPolicies(rows), total, page, pageSize };
 }
 
 /** Every row matching the filter, ignoring pagination. Used by exports. */
@@ -117,7 +149,7 @@ export function listAll(conn: Conn, filter: PolicyFilter): Policy[] {
   const rows = conn
     .prepare(`SELECT ${COLUMNS} FROM policy_overview${conditions.whereSql()}${order}`)
     .all(...conditions.params()) as Record<string, unknown>[];
-  return toModels<Policy>(rows);
+  return toPolicies(rows);
 }
 
 export function get(conn: Conn, id: number): Policy {
@@ -125,7 +157,7 @@ export function get(conn: Conn, id: number): Policy {
     | Record<string, unknown>
     | undefined;
   if (!row) throw AppError.notFound("Policy");
-  return toModel<Policy>(row);
+  return toPolicy(row);
 }
 
 /** The full renewal chain a policy belongs to, oldest year first. */
@@ -138,7 +170,7 @@ export function chain(conn: Conn, policyId: number): Policy[] {
     )
     .all(policyId) as Record<string, unknown>[];
   if (rows.length === 0) throw AppError.notFound("Policy");
-  return toModels<Policy>(rows);
+  return toPolicies(rows);
 }
 
 function validate(input: PolicyInput): { start: string; expiry: string } {
@@ -151,7 +183,25 @@ function validate(input: PolicyInput): { start: string; expiry: string } {
   const expiry = parseDate(input.expiryDate);
   if (expiry === null) throw AppError.validation("Expiry date is not a valid date");
   if (expiry <= start) throw AppError.validation("Expiry date must be after the start date");
+
+  // The health details are checked for being words the app knows, not for being
+  // there at all. Requiring them belongs to the add-policy screen: an import
+  // carries a book that predates the questions.
+  checkWord("plan type", input.planType, PLAN_TYPES);
+  checkWord("policy type", input.policyType, POLICY_TYPES);
+  for (const rider of input.riders ?? []) checkWord("rider", rider, RIDERS);
+  if (input.term != null && (input.term < 1 || input.term > MAX_TERM)) {
+    throw AppError.validation(`A term is between 1 and ${MAX_TERM} years`);
+  }
+
   return { start, expiry };
+}
+
+/** Holds a value to a fixed vocabulary. Nothing at all is allowed. */
+function checkWord(what: string, value: string | null | undefined, allowed: readonly string[]) {
+  if (value != null && !allowed.includes(value)) {
+    throw AppError.validation(`"${value}" is not a known ${what}`);
+  }
 }
 
 /** The values create and update share, in the order both statements bind them. */
@@ -177,6 +227,13 @@ function fields(input: PolicyInput, start: string, expiry: string): Bind[] {
     blankToNull(input.nomineeName),
     blankToNull(input.nomineeRelation),
     vehicle === null ? null : vehicle.toUpperCase(),
+    blankToNull(input.variant),
+    canonicalRiders(input.riders),
+    blankToNull(input.planType),
+    numberOrNull(input.term),
+    blankToNull(input.policyType),
+    blankToNull(input.broker),
+    blankToNull(input.inbuiltRider),
     blankToNull(input.notes),
   ];
 }
@@ -195,8 +252,10 @@ export function create(conn: Conn, input: PolicyInput): number {
         "INSERT INTO policies (chain_id, policy_year, policy_number, client_id, insurer_id, " +
           "product_id, category, start_date, expiry_date, sum_insured, premium_amount, " +
           "gst_amount, premium_frequency, payment_mode, next_due_date, commission_rate, " +
-          "commission_expected, nominee_name, nominee_relation, vehicle_number, notes, status) " +
-          "VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "commission_expected, nominee_name, nominee_relation, vehicle_number, variant, " +
+          "riders, plan_type, term, policy_type, broker, inbuilt_rider, notes, status) " +
+          "VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " +
+          "?, ?, ?)",
       )
       .run(chainId, ...fields(input, start, expiry), input.status ?? "active");
     id = Number(result.lastInsertRowid);
@@ -220,7 +279,8 @@ export function update(conn: Conn, id: number, input: PolicyInput): void {
           "product_id = ?, category = ?, start_date = ?, expiry_date = ?, sum_insured = ?, " +
           "premium_amount = ?, gst_amount = ?, premium_frequency = ?, payment_mode = ?, " +
           "next_due_date = ?, commission_rate = ?, commission_expected = ?, nominee_name = ?, " +
-          "nominee_relation = ?, vehicle_number = ?, notes = ?, " +
+          "nominee_relation = ?, vehicle_number = ?, variant = ?, riders = ?, plan_type = ?, " +
+          "term = ?, policy_type = ?, broker = ?, inbuilt_rider = ?, notes = ?, " +
           // Omitting the status leaves the stored one alone, which is what keeps an
           // edit to a lapsed policy from quietly reviving it.
           "status = COALESCE(?, status) WHERE id = ?",
@@ -255,7 +315,12 @@ export function renew(conn: Conn, input: RenewalInput): number {
   if (start === null) throw AppError.other("stored expiry date is unreadable");
 
   const requestedExpiry = blankToNull(input.expiryDate);
-  const expiry = (requestedExpiry === null ? null : parseDate(requestedExpiry)) ?? defaultExpiry(start);
+  // A three-year policy renews for three years unless the agent says otherwise,
+  // so the term that was bought decides the length rather than the annual
+  // default.
+  const expiry =
+    (requestedExpiry === null ? null : parseDate(requestedExpiry)) ??
+    expiryAfter(start, previous.term ?? 1);
   if (expiry === null) throw AppError.other("could not work out the new expiry date");
 
   if (expiry <= start) throw AppError.validation("Expiry date must be after the start date");
@@ -269,8 +334,10 @@ export function renew(conn: Conn, input: RenewalInput): number {
         "INSERT INTO policies (chain_id, policy_year, previous_policy_id, policy_number, client_id, " +
           "insurer_id, product_id, category, status, start_date, expiry_date, sum_insured, " +
           "premium_amount, gst_amount, premium_frequency, payment_mode, commission_rate, " +
-          "commission_expected, nominee_name, nominee_relation, vehicle_number, notes) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "commission_expected, nominee_name, nominee_relation, vehicle_number, variant, " +
+          "riders, plan_type, term, policy_type, broker, inbuilt_rider, notes) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " +
+          "?, ?, ?, ?, ?, ?)",
       )
       .run(
         previous.chainId,
@@ -293,6 +360,15 @@ export function renew(conn: Conn, input: RenewalInput): number {
         previous.nomineeName,
         previous.nomineeRelation,
         previous.vehicleNumber,
+        previous.variant,
+        canonicalRiders(previous.riders),
+        previous.planType,
+        previous.term,
+        // The new year is a renewal by definition, whatever the year before it
+        // was. A policy ported in last August is a renewal this August.
+        previous.policyType === null ? null : "renewal",
+        previous.broker,
+        previous.inbuiltRider,
         blankToNull(input.notes),
       );
     newId = Number(result.lastInsertRowid);

@@ -111,6 +111,27 @@ fn a_book_edited_before_the_fix_has_its_search_index_put_right() {
          VALUES (new.id, new.full_name, new.email, new.phone, new.client_code, new.pan); \
          END;";
 
+    /// The overview as it stood before 006 added the health columns to it. A
+    /// book wound back has to be wound back all the way: leaving the columns on
+    /// `policies` would have 006 replay against a table that already suits it,
+    /// and prove nothing about the agency's book.
+    const OLD_POLICY_OVERVIEW: &str = "CREATE VIEW policy_overview AS \
+         SELECT p.id, p.chain_id, p.policy_year, p.previous_policy_id, p.policy_number, \
+                p.client_id, c.client_code, c.full_name AS client_name, c.email AS client_email, \
+                c.phone AS client_phone, c.city AS client_city, c.reminders_opted_out, \
+                p.insurer_id, i.name AS insurer_name, p.product_id, pr.name AS product_name, \
+                p.category, p.status, p.start_date, p.expiry_date, p.sum_insured, \
+                p.premium_amount, p.gst_amount, p.premium_frequency, p.payment_mode, \
+                p.next_due_date, p.commission_rate, p.commission_expected, p.nominee_name, \
+                p.nominee_relation, p.vehicle_number, p.notes, p.created_at, p.updated_at, \
+                CAST(julianday(p.expiry_date) - julianday(date('now', 'localtime')) AS INTEGER) \
+                    AS days_to_expiry, \
+                EXISTS (SELECT 1 FROM policies s WHERE s.previous_policy_id = p.id) AS is_renewed \
+         FROM policies p \
+         JOIN clients c ON c.id = p.client_id \
+         JOIN insurers i ON i.id = p.insurer_id \
+         LEFT JOIN products pr ON pr.id = p.product_id;";
+
     let temp = TempDb::new("damaged-index");
     let id = temp
         .db
@@ -132,6 +153,15 @@ fn a_book_edited_before_the_fix_has_its_search_index_put_right() {
                 "DROP TRIGGER clients_fts_au; \
                  UPDATE clients SET full_name = 'Rohit Kumar Sharma' WHERE id = {id}; \
                  {OLD_TRIGGER} \
+                 DROP VIEW policy_overview; \
+                 ALTER TABLE policies DROP COLUMN variant; \
+                 ALTER TABLE policies DROP COLUMN riders; \
+                 ALTER TABLE policies DROP COLUMN plan_type; \
+                 ALTER TABLE policies DROP COLUMN term; \
+                 ALTER TABLE policies DROP COLUMN policy_type; \
+                 ALTER TABLE policies DROP COLUMN broker; \
+                 ALTER TABLE policies DROP COLUMN inbuilt_rider; \
+                 {OLD_POLICY_OVERVIEW} \
                  DROP TABLE policy_members; \
                  DROP TABLE client_relations; \
                  CREATE TABLE insured_members ( \
@@ -1292,6 +1322,123 @@ fn a_client_renamed_or_filled_in_is_still_the_one_the_search_finds() {
                     Ok((row.get(0)?, row.get(1)?))
                 })?;
             assert!(updated > created, "an edit still moves updated_at");
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// The health details a proposal carries: stored as chosen, handed back as a
+/// list, held to the words the app knows, and carried into the next year.
+#[test]
+fn a_health_policy_keeps_the_detail_its_proposal_was_written_on() {
+    let temp = TempDb::new("health-details");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Rohit Sharma"))?;
+            let insurer = insurers::find_or_create(conn, "Star Health")?;
+
+            let id = policies::create(
+                conn,
+                &PolicyInput {
+                    variant: Some("Gold".into()),
+                    // Chosen in whatever order they were clicked, and out of the
+                    // order the insurer lists them in.
+                    riders: Some(vec!["future_ready".into(), "safeguard".into()]),
+                    plan_type: Some("family_floater".into()),
+                    term: Some(3),
+                    policy_type: Some("portability".into()),
+                    broker: Some("Deshmukh Insurance Services".into()),
+                    inbuilt_rider: Some("Road ambulance cover".into()),
+                    ..sample_policy(client, insurer, "HS/2026/001", "2029-03-31")
+                },
+            )?;
+
+            let policy = policies::get(conn, id)?;
+            assert_eq!(
+                policy.riders,
+                vec!["safeguard".to_string(), "future_ready".to_string()],
+                "riders come back in the insurer's order, not the order of clicking"
+            );
+            assert_eq!(policy.variant.as_deref(), Some("Gold"));
+            assert_eq!(policy.plan_type.as_deref(), Some("family_floater"));
+            assert_eq!(policy.term, Some(3));
+            assert_eq!(policy.policy_type.as_deref(), Some("portability"));
+            assert_eq!(
+                policy.inbuilt_rider.as_deref(),
+                Some("Road ambulance cover")
+            );
+
+            let next = policies::renew(
+                conn,
+                &RenewalInput {
+                    policy_id: id,
+                    policy_number: Some("HS/2029/002".into()),
+                    ..Default::default()
+                },
+            )?;
+            let renewed = policies::get(conn, next)?;
+
+            assert_eq!(
+                renewed.expiry_date, "2032-03-31",
+                "three years were bought, so three years are renewed"
+            );
+            assert_eq!(renewed.riders, policy.riders, "the riders come along");
+            assert_eq!(renewed.variant.as_deref(), Some("Gold"));
+            assert_eq!(
+                renewed.policy_type.as_deref(),
+                Some("renewal"),
+                "a ported year renews into a renewal"
+            );
+
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// The core takes the health details on trust as to whether they are there, and
+/// not at all as to what they say.
+#[test]
+fn the_health_details_are_held_to_the_words_the_app_knows() {
+    let temp = TempDb::new("health-words");
+    temp.db
+        .with(|conn| {
+            let client = clients::create(conn, &sample_client("Rohit Sharma"))?;
+            let insurer = insurers::find_or_create(conn, "Star Health")?;
+
+            /// A policy number, and the one answer on it that is not a word the
+            /// app knows.
+            type Spoiler = (&'static str, fn(&mut PolicyInput));
+
+            let spoilers: [Spoiler; 4] = [
+                ("HS/2026/010", |p| p.plan_type = Some("floater".into())),
+                ("HS/2026/011", |p| p.policy_type = Some("port".into())),
+                ("HS/2026/012", |p| {
+                    p.riders = Some(vec!["gold_cover".into()])
+                }),
+                ("HS/2026/013", |p| p.term = Some(9)),
+            ];
+            for (number, spoil) in spoilers {
+                let mut input = sample_policy(client, insurer, number, "2027-03-31");
+                spoil(&mut input);
+                assert!(
+                    matches!(
+                        policies::create(conn, &input),
+                        Err(crate::error::AppError::Validation(_))
+                    ),
+                    "{number} should have been refused"
+                );
+            }
+
+            // A book that predates the questions still goes in: the screen asks
+            // for these, the core does not.
+            let plain = policies::create(
+                conn,
+                &sample_policy(client, insurer, "HS/2026/014", "2027-03-31"),
+            )?;
+            let bare = policies::get(conn, plain)?;
+            assert!(bare.riders.is_empty());
+            assert_eq!(bare.plan_type, None);
+
             Ok(())
         })
         .unwrap();
@@ -2597,8 +2744,18 @@ fn dates_and_numbers_are_parsed_the_way_agencies_write_them() {
     );
 
     assert_eq!(
-        util::default_expiry("2026-04-01").as_deref(),
+        util::expiry_after("2026-04-01", 1).as_deref(),
         Some("2027-03-31")
+    );
+    assert_eq!(
+        util::expiry_after("2026-04-01", 3).as_deref(),
+        Some("2029-03-31"),
+        "a three-year term runs to the day before the third anniversary"
+    );
+    assert_eq!(
+        util::expiry_after("2028-02-29", 1).as_deref(),
+        Some("2029-02-27"),
+        "a 29 February start has no anniversary in a common year"
     );
     assert_eq!(util::normalise_category("Two Wheeler Insurance"), "motor");
     assert_eq!(util::normalise_category("Overseas Travel"), "travel");

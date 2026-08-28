@@ -26,6 +26,111 @@ import * as policies from "../core/repo/policies";
 import { expect, suite, test, throwsKind } from "./harness";
 import { daysFromToday, sampleClient, samplePolicy, tempDb } from "./support";
 
+suite("the health details a proposal is written on", () => {
+  // Ported from `a_health_policy_keeps_the_detail_its_proposal_was_written_on`.
+  test("are stored as chosen, handed back as a list, and carried into next year", () => {
+    const db = tempDb("health-details");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Rohit Sharma"));
+      const insurer = insurers.findOrCreate(conn, "Star Health");
+
+      const id = policies.create(conn, {
+        ...samplePolicy(client, insurer, "HS/2026/001", "2029-03-31"),
+        variant: "Gold",
+        // Clicked in this order, which is not the insurer's.
+        riders: ["future_ready", "safeguard"],
+        planType: "family_floater",
+        term: 3,
+        policyType: "portability",
+        broker: "Deshmukh Insurance Services",
+        inbuiltRider: "Road ambulance cover",
+      });
+
+      const policy = policies.get(conn, id);
+      expect.deepEqual(
+        policy.riders,
+        ["safeguard", "future_ready"],
+        "riders come back in the insurer's order, not the order of clicking",
+      );
+      expect.equal(policy.variant, "Gold");
+      expect.equal(policy.term, 3);
+
+      const next = policies.renew(conn, { policyId: id, policyNumber: "HS/2029/002" });
+      const renewed = policies.get(conn, next);
+
+      expect.equal(
+        renewed.expiryDate,
+        "2032-03-31",
+        "three years were bought, so three years are renewed",
+      );
+      expect.deepEqual(renewed.riders, policy.riders, "the riders come along");
+      expect.equal(renewed.policyType, "renewal", "a ported year renews into a renewal");
+    });
+    db.close();
+  });
+
+  // No Rust counterpart, and that is the point: `dashboard.rs` reads through the
+  // same `POLICY_COLUMNS` the lists do, so it cannot fall behind them. Here the
+  // dashboard has its own query, and a column added to one and not the other
+  // would hand this screen a policy with the health answers missing.
+  test("reach the dashboard the way they reach every other list", () => {
+    const db = tempDb("health-dashboard");
+    db.with((conn) => {
+      const client = clients.create(conn, sampleClient("Meera Iyer"));
+      const insurer = insurers.findOrCreate(conn, "Star Health");
+      policies.create(conn, {
+        ...samplePolicy(client, insurer, "HS/2026/020", daysFromToday(20)),
+        variant: "Platinum",
+        riders: ["safeguard"],
+        planType: "individual",
+      });
+
+      const [upcoming] = dashboard.load(conn).upcoming;
+      expect.equal(upcoming?.variant, "Platinum");
+      expect.deepEqual(upcoming?.riders, ["safeguard"]);
+      expect.equal(upcoming?.planType, "individual");
+    });
+    db.close();
+  });
+
+  // Ported from `the_health_details_are_held_to_the_words_the_app_knows`.
+  test("are held to the words the app knows, but not required to be there", async () => {
+    const db = tempDb("health-words");
+    await db.with(async (conn) => {
+      const client = clients.create(conn, sampleClient("Rohit Sharma"));
+      const insurer = insurers.findOrCreate(conn, "Star Health");
+
+      const spoilers: [string, Partial<Parameters<typeof policies.create>[1]>][] = [
+        ["HS/2026/010", { planType: "floater" }],
+        ["HS/2026/011", { policyType: "port" }],
+        ["HS/2026/012", { riders: ["gold_cover"] }],
+        ["HS/2026/013", { term: 9 }],
+      ];
+      for (const [number, spoiled] of spoilers) {
+        await throwsKind(
+          "validation",
+          () =>
+            policies.create(conn, {
+              ...samplePolicy(client, insurer, number, "2027-03-31"),
+              ...spoiled,
+            }),
+          `${number} should have been refused`,
+        );
+      }
+
+      // A book that predates the questions still goes in: the screen asks for
+      // these, the core does not.
+      const plain = policies.create(
+        conn,
+        samplePolicy(client, insurer, "HS/2026/014", "2027-03-31"),
+      );
+      expect.deepEqual(policies.get(conn, plain).riders, []);
+      expect.equal(policies.get(conn, plain).planType, null);
+    });
+    db.close();
+  });
+});
+
 suite("renewal", () => {
   test("builds a chain and preserves history", () => {
     const db = tempDb("renew");

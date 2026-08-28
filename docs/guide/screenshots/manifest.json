@@ -69,7 +69,12 @@
     },
     {
       "name": "policy-new",
-      "caption": "New policy: client, insurer, dates and money in one form",
+      "caption": "New policy: the form as health asks for it, in the order a proposal is written",
+      "route": "/policies"
+    },
+    {
+      "name": "policy-new-general",
+      "caption": "The same form for every other category: client, insurer, dates and money",
       "route": "/policies"
     },
     {

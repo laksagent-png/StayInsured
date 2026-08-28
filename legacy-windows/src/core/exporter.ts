@@ -26,7 +26,7 @@ import * as XLSX from "xlsx";
 
 import { AppError } from "./errors";
 import type { Client, Policy } from "./types";
-import { categoryLabel } from "./util";
+import { categoryLabel, riderLabel } from "./util";
 
 /** A header paired with a value extractor, so xlsx and csv stay identical. */
 type Column<T> = [string, (row: T) => string];
@@ -55,6 +55,16 @@ const POLICY_COLUMNS: Column<Policy>[] = [
   ["Commission amount", (p) => number(p.commissionExpected)],
   ["Nominee", (p) => p.nomineeName ?? ""],
   ["Vehicle number", (p) => p.vehicleNumber ?? ""],
+  // The health detail. Every category gets the columns and only health fills
+  // them in: one sheet the agency can sort and hand over beats a second sheet
+  // to line up against this one.
+  ["Variant", (p) => p.variant ?? ""],
+  ["Riders", (p) => p.riders.map(riderLabel).join(", ")],
+  ["Plan type", (p) => (p.planType === null ? "" : titleCase(p.planType))],
+  ["Term (years)", (p) => (p.term === null ? "" : String(p.term))],
+  ["Policy type", (p) => (p.policyType === null ? "" : titleCase(p.policyType))],
+  ["Broker", (p) => p.broker ?? ""],
+  ["Inbuilt rider", (p) => p.inbuiltRider ?? ""],
   ["Notes", (p) => p.notes ?? ""],
 ];
 

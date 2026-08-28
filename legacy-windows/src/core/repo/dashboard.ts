@@ -4,6 +4,7 @@ import type { Conn } from "../db";
 import { toModels } from "../rows";
 import type { CategoryBreakdown, Dashboard, ExpiryBucket, Policy } from "../types";
 import { IS_DEPENDENT } from "./clients";
+import { COLUMNS, toPolicies } from "./policies";
 
 /** Windows the renewal desk works in, in days from today. */
 const BUCKETS: [label: string, from: number, to: number][] = [
@@ -14,14 +15,6 @@ const BUCKETS: [label: string, from: number, to: number][] = [
   ["31-60 days", 31, 60],
   ["61-90 days", 61, 90],
 ];
-
-const COLUMNS =
-  "id, chain_id, policy_year, previous_policy_id, policy_number, " +
-  "client_id, client_code, client_name, client_email, client_phone, client_city, " +
-  "reminders_opted_out, insurer_id, insurer_name, product_id, product_name, category, status, " +
-  "start_date, expiry_date, sum_insured, premium_amount, gst_amount, premium_frequency, " +
-  "payment_mode, next_due_date, commission_rate, commission_expected, nominee_name, " +
-  "nominee_relation, vehicle_number, notes, created_at, updated_at, days_to_expiry, is_renewed";
 
 export function load(conn: Conn): Dashboard {
   const scalar = (sql: string): number => {
@@ -50,10 +43,12 @@ export function load(conn: Conn): Dashboard {
     .all() as Record<string, unknown>[];
 
   const policies = (tail: string): Policy[] =>
-    toModels<Policy>(conn.prepare(`SELECT ${COLUMNS} FROM policy_overview ${tail}`).all() as Record<
-      string,
-      unknown
-    >[]);
+    toPolicies(
+      conn.prepare(`SELECT ${COLUMNS} FROM policy_overview ${tail}`).all() as Record<
+        string,
+        unknown
+      >[],
+    );
 
   // The counts of people are counts of policyholders. A family member is a client,
   // so counting rows would say the book holds half again as many people as it has

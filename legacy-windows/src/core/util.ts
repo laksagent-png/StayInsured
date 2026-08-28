@@ -253,17 +253,58 @@ export function daysUntil(isoDate: string): number | null {
   return Math.round((stamp - today) / DAY);
 }
 
-/** Adds a year (minus a day) to a start date, the usual annual policy term. */
-export function defaultExpiry(start: string): string | null {
+/**
+ * The day a term of `years` bought from `start` runs out: the same date that
+ * many years on, less a day.
+ */
+export function expiryAfter(start: string, years: number): string | null {
   const stamp = stampOf(start);
   if (stamp === null) return null;
   const date = new Date(stamp);
-  const year = date.getUTCFullYear() + 1;
+  const year = date.getUTCFullYear() + years;
   const month = date.getUTCMonth() + 1;
   // A 29 February start has no anniversary in a common year, so it takes the
   // 28th, as the Rust side does.
   const anniversary = fromParts(year, month, date.getUTCDate()) ?? fromParts(year, month, 28);
   return anniversary === null ? null : addDays(anniversary, -1);
+}
+
+/**
+ * The riders a health policy can be sold with. `util::RIDERS`, and the order the
+ * list is stored in.
+ */
+export const RIDERS = [
+  "safeguard",
+  "safeguard_plus",
+  "pa_main_member",
+  "future_ready",
+  "fast_forwarded",
+] as const;
+
+export const PLAN_TYPES = ["individual", "family_floater"] as const;
+
+export const POLICY_TYPES = ["fresh", "portability", "renewal"] as const;
+
+/** The most years of health cover sold in one go. */
+export const MAX_TERM = 5;
+
+/**
+ * Puts a rider list into `RIDERS` order and drops anything repeated, so that the
+ * stored text depends on the set chosen rather than the order of clicking.
+ */
+export function canonicalRiders(chosen: readonly string[] | null | undefined): string | null {
+  if (!chosen) return null;
+  const ordered = RIDERS.filter((rider) => chosen.some((word) => word.trim() === rider));
+  return ordered.length === 0 ? null : ordered.join(",");
+}
+
+/** The stored rider list as a list. `split_riders` in `models.rs`. */
+export function splitRiders(stored: unknown): string[] {
+  if (typeof stored !== "string") return [];
+  return stored
+    .split(",")
+    .map((word) => word.trim())
+    .filter((word) => word !== "");
 }
 
 export const CATEGORIES = [
@@ -294,6 +335,27 @@ export function normaliseCategory(raw: string): string {
   if (has(["accident", "pa "])) return "personal_accident";
   if (has(["critical", "cancer"])) return "critical_illness";
   return "other";
+}
+
+/**
+ * How the agency says a rider's name, which `titleCase` cannot work out from the
+ * stored word. `util::rider_label`.
+ */
+export function riderLabel(rider: string): string {
+  switch (rider) {
+    case "safeguard":
+      return "Safeguard";
+    case "safeguard_plus":
+      return "Safeguard +";
+    case "pa_main_member":
+      return "PA to main member";
+    case "future_ready":
+      return "Future Ready";
+    case "fast_forwarded":
+      return "Fast Forwarded";
+    default:
+      return rider;
+  }
 }
 
 export function categoryLabel(category: string): string {

@@ -8,6 +8,7 @@ recording, finding and correcting policies.
 
 - [Record a policy](#record-a-policy)
 - [Every field on the policy form](#every-field-on-the-policy-form)
+- [A health policy](#a-health-policy)
 - [Find a policy](#find-a-policy)
 - [What the statuses mean](#what-the-statuses-mean)
 - [Edit a policy](#edit-a-policy)
@@ -21,9 +22,11 @@ client.
 
 ![New policy](screenshots/policy-new.png)
 
-Client, policy number, insurer, category, start date and expiry date are
-required. Everything else earns its place: fill in premium and commission and
-the app can tell you what the book is worth.
+The form opens on **Health**, and health asks the most: everything down to the
+inbuilt rider is required, as [that section](#a-health-policy) sets out. For
+every other category, client, policy number, insurer, category, start date and
+expiry date are required, and the rest earns its place — fill in premium and
+commission and the app can tell you what the book is worth.
 
 Press **Add policy** at the foot of the form, or press Enter from any box. The
 policy appears immediately in the list, on the client's page, and — once it
@@ -37,6 +40,12 @@ One client holds as many policies as they need. Each carries its own number,
 insurer, premium and expiry date, and each falls due in its own time.
 
 ## Every field on the policy form
+
+**Category** decides what the form asks and the order it asks in. Health follows
+the insurer's own proposal form and is covered [below](#a-health-policy); every
+other category uses the fields here.
+
+![The policy form for every other category](screenshots/policy-new-general.png)
 
 | Field | Required | Notes |
 | --- | --- | --- |
@@ -73,6 +82,40 @@ the dialog while keeping every box as you left it:
 - Money boxes take figures only. Letters typed into a premium never land, and a
   negative sum insured, premium, GST or commission is refused.
 - A commission rate is a share of the premium, so it lies between 0 and 100.
+
+## A health policy
+
+Choose **Health** and the form rearranges itself into the order a health
+proposal is written in, with six questions the other categories never ask:
+
+| Field | Notes |
+| --- | --- |
+| **Variant** | The version of the plan that was sold — Gold, Platinum, whatever the insurer calls it |
+| **Riders** | Safeguard, Safeguard +, PA to main member, Future Ready and Fast Forwarded, as chips. Tick every one bought |
+| **Plan type** | Individual, or a family floater sharing one sum insured |
+| **Term** | The years bought in one go, up to five. The risk end date follows from it |
+| **Policy type** | Fresh, Portability or Renewal — how this year was written |
+| **Broker** | Who the business was placed through |
+| **Inbuilt rider** | The one the plan comes with, as against the ones bought on top |
+
+Start and expiry are called **Risk start date** and **Risk end date** here,
+because that is what the insurer calls the period they cover.
+
+Every field down to **Inbuilt rider** is required, including the plan, the sum
+insured and the premium that other categories leave optional. A health policy is
+priced off its variant, its riders and its term, so one recorded without them
+cannot be quoted or renewed from your book. The form asks for each missing answer
+in turn, in the order the form reads.
+
+**Term** sets the risk end date: choose three years and the cover runs to the day
+before the third anniversary. Choose the term before correcting the date by hand,
+since changing the term works the date out again. Renewing a policy later runs
+the new year for the same term.
+
+Below the inbuilt rider the form goes back to your own bookkeeping — GST,
+frequency, payment mode, commission, nominee — which works the same way whatever
+the category. Change the category away from health and the health answers are
+left behind rather than saved onto a motor policy.
 
 An empty money box and a nil one mean different things. Leave the premium blank
 and the policy is recorded as not knowing it; type `0` and it is recorded as
@@ -165,6 +208,11 @@ intact.
 
 **Export** saves whatever the filters currently show as Excel or CSV — the
 motor book, this quarter's expiries, everything with one insurer.
+
+The sheet carries every field on the policy, health answers included: variant,
+riders, plan type, term, policy type, broker and inbuilt rider each get a column.
+The columns are there whatever you filtered to, and sit empty on the policies
+that never had them.
 
 ---
 

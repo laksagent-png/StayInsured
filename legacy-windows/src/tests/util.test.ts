@@ -12,7 +12,7 @@ import {
   CATEGORIES,
   addDays,
   daysUntil,
-  defaultExpiry,
+  expiryAfter,
   formatDate,
   formatMoney,
   looksLikeEmail,
@@ -73,11 +73,16 @@ suite("dates as agencies write them", () => {
     expect.equal(daysUntil(addDays(todayIso(), -5)!), -5);
   });
 
-  test("runs a year minus a day, including out of February", () => {
-    expect.equal(defaultExpiry("2026-04-01"), "2027-03-31");
-    expect.equal(defaultExpiry("2027-02-28"), "2028-02-27");
+  test("runs a term minus a day, including out of February", () => {
+    expect.equal(expiryAfter("2026-04-01", 1), "2027-03-31");
+    expect.equal(expiryAfter("2027-02-28", 1), "2028-02-27");
+    expect.equal(
+      expiryAfter("2026-04-01", 3),
+      "2029-03-31",
+      "a three-year term runs to the day before the third anniversary",
+    );
     // A 29 February start has no anniversary in a common year.
-    expect.equal(defaultExpiry("2028-02-29"), "2029-02-27");
+    expect.equal(expiryAfter("2028-02-29", 1), "2029-02-27");
   });
 
   test("prints a date the way the setting asks", () => {

@@ -989,6 +989,15 @@ fn import_row(
         nominee_name: reader.get("nomineeName"),
         nominee_relation: reader.get("nomineeRelation"),
         vehicle_number: reader.get("vehicleNumber"),
+        // The health details are not read off a spreadsheet yet. An agency's own
+        // file predates the questions, so there is no column to map them from.
+        variant: None,
+        riders: None,
+        plan_type: None,
+        term: None,
+        policy_type: None,
+        broker: None,
+        inbuilt_rider: None,
         notes: reader.get("notes"),
         // Set after the policy exists, once the names have been resolved to
         // clients: attaching them needs a policy to check the holder against.

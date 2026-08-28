@@ -194,7 +194,41 @@ fn validate(input: &PolicyInput) -> AppResult<(String, String)> {
             "Expiry date must be after the start date",
         ));
     }
+
+    // The health details are checked for being words the app knows, not for
+    // being there at all. Requiring them belongs to the add-policy screen: an
+    // import carries a book that predates the questions, and refusing it here
+    // would lose the policy rather than the detail.
+    check_word("plan type", input.plan_type.as_deref(), util::PLAN_TYPES)?;
+    check_word(
+        "policy type",
+        input.policy_type.as_deref(),
+        util::POLICY_TYPES,
+    )?;
+    for rider in input.riders.as_deref().unwrap_or_default() {
+        check_word("rider", Some(rider.as_str()), util::RIDERS)?;
+    }
+    if let Some(term) = input.term {
+        if !(1..=util::MAX_TERM).contains(&term) {
+            return Err(AppError::validation(format!(
+                "A term is between 1 and {} years",
+                util::MAX_TERM
+            )));
+        }
+    }
+
     Ok((start, expiry))
+}
+
+/// Holds a value to a fixed vocabulary. Nothing at all is allowed: these fields
+/// describe health cover, and every other category leaves them empty.
+fn check_word(what: &str, value: Option<&str>, allowed: &[&str]) -> AppResult<()> {
+    match value {
+        Some(word) if !allowed.contains(&word) => Err(AppError::validation(format!(
+            "\"{word}\" is not a known {what}"
+        ))),
+        _ => Ok(()),
+    }
 }
 
 pub fn create(conn: &Connection, input: &PolicyInput) -> AppResult<i64> {
@@ -205,9 +239,10 @@ pub fn create(conn: &Connection, input: &PolicyInput) -> AppResult<i64> {
         "INSERT INTO policies (chain_id, policy_year, policy_number, client_id, insurer_id, \
              product_id, category, status, start_date, expiry_date, sum_insured, premium_amount, \
              gst_amount, premium_frequency, payment_mode, next_due_date, commission_rate, \
-             commission_expected, nominee_name, nominee_relation, vehicle_number, notes) \
+             commission_expected, nominee_name, nominee_relation, vehicle_number, variant, \
+             riders, plan_type, term, policy_type, broker, inbuilt_rider, notes) \
          VALUES (?1, 1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-             ?18, ?19, ?20, ?21)",
+             ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
         params![
             chain_id,
             input.policy_number.trim(),
@@ -232,6 +267,13 @@ pub fn create(conn: &Connection, input: &PolicyInput) -> AppResult<i64> {
             blank_to_none(input.nominee_name.clone()),
             blank_to_none(input.nominee_relation.clone()),
             blank_to_none(input.vehicle_number.clone()).map(|v| v.to_uppercase()),
+            blank_to_none(input.variant.clone()),
+            util::canonical_riders(input.riders.as_deref().unwrap_or_default()),
+            blank_to_none(input.plan_type.clone()),
+            input.term,
+            blank_to_none(input.policy_type.clone()),
+            blank_to_none(input.broker.clone()),
+            blank_to_none(input.inbuilt_rider.clone()),
             blank_to_none(input.notes.clone()),
         ],
     )
@@ -252,7 +294,9 @@ pub fn update(conn: &Connection, id: i64, input: &PolicyInput) -> AppResult<()> 
                  expiry_date = ?9, sum_insured = ?10, premium_amount = ?11, gst_amount = ?12, \
                  premium_frequency = ?13, payment_mode = ?14, next_due_date = ?15, \
                  commission_rate = ?16, commission_expected = ?17, nominee_name = ?18, \
-                 nominee_relation = ?19, vehicle_number = ?20, notes = ?21 \
+                 nominee_relation = ?19, vehicle_number = ?20, variant = ?21, riders = ?22, \
+                 plan_type = ?23, term = ?24, policy_type = ?25, broker = ?26, \
+                 inbuilt_rider = ?27, notes = ?28 \
              WHERE id = ?1",
             params![
                 id,
@@ -278,6 +322,13 @@ pub fn update(conn: &Connection, id: i64, input: &PolicyInput) -> AppResult<()> 
                 blank_to_none(input.nominee_name.clone()),
                 blank_to_none(input.nominee_relation.clone()),
                 blank_to_none(input.vehicle_number.clone()).map(|v| v.to_uppercase()),
+                blank_to_none(input.variant.clone()),
+                util::canonical_riders(input.riders.as_deref().unwrap_or_default()),
+                blank_to_none(input.plan_type.clone()),
+                input.term,
+                blank_to_none(input.policy_type.clone()),
+                blank_to_none(input.broker.clone()),
+                blank_to_none(input.inbuilt_rider.clone()),
                 blank_to_none(input.notes.clone()),
             ],
         )
@@ -318,7 +369,10 @@ pub fn renew(conn: &Connection, input: &RenewalInput) -> AppResult<i64> {
     };
     let expiry = match blank_to_none(input.expiry_date.clone()).and_then(|d| util::parse_date(&d)) {
         Some(date) => date,
-        None => util::default_expiry(&start)
+        // A three-year policy renews for three years unless the agent says
+        // otherwise, so the term that was bought decides the length rather than
+        // the annual default.
+        None => util::expiry_after(&start, previous.term.unwrap_or(1))
             .ok_or_else(|| AppError::other("could not work out the new expiry date"))?,
     };
     if expiry <= start {
@@ -334,9 +388,10 @@ pub fn renew(conn: &Connection, input: &RenewalInput) -> AppResult<i64> {
         "INSERT INTO policies (chain_id, policy_year, previous_policy_id, policy_number, client_id, \
              insurer_id, product_id, category, status, start_date, expiry_date, sum_insured, \
              premium_amount, gst_amount, premium_frequency, payment_mode, commission_rate, \
-             commission_expected, nominee_name, nominee_relation, vehicle_number, notes) \
+             commission_expected, nominee_name, nominee_relation, vehicle_number, variant, \
+             riders, plan_type, term, policy_type, broker, inbuilt_rider, notes) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'active', ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
-             ?17, ?18, ?19, ?20, ?21)",
+             ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
         params![
             previous.chain_id,
             previous.policy_year + 1,
@@ -358,6 +413,16 @@ pub fn renew(conn: &Connection, input: &RenewalInput) -> AppResult<i64> {
             previous.nominee_name,
             previous.nominee_relation,
             previous.vehicle_number,
+            previous.variant,
+            util::canonical_riders(&previous.riders),
+            previous.plan_type,
+            previous.term,
+            // The new year is a renewal by definition, whatever the year before
+            // it was. A policy ported in last August is a renewal this August,
+            // and the year that was ported keeps saying so.
+            previous.policy_type.map(|_| "renewal".to_string()),
+            previous.broker,
+            previous.inbuilt_rider,
             blank_to_none(input.notes.clone()),
         ],
     )

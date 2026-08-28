@@ -348,7 +348,8 @@ number), `clientId`, `insurerId`, `productId`, `categories[]`, `statuses[]`,
 `PolicyInput` requires `policyNumber`, `clientId`, `insurerId`, `category`,
 `startDate` and `expiryDate`; expiry must be after start. `status` defaults to
 `active` on create and is left unchanged on update when omitted.
-`premiumFrequency` defaults to `annual`. Vehicle numbers are upper-cased.
+`premiumFrequency` defaults to `annual`. Vehicle numbers are upper-cased. The
+health fields below are optional whatever the category.
 `insuredClientIds` replaces the set of lives covered; omitting it on update leaves
 the set alone. Only the policyholder and the clients related to them can be named
 — any other id is dropped by the `INSERT ... WHERE` that writes the set, so a
@@ -357,6 +358,34 @@ stale or hostile id cannot put a stranger on the cover.
 `Policy` responses are read from the `policy_overview` view, so they carry the
 client and insurer names alongside `daysToExpiry`, `isRenewed`, `chainId`,
 `policyYear` and `previousPolicyId`.
+
+### The health fields
+
+`variant`, `riders`, `planType`, `term`, `policyType`, `broker` and
+`inbuiltRider` describe health cover the way the insurer's proposal form asks for
+it. All seven are optional on `PolicyInput` and nullable on `Policy`; the
+add-policy screen requires them of a health policy, and the core does not, so a
+spreadsheet that predates the questions still imports.
+
+What the core does check is the vocabulary, returning `validation` for a word it
+does not know:
+
+| Field | Values |
+| --- | --- |
+| `riders` | `safeguard`, `safeguard_plus`, `pa_main_member`, `future_ready`, `fast_forwarded` |
+| `planType` | `individual`, `family_floater` |
+| `policyType` | `fresh`, `portability`, `renewal` |
+| `term` | 1 to 5 |
+
+`riders` is a list on the way in and a list on the way out, held in one
+comma-separated column in between. The order it is sent in does not matter: it is
+stored and returned in the order above, so the same set always reads the same.
+
+`renew_policy` carries all seven into the new year, with two consequences worth
+knowing. The new year's `policyType` becomes `renewal` whenever the year behind it
+had one at all, so a policy ported in last year is a renewal this year. And a
+renewal that does not name its own dates runs for `term` years rather than one,
+because that is the cover that was bought.
 
 **`policy_chain`** returns every year of the chain the policy belongs to, oldest
 first.

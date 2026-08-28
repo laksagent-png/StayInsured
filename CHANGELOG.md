@@ -7,6 +7,27 @@ settings survive every version below.
 
 ### Added
 
+- **The policy form asks a health policy what a health proposal asks.** Choose
+  Health and the form comes back in the order the insurer's own form reads —
+  category, client, policy number, insurer, plan, variant, riders, individual or
+  floater, term, risk dates, policy type, sum insured, premium, broker, inbuilt
+  rider — with your own bookkeeping below it. Seven of those are new: the plan's
+  variant, the riders bought on top, individual or family floater, the years
+  bought in one go, whether the year is fresh, ported or renewed, the broker it
+  was placed through, and the rider the plan already carries.
+
+  All of it is required for a health policy, because a policy recorded without
+  its variant, riders and term cannot be quoted or renewed from your book. The
+  other categories are unchanged, and pick up nothing they do not ask for.
+
+  Choosing a term of two years or more works out the risk end date to match, and
+  renewing later runs the new year for that same term rather than one. A policy
+  ported in from another insurer keeps saying so, while the year it renews into
+  says renewal.
+
+  Policies already in your book are untouched — the new questions are simply
+  blank on them, and stay blank until you edit the policy.
+
 - **The Windows 7 edition offers its own updates now.** It used to be the one
   edition you had to keep up to date by hand: it would check for a new version on
   launch, find nothing because it had nowhere to look, and say nothing. It now

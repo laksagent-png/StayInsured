@@ -165,11 +165,14 @@ pub fn days_until(iso_date: &str) -> Option<i64> {
     Some((date - today()).num_days())
 }
 
-/// Adds a year (minus a day) to a start date, the usual annual policy term.
-pub fn default_expiry(start: &str) -> Option<String> {
+/// The day a term of `years` bought from `start` runs out: the same date that
+/// many years on, less a day. A 29 February start falls back to the 28th, which
+/// is the day the insurer writes.
+pub fn expiry_after(start: &str, years: i64) -> Option<String> {
     let d = NaiveDate::parse_from_str(start, "%Y-%m-%d").ok()?;
-    let next = NaiveDate::from_ymd_opt(d.year() + 1, d.month(), d.day())
-        .or_else(|| NaiveDate::from_ymd_opt(d.year() + 1, d.month(), 28))?;
+    let year = d.year() + i32::try_from(years).ok()?;
+    let next = NaiveDate::from_ymd_opt(year, d.month(), d.day())
+        .or_else(|| NaiveDate::from_ymd_opt(year, d.month(), 28))?;
     Some(iso(next - Duration::days(1)))
 }
 
@@ -183,6 +186,38 @@ pub const CATEGORIES: &[&str] = &[
     "critical_illness",
     "other",
 ];
+
+/// The riders a health policy can be sold with, matching the words the
+/// add-policy screen offers. Stored on `policies.riders` as a comma-separated
+/// list in this order, so two policies carrying the same set read the same.
+pub const RIDERS: &[&str] = &[
+    "safeguard",
+    "safeguard_plus",
+    "pa_main_member",
+    "future_ready",
+    "fast_forwarded",
+];
+
+/// Whether the cover is one life or a family sharing a sum insured.
+pub const PLAN_TYPES: &[&str] = &["individual", "family_floater"];
+
+/// How the year was written. Not a status: see `006_health_details.sql`.
+pub const POLICY_TYPES: &[&str] = &["fresh", "portability", "renewal"];
+
+/// The most years of health cover sold in one go.
+pub const MAX_TERM: i64 = 5;
+
+/// Puts a rider list into `RIDERS` order and drops anything repeated, so that
+/// the stored text depends on the set chosen rather than the order of clicking.
+/// `None` when nothing is left, which is what an empty list means.
+pub fn canonical_riders(chosen: &[String]) -> Option<String> {
+    let ordered: Vec<&str> = RIDERS
+        .iter()
+        .copied()
+        .filter(|rider| chosen.iter().any(|c| c.trim() == *rider))
+        .collect();
+    (!ordered.is_empty()).then(|| ordered.join(","))
+}
 
 /// Maps whatever the spreadsheet calls a product line onto our category set.
 pub fn normalise_category(raw: &str) -> String {
@@ -246,6 +281,19 @@ pub fn category_label(category: &str) -> &'static str {
         "personal_accident" => "Personal Accident",
         "critical_illness" => "Critical Illness",
         _ => "Other",
+    }
+}
+
+/// How the agency says a rider's name, which `title_case` cannot work out from
+/// the stored word. Kept beside `riderLabels` in `src/lib/format.ts`.
+pub fn rider_label(rider: &str) -> &str {
+    match rider {
+        "safeguard" => "Safeguard",
+        "safeguard_plus" => "Safeguard +",
+        "pa_main_member" => "PA to main member",
+        "future_ready" => "Future Ready",
+        "fast_forwarded" => "Fast Forwarded",
+        other => other,
     }
 }
 

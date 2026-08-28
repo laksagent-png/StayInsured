@@ -39,6 +39,30 @@ const POLICY_COLUMNS: &[PolicyColumn] = &[
     ("Vehicle number", |p| {
         p.vehicle_number.clone().unwrap_or_default()
     }),
+    // The health detail. Every category gets the columns and only health fills
+    // them in: one sheet the agency can sort and hand over beats a second sheet
+    // to line up against this one.
+    ("Variant", |p| p.variant.clone().unwrap_or_default()),
+    ("Riders", |p| {
+        p.riders
+            .iter()
+            .map(|rider| util::rider_label(rider))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }),
+    ("Plan type", |p| {
+        p.plan_type.as_deref().map(title_case).unwrap_or_default()
+    }),
+    ("Term (years)", |p| {
+        p.term.map(|years| years.to_string()).unwrap_or_default()
+    }),
+    ("Policy type", |p| {
+        p.policy_type.as_deref().map(title_case).unwrap_or_default()
+    }),
+    ("Broker", |p| p.broker.clone().unwrap_or_default()),
+    ("Inbuilt rider", |p| {
+        p.inbuilt_rider.clone().unwrap_or_default()
+    }),
     ("Notes", |p| p.notes.clone().unwrap_or_default()),
 ];
 

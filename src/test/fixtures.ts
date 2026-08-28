@@ -176,9 +176,9 @@ type RawPolicy = Partial<Policy> &
   >;
 
 const rawPolicies: RawPolicy[] = [
-  { id: 1, chainId: "chain-a", policyYear: 2, previousPolicyId: 101, policyNumber: "SH/2025/0091823", clientId: 1, insurerId: 1, productId: 1, category: "health", status: "active", startDate: "2025-08-20", expiryDate: "2026-08-21", sumInsured: 1000000, premiumAmount: 24500, gstAmount: 4410, commissionRate: 12.5, nomineeName: "Sneha Sharma", nomineeRelation: "Spouse", notes: "Floater covering three members." },
+  { id: 1, chainId: "chain-a", policyYear: 2, previousPolicyId: 101, policyNumber: "SH/2025/0091823", clientId: 1, insurerId: 1, productId: 1, category: "health", status: "active", startDate: "2025-08-20", expiryDate: "2026-08-21", sumInsured: 1000000, premiumAmount: 24500, gstAmount: 4410, commissionRate: 12.5, nomineeName: "Sneha Sharma", nomineeRelation: "Spouse", variant: "Gold", riders: ["safeguard", "future_ready"], planType: "family_floater", term: 1, policyType: "renewal", broker: "Deshmukh Insurance Services", inbuiltRider: "Road ambulance cover", notes: "Floater covering three members." },
   { id: 2, chainId: "chain-b", policyYear: 1, policyNumber: "IL/MOT/778211", clientId: 1, insurerId: 3, productId: 4, category: "motor", status: "active", startDate: "2025-09-01", expiryDate: "2026-08-31", sumInsured: 850000, premiumAmount: 12800, gstAmount: 2304, commissionRate: 10, vehicleNumber: "MH12AB1234" },
-  { id: 3, chainId: "chain-c", policyYear: 3, previousPolicyId: 103, policyNumber: "HE/OR/554120", clientId: 2, insurerId: 2, productId: 2, category: "health", status: "active", startDate: "2025-08-18", expiryDate: "2026-08-17", sumInsured: 1500000, premiumAmount: 31200, gstAmount: 5616, commissionRate: 15, nomineeName: "Rahul Desai", nomineeRelation: "Son" },
+  { id: 3, chainId: "chain-c", policyYear: 3, previousPolicyId: 103, policyNumber: "HE/OR/554120", clientId: 2, insurerId: 2, productId: 2, category: "health", status: "active", startDate: "2025-08-18", expiryDate: "2026-08-17", sumInsured: 1500000, premiumAmount: 31200, gstAmount: 5616, commissionRate: 15, nomineeName: "Rahul Desai", nomineeRelation: "Son", variant: "Platinum", riders: ["safeguard_plus", "pa_main_member"], planType: "individual", term: 1, policyType: "portability", broker: "Deshmukh Insurance Services", inbuiltRider: "Restore benefit" },
   { id: 4, chainId: "chain-d", policyYear: 1, policyNumber: "LIC/915/220481", clientId: 2, insurerId: 4, productId: 3, category: "life", status: "active", startDate: "2019-04-01", expiryDate: "2039-03-31", sumInsured: 5000000, premiumAmount: 48000, gstAmount: 2160, commissionRate: 7.5, nomineeName: "Rahul Desai", nomineeRelation: "Son" },
   { id: 5, chainId: "chain-e", policyYear: 1, policyNumber: "NIA/MOT/330912", clientId: 3, insurerId: 8, productId: null, category: "motor", status: "expired", startDate: "2025-08-10", expiryDate: "2026-08-09", sumInsured: 640000, premiumAmount: 9600, gstAmount: 1728, commissionRate: 10, vehicleNumber: "GJ01CD5678" },
   { id: 6, chainId: "chain-f", policyYear: 1, policyNumber: "NB/RA2/119006", clientId: 4, insurerId: 5, productId: 6, category: "health", status: "active", startDate: "2025-08-25", expiryDate: "2026-08-29", sumInsured: 2000000, premiumAmount: 27800, gstAmount: 5004, commissionRate: 12.5, nomineeName: "Lakshmi Iyer", nomineeRelation: "Mother" },
@@ -535,6 +535,13 @@ export function createBook(): Book {
       nomineeName: null,
       nomineeRelation: null,
       vehicleNumber: null,
+      variant: null,
+      riders: [],
+      planType: null,
+      term: null,
+      policyType: null,
+      broker: null,
+      inbuiltRider: null,
       notes: null,
       isRenewed: false,
       ...row,

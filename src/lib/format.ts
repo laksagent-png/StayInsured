@@ -1,5 +1,5 @@
 import { format, parseISO } from "date-fns";
-import type { Category, PolicyStatus, Relationship } from "./types";
+import type { Category, PlanType, PolicyStatus, PolicyType, Relationship, Rider } from "./types";
 
 const currency = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -88,6 +88,26 @@ export function categoryLabel(category: string): string {
     ? categoryLabels[category as Category]
     : "Other";
 }
+
+/** The riders a health plan is sold with, in the order the insurer lists them. */
+export const riderLabels: Record<Rider, string> = {
+  safeguard: "Safeguard",
+  safeguard_plus: "Safeguard +",
+  pa_main_member: "PA to main member",
+  future_ready: "Future Ready",
+  fast_forwarded: "Fast Forwarded",
+};
+
+export const planTypeLabels: Record<PlanType, string> = {
+  individual: "Individual",
+  family_floater: "Family floater",
+};
+
+export const policyTypeLabels: Record<PolicyType, string> = {
+  fresh: "Fresh",
+  portability: "Portability",
+  renewal: "Renewal",
+};
 
 export const statusLabels: Record<PolicyStatus, string> = {
   active: "Active",

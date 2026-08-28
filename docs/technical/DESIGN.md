@@ -217,14 +217,47 @@ straight query instead of an audit-trail reconstruction, and gives the
 whose `previous_policy_id` points at it.
 
 `renew` carries forward everything the caller does not restate — frequency,
-payment mode, nominee, vehicle number, commission, and the lives covered —
-defaults the new term to the day after expiry plus a year minus a day, copies
-the `policy_members` rows, and marks the expiring year `renewed`.
+payment mode, nominee, vehicle number, commission, the health details, and the
+lives covered — starts the new year the day after the old one expires, copies the
+`policy_members` rows, and marks the expiring year `renewed`.
+
+The new year runs for `term` years less a day, falling back to one where no term
+was recorded, because a three-year policy renews for three years unless the agent
+says otherwise. Its `policy_type` becomes `renewal` whenever the year behind it
+had one at all: a policy ported in from another insurer last August is a renewal
+this August, and the year that was ported keeps saying `portability`.
 
 Because `(insurer_id, policy_number)` is unique, **a renewal needs a policy
 number that differs from the expiring year's** when the insurer is the same. The
 renewal dialog pre-fills last year's number and says insurers usually issue a
 fresh one; leaving it unchanged returns a `conflict`.
+
+### The category decides what the form asks, and in what order
+
+`policies` holds one set of columns for every category, but an agent does not
+fill in one form. A health proposal asks for the plan's variant, the riders
+bought on top, individual or floater, the term, and whether the year is a fresh
+sale, a port or a renewal; a motor policy asks for a registration number and none
+of that.
+
+So `PolicyForm.tsx` defines each control once and lets the chosen category
+sequence them. Health is taken in the order the insurer's own proposal form asks
+— category, client, policy number, insurer, plan, variant, riders, plan type,
+term, risk start, risk end, policy type, sum insured, premium, broker, inbuilt
+rider — with the book's own bookkeeping (GST, frequency, commission, nominee)
+below it. Every other category keeps the general layout.
+
+Health is also the one category the screen will not take half-filled: all sixteen
+are required, because the insurer prices off the variant, the riders and the term,
+and a policy recorded without them cannot be quoted or renewed from the book.
+That rule lives in the screen and not in `repo/policies.rs` — see
+`docs/technical/DATA-MODEL.md`.
+
+Two consequences follow from the category owning the form. Choosing a term
+restates the risk end date, since a term is a statement of how long the cover
+runs; and a category that stops being health leaves the health answers behind in
+the payload rather than carrying them along unseen, exactly as a registration
+number is dropped when a policy stops being motor.
 
 ### Status is derived from the calendar, not typed in
 
@@ -406,10 +439,17 @@ flowchart LR
   not fifty thousand lines. Every real run is recorded in `import_batches` with
   its mapping and its errors in `import_errors`.
 
+The health details are not read from a spreadsheet. An agency's own file predates
+the questions, so there is no column to map them from and no synonyms worth
+guessing at; an imported health policy carries them empty until somebody edits
+it. Nothing in the core requires them, which is what lets that import land at
+all.
+
 Export mirrors it: one column table paired with value extractors drives both
 `.xlsx` and `.csv`, so the two formats cannot drift. Numbers are written as
 numbers so totals and sorting work in Excel, and an unsupported extension is
-refused with a clear message.
+refused with a clear message. The health columns are written for every category
+and filled in only by health, so the sheet stays one table.
 
 ## Reminders
 
@@ -609,6 +649,11 @@ database in a temporary directory, with no window:
 - a blank field is stored as nothing rather than as empty text
 - renewal builds a chain, carries values forward and preserves last year's
   premium
+- a health policy keeps the detail its proposal was written on: riders come back
+  in the insurer's order whatever order they were chosen in, and a renewal
+  carries them, runs for the term that was bought, and becomes a renewal
+- the health details are held to the words the app knows, and a book that
+  predates the questions is still allowed in without them
 - statuses follow the calendar and the dashboard agrees with them
 - a duplicate policy number for one insurer is refused, while two insurers may
   each use the same number
@@ -702,14 +747,18 @@ what fixing it looks like.
 
 The frontend is also covered by `tsc --noEmit`.
 
-`npm run check` is the whole gate in one command: the typecheck, then
-`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and the tests.
-It takes about twelve seconds. Clippy warnings fail rather than accumulate,
-which is only sustainable because the codebase carries none.
+`npm run check:all` is the whole gate in one command, and it is three commands
+run at once rather than one after another: the typecheck and the interface
+suite, `cargo fmt --check` with `cargo clippy --all-targets -- -D warnings` and
+the Rust tests, and the Windows 7 edition's ported core. The three reach for
+different tools and different build directories, so nothing is gained by making
+them queue, and the slowest lane sets the wall clock. Clippy warnings fail rather
+than accumulate, which is only sustainable because the codebase carries none.
 
 Work reaches `main` by a direct push rather than a pull request, so the gate has
-to sit before the push: `.githooks/pre-push` runs `npm run check`, enabled once
-per clone with `npm run hooks`. The **Checks** workflow runs the same commands
+to sit before the push: `.githooks/pre-push` runs `npm run check:all`, enabled
+once per clone with `npm run hooks`. The **Checks** workflow runs the interface
+and Rust lanes
 on every push to `main`, catching the push that used `--no-verify` or came from
 a clone where the hook was never enabled. It also re-photographs the app and
 fails when the screenshot set has gained or lost an image, since **Site**
@@ -768,7 +817,10 @@ a build the repository did not sign.
 
 The cost that decides that edition's future is drift: every rule here now exists
 twice. Its `src/tests/` ports the cases in `src-tauri/src/tests.rs` one for one and
-names each original, and its `parity.test.ts` reads the `generate_handler!` list out
+names each original, adding cases of its own only where it can drift alone — the
+dashboard is one, because this core shares `POLICY_COLUMNS` between the lists and
+the dashboard while that edition queries them separately. Its `parity.test.ts`
+reads the `generate_handler!` list out
 of `lib.rs` and fails if the two command surfaces disagree by a single name — a
 command added here and forgotten there is otherwise found by an operator.
 `DEVELOPER.md` carries what is built there and what is not.

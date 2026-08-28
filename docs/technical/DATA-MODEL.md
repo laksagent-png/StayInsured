@@ -4,10 +4,11 @@ The schema lives in `src-tauri/src/db/schema/`, applied by
 `src-tauri/src/db/migrations.rs`. Everything below is one encrypted SQLite
 database, `stayinsured.db`, opened through SQLCipher.
 
-Current schema version: **5** — `001_init.sql` (structure), `002_seed.sql`
+Current schema version: **6** — `001_init.sql` (structure), `002_seed.sql`
 (defaults), `003_documents.sql` (stored files), `004_search_index.sql` (the
-client search triggers, and a rebuild of the index behind them) and
-`005_client_relations.sql` (family members as clients).
+client search triggers, and a rebuild of the index behind them),
+`005_client_relations.sql` (family members as clients) and
+`006_health_details.sql` (what a health proposal asks for).
 `session_state.schemaVersion` reports it at runtime.
 
 ## Migration policy
@@ -106,11 +107,36 @@ One row per **policy year**, not per policy.
 | Lifecycle | `status`, `start_date`, `expiry_date` |
 | Money | `sum_insured`, `premium_amount`, `gst_amount`, `premium_frequency`, `payment_mode`, `next_due_date`, `commission_rate`, `commission_expected` |
 | Detail | `nominee_name`, `nominee_relation`, `vehicle_number`, `notes` |
+| Health | `variant`, `riders`, `plan_type`, `term`, `policy_type`, `broker`, `inbuilt_rider` |
 
 Constraints: `UNIQUE (insurer_id, policy_number)`; `client_id` cascades on
 delete; `insurer_id` is restricted; `product_id` and `previous_policy_id` are set
 to `NULL` when their target goes. Indexed on client, expiry, status, chain,
 category, insurer and previous policy.
+
+The health columns describe one policy year the way the insurer's proposal form
+asks for it, and they sit here rather than in a table beside `policies` for the
+reason `vehicle_number` does: a side table would be a second row under the same
+key, joined on every read, holding one row per health policy and none for
+anything else.
+
+Every one of them is nullable and stays nullable. An imported book knows none of
+them, and every other category leaves them empty. The add-policy screen requires
+them of a health policy; the core only checks that what it is given is a word it
+knows. `policies.rs` refusing a blank health field would lose the policy rather
+than the detail, and an import reaches that code without passing a screen.
+
+`riders` is the one list: a comma-separated string in `util::RIDERS` order,
+written by `util::canonical_riders` and split again by `Policy::from_row`, so
+two policies carrying the same riders hold the same text whatever order they were
+chosen in. Five known words per policy year, never filtered or counted on, do not
+earn a table — where `policy_members` is one because a member is a client with a
+life of their own.
+
+`policy_type` is not `status`. A year ported in from another insurer is
+`portability` for as long as it exists; `renewed` is a status and means a later
+year of the chain is in the book. Renewing writes `renewal` onto the new year
+whenever the year behind it had a `policy_type` at all.
 
 ### `policy_members`
 
@@ -144,6 +170,10 @@ megabytes of scan to read a column of titles.
 | Category | `health`, `life`, `motor`, `travel`, `home`, `personal_accident`, `critical_illness`, `other` | `CHECK` on `products` and `policies` |
 | Policy status | `active`, `expired`, `renewed`, `lapsed`, `cancelled` | `CHECK` on `policies` |
 | Premium frequency | `annual`, `half_yearly`, `quarterly`, `monthly`, `single` | `CHECK` on `policies` |
+| Rider | `safeguard`, `safeguard_plus`, `pa_main_member`, `future_ready`, `fast_forwarded` | `util::RIDERS`, checked in `repo/policies.rs` |
+| Plan type | `individual`, `family_floater` | `CHECK` on `policies`, and `util::PLAN_TYPES` |
+| Policy type | `fresh`, `portability`, `renewal` | `CHECK` on `policies`, and `util::POLICY_TYPES` |
+| Term | 1 to 5 years | `CHECK` on `policies`, and `util::MAX_TERM` |
 | Relationship | `spouse`, `son`, `daughter`, `father`, `mother`, `brother`, `sister`, `other` | `CHECK` on `client_relations` |
 | Gender | `male`, `female`, `other` | `CHECK` on `clients` |
 | User role | `owner`, `staff`, `readonly` | `CHECK` on `users` |

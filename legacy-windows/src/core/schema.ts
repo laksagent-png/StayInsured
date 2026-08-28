@@ -22,6 +22,7 @@ export const MIGRATIONS = [
   "003_documents.sql",
   "004_search_index.sql",
   "005_client_relations.sql",
+  "006_health_details.sql",
 ];
 
 export const LATEST_VERSION = MIGRATIONS.length;
