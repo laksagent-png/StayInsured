@@ -176,6 +176,12 @@ left, archive instead.
 first, export second — "health clients in Pune with no email" is a filtered list
 and then one button.
 
+The sheet says whether each client is a person or a company, and which
+[group](groups.md) they are filed in, alongside the corporate details: GSTIN,
+registration number, contact person and designation. A person's cells are simply
+empty. Those are the same headings the importer reads, so a book exported here
+comes back whole if you ever import it again.
+
 ---
 
 Next: [record their family](families.md) or [add their policies](policies.md).
