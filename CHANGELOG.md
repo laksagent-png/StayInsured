@@ -5,6 +5,8 @@ settings survive every version below.
 
 ## Upcoming
 
+## 0.6.0 — 28 August 2026
+
 ### Added
 
 - **A company can be a client, and companies can be filed into a group.** The
