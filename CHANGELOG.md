@@ -5,6 +5,8 @@ settings survive every version below.
 
 ## Upcoming
 
+## 0.7.0 — 29 August 2026
+
 ### Changed
 
 - **A group's head is a contact you write down, not a client you have to enter.**
