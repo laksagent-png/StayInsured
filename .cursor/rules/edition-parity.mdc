@@ -14,6 +14,11 @@ spreadsheet, and nothing raises an error when they do.
 
 Change the counterpart in the same commit, and port the test that proves it.
 
+Do not write one side and then read it to write the other. The two cores live in
+different files, so they can be built at the same moment in the same checkout.
+Write the rules down first, then use the `parallel-feature` skill to build both
+halves from that one description at once.
+
 | Changed | Also change |
 | --- | --- |
 | `commands.rs`, the `generate_handler!` list in `lib.rs` | `legacy-windows/src/core/commands.ts` |
@@ -48,9 +53,14 @@ live in `src/env.ts` rather than in `core/`. Do not port `vault.rs`.
 ## Proving it
 
 ```bash
-cd legacy-windows && npm test
+npm run check:all      # or `cd legacy-windows && npm test` for this edition alone
 ```
 
 `parity.test.ts` reads the command list out of `lib.rs` and fails if the two
 disagree about a name; the rest hold the ported rules to the Rust cases. CI runs
-this only when an edition release is tagged, so run it before pushing.
+this only when an edition release is tagged, so `.githooks/pre-push` is where a
+broken port is caught.
+
+It is also the only drift any test can see. A rule implemented differently on
+the two sides passes both suites, so run the `parity-auditor` subagent over the
+diff before committing a change that touched a rule.

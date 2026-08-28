@@ -17,6 +17,9 @@ src-tauri/gen/schemas
 !.vscode/extensions.json
 .idea
 
+# Parity specs written for a change and consumed by the lanes building it
+.cursor/specs/
+
 # Local data & secrets
 *.db
 *.db-shm

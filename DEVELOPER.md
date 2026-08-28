@@ -122,8 +122,26 @@ The **Documentation** workflow runs both commands on every pull request.
 One command runs everything that guards the code:
 
 ```bash
-npm run check          # typecheck, the interface tests, then rustfmt, clippy and the Rust tests
+npm run check:all      # the interface, the Rust core and the Windows 7 edition, at once
 ```
+
+The three suites reach for different tools and write to different build
+directories — cargo in `src-tauri/target`, vitest in memory, `tsc -p .` in
+`legacy-windows/out` — so `scripts/check-all.mjs` runs them concurrently and the
+slowest lane sets the wall clock rather than the sum of all three. Output is held
+until a lane finishes, so three suites reporting at once still read as three
+reports. Name lanes to run a subset:
+
+```bash
+node scripts/check-all.mjs rust edition
+```
+
+The edition lane is skipped, not failed, on a clone where
+`legacy-windows/node_modules` was never installed.
+
+The lanes are also available one at a time — `npm run check:rust`,
+`npm run check:edition`, `npm run typecheck && npm test` — and `npm run check` is
+the interface and Rust checks in sequence, without the edition.
 
 Rust tests cover the data layer end to end — migrations, renewal chains, status
 rules, import idempotency, export, backup, documents, and the reminder engine
@@ -177,11 +195,13 @@ a pull request. Enable the hook once per clone:
 npm run hooks          # points git at .githooks
 ```
 
-`.githooks/pre-push` then runs `npm run check` on every push, and
+`.githooks/pre-push` then runs `npm run check:all` on every push, and
 `git push --no-verify` skips it when something has to go out regardless. The
-**Checks** workflow runs the same commands on every push to `main`, so a push
-that skipped the hook — or came from a clone where it was never enabled — is
-still caught.
+**Checks** workflow runs the interface and Rust lanes on every push to `main`, so
+a push that skipped the hook — or came from a clone where it was never enabled —
+is still caught. The edition lane is the exception: CI runs it only when an
+edition release is tagged, which makes the hook the place a broken port is
+usually found.
 
 Every Node job in CI installs with `npm ci`, which refuses a `package-lock.json`
 that disagrees with `package.json`. Adding a dependency means committing the
@@ -418,9 +438,10 @@ bundle costs nothing and returns the failure to the ordinary unnotarised one, wh
 has a way through it. `syspolicy_check distribution <app>` distinguishes them — a
 `Codesign Error` is the fault, a lone `Notary Ticket Missing` is the expected state.
 
-Nothing there ships with the app. `npm run check` at the root does not see it, and
-no behaviour of the app depends on it — with one exception, which is the
-`encrypted` flag on `SessionState` and the two screens that read it.
+Nothing there ships with the app. `npm run check:all` reaches the edition's tests
+but not its packaging, and no behaviour of the app depends on it — with one
+exception, which is the `encrypted` flag on `SessionState` and the two screens
+that read it.
 
 ## Where the app keeps its data
 

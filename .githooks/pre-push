@@ -10,7 +10,9 @@ set -e
 
 echo "Checking before push. Skip with --no-verify."
 
-# Formatting, lints and the data-layer tests, plus the frontend typecheck.
-npm run check
+# Formatting, lints and the data-layer tests, the frontend typecheck and suite,
+# and the Windows 7 edition's ported core — three lanes at once, because CI runs
+# the edition only on an edition tag and this is where a broken port is caught.
+npm run check:all
 
 echo "Checks passed."
