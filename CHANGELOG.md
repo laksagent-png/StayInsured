@@ -5,6 +5,8 @@ settings survive every version below.
 
 ## Upcoming
 
+## 0.8.1 — 29 August 2026
+
 ### Fixed
 
 - **Picking a client on a new policy works on the first click.** The client
