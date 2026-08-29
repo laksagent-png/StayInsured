@@ -1,6 +1,6 @@
 [package]
 name = "stayinsured"
-version = "0.7.0"
+version = "0.8.0"
 description = "Client and policy management for insurance providers"
 authors = ["StayInsured"]
 edition = "2021"

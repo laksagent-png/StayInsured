@@ -5,6 +5,8 @@ settings survive every version below.
 
 ## Upcoming
 
+## 0.8.0 — 29 August 2026
+
 ### Added
 
 - **A motor policy now records the vehicle and both covers.** Choose Motor and the
