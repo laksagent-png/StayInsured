@@ -564,8 +564,8 @@ export function PolicyForm({
       ) : (
         <div
           className="relative"
-          // The list closes as soon as the work moves past it, but not while the
-          // focus is on its way to one of its own rows.
+          // The list closes as soon as the work moves past it. Choosing a row
+          // keeps the focus in the search box, so nothing here fires for it.
           onBlur={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
               setShowClientList(false);
@@ -586,6 +586,10 @@ export function PolicyForm({
               // The chosen name is on show, so typing replaces it.
               event.currentTarget.select();
             }}
+            // Choosing a row leaves the focus here, so going back for a
+            // different client is a press on a box that is already focused and
+            // raises no focus event of its own.
+            onMouseDown={() => setShowClientList(true)}
             // Enter here belongs to the list underneath: it takes the closest
             // match rather than saving a policy that has no client on it yet.
             onKeyDown={(event) => {
@@ -596,7 +600,15 @@ export function PolicyForm({
             }}
           />
           {showClientList && (clientResults.data?.rows.length ?? 0) > 0 && (
-            <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+            <ul
+              className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg"
+              // Pressing a row must not take the focus off the search box.
+              // WebKit does not focus a button on click, so the box would blur
+              // to nothing, the list would close under the pointer, and the
+              // click would land on whatever the list had been covering — the
+              // agent picks a name and nothing is chosen.
+              onMouseDown={(event) => event.preventDefault()}
+            >
               {clientResults.data?.rows.map((client) => (
                 <li key={client.id}>
                   <button

@@ -662,6 +662,32 @@ describe("the policy form's client picker", () => {
 
     expect(clientBox()).toHaveValue("Anita Desai");
   });
+
+  /*
+   * Pressing a row must not take the focus out of the search box. WebKit does
+   * not focus a button that is clicked, so a row that let the focus go would
+   * blur the box to nothing, close the list under the pointer, and lose the
+   * click that was meant to choose the client.
+   */
+  it("keeps the search box focused while a row is chosen", async () => {
+    const { user } = openForm();
+
+    await chooseClient(user, /Anita Desai/);
+    await screen.findByDisplayValue("Anita Desai");
+
+    expect(clientBox()).toHaveFocus();
+  });
+
+  it("offers the list again when the box is pressed after a choice", async () => {
+    const { user } = openForm();
+
+    await chooseClient(user, /Anita Desai/);
+    await screen.findByDisplayValue("Anita Desai");
+
+    await user.click(clientBox());
+
+    expect(await screen.findByRole("button", { name: /Rohit Sharma/ })).toBeInTheDocument();
+  });
 });
 
 describe("the policy form's insurer and plan pickers", () => {

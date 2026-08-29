@@ -5,6 +5,14 @@ settings survive every version below.
 
 ## Upcoming
 
+### Fixed
+
+- **Picking a client on a new policy works on the first click.** The client
+  search list closed the instant you pressed a name, so the click landed on the
+  form behind it and no client was chosen — you pressed the same name over and
+  over and the list kept coming back. It now takes the name you press and shuts,
+  and pressing the box again brings the list back to change your mind.
+
 ## 0.8.0 — 29 August 2026
 
 ### Added
